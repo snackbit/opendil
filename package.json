@@ -30,7 +30,8 @@
     "check:site": "node scripts/check-site.mjs",
     "changeset": "changeset",
     "version:packages": "changeset version && npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
-    "capture": "node scripts/capture-dil.mjs"
+    "capture": "node scripts/capture-dil.mjs",
+    "capture:readme": "node scripts/capture-readme-demo.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.8",

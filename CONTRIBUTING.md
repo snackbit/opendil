@@ -2,7 +2,7 @@
 
 Use Node 24 and npm. Install with `npm ci`, build with `npm run build`, and run `npm run check`. Install Chromium with `npx playwright install chromium` before `npm run test:e2e`. Run `npm run check:package` to test the packed artifact in a separate consumer.
 
-The demo uses package exports, so rebuild the package after library edits. `npm run dev` starts the demo; `npm run preview -w @opendil/demo` serves its production build on port 3100. `npm run capture` uses that production server to refresh screenshots and print benchmark measurements.
+The demo uses package exports, so rebuild the package after library edits. `npm run dev` starts the demo; `npm run preview -w @opendil/demo` serves its production build on port 3100. `npm run capture` uses that production server to refresh screenshots and print benchmark measurements. `npm run capture:readme` records the README animation from the same server and needs `ffmpeg`.
 
 Add a changeset with `npm run changeset` for public behavior or API changes. Describe what changes for a consumer. Keep refactoring, docs, and tests close to the behavior they explain.
 
