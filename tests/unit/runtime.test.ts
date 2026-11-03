@@ -90,8 +90,8 @@ describe("isolated execution worker", () => {
   });
   it("stops runaway recursion inside QuickJS and keeps the VM consistent", async () => {
     // A host stack overflow would unwind the interpreter without QuickJS cleanup.
-    // Keep each program far below the 50 ms execution deadline, even on slow CI
-    // runners, so the stack limit rather than the interrupt stops it.
+    // Keep each program far below the per-evaluation work budget so the stack
+    // limit, not the interrupt, stops it.
     const send = runtime();
     await send("declare", { source: "const [n,setN]=DIL.useState(1)" });
     for (const source of [

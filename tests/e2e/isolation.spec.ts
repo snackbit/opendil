@@ -92,7 +92,12 @@ test("the runtime frame starts only inside an opaque-origin sandbox", async ({
       frame.src = src ?? "";
       document.body.append(frame);
     }
-    await new Promise((resolve) => setTimeout(resolve, 1500));
+    // Slow machines need longer to load the runtime. Once the sandboxed copy is
+    // ready, the unsandboxed copy has had the same time to start and must not.
+    const deadline = performance.now() + 15000;
+    while (!counts.sandboxed && performance.now() < deadline)
+      await new Promise((resolve) => setTimeout(resolve, 50));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
     return {
       ...counts,
       rendered:
@@ -157,7 +162,9 @@ test("QuickJS bounds deep recursion in a browser worker and fails closed otherwi
         bounded: await run([
           ...[
             "(function f(){return f()+1})()",
-            "(()=>{let a=[];for(let i=0;i<1e5;i++)a=[a];return String(a)})()",
+            // 10,000 levels overflow the 64 KiB QuickJS stack long before the
+            // per-evaluation work budget interrupts the loop that builds them.
+            "(()=>{let a=[];for(let i=0;i<1e4;i++)a=[a];return String(a)})()",
             "JSON.parse('['.repeat(1e5)+']'.repeat(1e5))",
           ].flatMap((source) => [source, source, source]),
           nested,

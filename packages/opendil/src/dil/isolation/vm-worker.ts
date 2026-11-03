@@ -28,8 +28,13 @@ const ready = newQuickJSWASMModuleFromVariant(
   // Chromium workers overflow natively above roughly 80 KiB of QuickJS stack; any
   // remaining host overflow (for example nested JSON.stringify) is reported as fatal.
   runtime.setMaxStackSize(64 * 1024);
-  let deadline = 0;
-  runtime.setInterruptHandler(() => performance.now() > deadline);
+  // QuickJS polls this handler about every 10,000 interpreter steps. Limit each
+  // evaluation by that work, not elapsed time, so a slow or busy device never stops a
+  // document that a faster one completes. 256 polls end runaway loops within roughly
+  // 20-250 ms on a desktop CPU, while encoding 5,000 records takes about 11. The
+  // execution queue's 1 s transport timeout still bounds native work that never polls.
+  let polls = 0;
+  runtime.setInterruptHandler(() => ++polls > 256);
   const context = runtime.newContext();
   let copied = "";
   let gesture = false;
@@ -52,7 +57,7 @@ const ready = newQuickJSWASMModuleFromVariant(
   context.setProp(context.global, "__copy", copy);
   copy.dispose();
   function run(code: string) {
-    deadline = performance.now() + 50;
+    polls = 0;
     const result = guard(() => context.evalCode(code));
     if (!result.error) return result.value;
     const failed = result.error;
