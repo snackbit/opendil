@@ -25,6 +25,6 @@ Changesets opens a version/changelog PR after changesets land on `main`. Once th
 
 ## Website deployment
 
-Vercel builds the site with the settings in `vercel.json`: `npm ci`, `npm run build`, and static output from `apps/demo/dist` at the domain root. Import the repository with the Vercel Git integration and keep the root directory at the repository root. Use `main` as the production branch, add `opendil.com` as the production domain, and redirect `www.opendil.com` to it. Pull requests get preview deployments.
+Vercel builds the site with the settings in `vercel.json`: `npm ci`, `npm run build`, and static output from `apps/demo/dist` at the domain root. Vercel also answers `/demo/` and `/docs/` with HTTP redirects, because Astro's static fallback pages wait two seconds before redirecting. Import the repository with the Vercel Git integration and keep the root directory at the repository root. Use `main` as the production branch, add `opendil.com` as the production domain, and redirect `www.opendil.com` to it. Pull requests get preview deployments.
 
 Canonical URLs and the sitemap use `SITE_URL` when it is set, then Vercel's production domain, then `https://opendil.com`. `SITE_BASE_PATH` builds the site under a subpath, as `npm run check:site` does.

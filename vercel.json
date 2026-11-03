@@ -5,6 +5,18 @@
   "buildCommand": "npm run build",
   "outputDirectory": "apps/demo/dist",
   "trailingSlash": true,
+  "redirects": [
+    {
+      "source": "/demo/",
+      "destination": "/demo/deployment/",
+      "permanent": false
+    },
+    {
+      "source": "/docs/",
+      "destination": "/docs/getting-started/",
+      "permanent": false
+    }
+  ],
   "headers": [
     {
       "source": "/_astro/(.*)",
