@@ -464,6 +464,15 @@ html body[data-scroll-locked] {
   gap: 20px;
   flex-wrap: wrap;
 }
+.od-footer-credit {
+  flex-basis: 100%;
+  margin: 0;
+}
+.od-footer .od-footer-credit a {
+  color: var(--od-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 .od-copy {
   display: inline-flex;
   gap: 6px;

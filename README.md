@@ -197,3 +197,7 @@ npm run test:e2e
 ## License
 
 Apache 2.0. See [LICENSE](https://github.com/snackbit/opendil/blob/main/LICENSE) and the [third-party notices](https://github.com/snackbit/opendil/blob/main/THIRD_PARTY_NOTICES.md).
+
+## Who's behind OpenDIL
+
+OpenDIL is made by [Felix Faust](https://turtledev.net). I'm open to freelance work, and paid projects help fund OpenDIL's development. If you have something in mind, reach out through [turtledev.net](https://turtledev.net).
