@@ -1,0 +1,53 @@
+---
+title: Renderer API
+description: Public DilRenderer props, exported types, and the imperative renderer handle.
+---
+
+```tsx
+import { DilRenderer, type DilRendererProps } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+```
+
+## Common props
+
+| Prop                | Type                                               | Default / behavior                                                    |
+| ------------------- | -------------------------------------------------- | --------------------------------------------------------------------- |
+| `text`              | `string`                                           | Required append-only source prefix.                                   |
+| `isStreaming`       | `boolean`                                          | `false`; finalize after the last chunk.                               |
+| `showStatus`        | `boolean`                                          | `true`; receiving/completion label. Errors remain visible when false. |
+| `mode`              | `"isolated" \| "shadow" \| "host"`                 | `"isolated"`; sandboxed iframe.                                       |
+| `progressiveReveal` | `boolean \| { staggerMs?, durationMs? }`           | `false`; default timing is 50 / 180 ms.                               |
+| `updateInterval`    | `"instant" \| number`                              | `"instant"`; numeric values are milliseconds.                         |
+| `autoScroll`        | `boolean \| { behavior?, padding? }`               | `false`; behavior defaults to `"instant"`, padding to `0`.            |
+| `onFollowChange`    | `(following: boolean) => void`                     | Reports following state.                                              |
+| `onInput`           | `({ length: number }) => void`                     | Reports submitted source length.                                      |
+| `onCommit`          | `({ scanned: number, complete: boolean }) => void` | Reports parser batches committed to the document model.               |
+| `ref`               | `Ref<DilRendererHandle>`                           | Provides `resumeAutoScroll()`.                                        |
+
+`onCommit` is a source/model milestone, not a browser paint timestamp or a guarantee that asynchronous visualizations have finished.
+
+## Mode-specific props
+
+| Prop              | Modes         | Contract                                                     |
+| ----------------- | ------------- | ------------------------------------------------------------ |
+| `runtimeBaseUrl`  | Iframe        | Defaults to `/opendil/`; serve matching package assets here. |
+| `components`      | Shadow / host | Tag-name to trusted React component registrations.           |
+| `componentConfig` | Shadow / host | Per-tag configuration or stock default attributes.           |
+| `classNames`      | Shadow / host | Per-tag class overrides.                                     |
+| `slots`           | Shadow / host | Per-component named class slots.                             |
+| `tokens`          | Shadow / host | CSS custom properties, keyed by `--…`.                       |
+| `className`       | Shadow / host | Class on the renderer scope.                                 |
+| `appearance`      | Shadow / host | `"light"` or `"dark"`; defaults to light.                    |
+| `shadowStyles`    | Shadow        | Trusted application CSS inside the ShadowRoot.               |
+
+The TypeScript props form a discriminated union. Customization props are rejected in iframe mode rather than silently ignored.
+
+## Exported types
+
+`DilRendererProps`, `DilIsolatedRendererProps`, `DilShadowRendererProps`, `DilHostRendererProps`, `DilRendererHandle`, `DilComponentProps`, `DilCustomization`, `RendererMetrics`, `ProgressiveReveal`, `ProgressiveRevealOptions`, `AutoScroll`, `AutoScrollOptions`, and `UpdateInterval` are exported from the package root.
+
+## Limits and recovery
+
+The parser bounds source and node counts. QuickJS bounds memory and execution time. A weighted render budget bounds mounted work. When a message stops, keep readable content and offer a restart by remounting the renderer. Other renderer instances remain independent.
+
+Large flows and repeated tables use virtualization. Preserve the normal page-scroll model; arbitrary nested scroll-container virtualization is not a public API.

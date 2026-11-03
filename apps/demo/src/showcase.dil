@@ -1,0 +1,1084 @@
+# Interactive workspace
+
+Analytics, pricing, forms, and diagrams in one streamed document.
+The controls are live; all data is local to this example.
+
+{@body const [period, setPeriod] = DIL.useState("6m")}
+{@body const [metric, setMetric] = DIL.useState("revenue")}
+{@body const [growth, setGrowth] = DIL.useState(18)}
+{@body const [base, setBase] = DIL.useState(125)}
+{@body const [showTarget, setShowTarget] = DIL.useState(true)}
+{@body const labels =
+  period === "3m"
+    ? ["Aug", "Sep", "Oct"]
+    : period === "6m"
+      ? ["May", "Jun", "Jul", "Aug", "Sep", "Oct"]
+      : [
+          "Nov",
+          "Dec",
+          "Jan",
+          "Feb",
+          "Mar",
+          "Apr",
+          "May",
+          "Jun",
+          "Jul",
+          "Aug",
+          "Sep",
+          "Oct",
+        ]}
+{@body const series = labels.map((m, i) => ({
+  month: m,
+  revenue: Math.round(base * Math.pow(1 + growth / 100 / 12, i)),
+  users: Math.round(3200 * Math.pow(1 + growth / 100 / 12, i)),
+  target: Math.round(base * Math.pow(1 + 0.12 / 12, i)),
+}))}
+{@body const last = series[series.length - 1]}
+{@body const growthFactor = Math.pow(
+  1 + growth / 100 / 12,
+  labels.length - 1,
+)}
+{@body const euro = (n) =>
+  new Intl.NumberFormat("en-US", {
+    maximumFractionDigits: 0,
+  }).format(n)}
+{@body const [showBreakdown, setShowBreakdown] = DIL.useState(false)}
+{@body const [billing, setBilling] = DIL.useState("annual")}
+{@body const [seats, setSeats] = DIL.useState(8)}
+{@body const [tier, setTier] = DIL.useState("pro")}
+{@body const [addon, setAddon] = DIL.useState(true)}
+{@body const tierPrice = tier === "starter" ? 12 : tier === "pro" ? 29 : 69}
+{@body const monthlyPrice =
+  (tierPrice * seats + (addon ? 35 : 0)) *
+  (billing === "annual" ? 0.8 : 1)}
+{@body const [name, setName] = DIL.useState("Alex")}
+{@body const [theme, setTheme] = DIL.useState("indigo")}
+{@body const [radius, setRadius] = DIL.useState(16)}
+{@body const [density, setDensity] = DIL.useState("comfortable")}
+{@body const [tasks, setTasks] = DIL.useState([true, false, true, false])}
+{@body const taskNames = [
+  "Design system approved",
+  "Analytics integration complete",
+  "Accessibility review",
+  "Production rollout",
+]}
+{@body const completed = tasks.filter(Boolean).length}
+{@body const [notice, setNotice] = DIL.useState("")}
+
+## Analytics
+
+<box border radius="2xl" padding={4} gap={4}>
+  <row align="center" justify="between" wrap="wrap">
+    <row align="center" gap={2}>
+      <box background="surface-secondary" radius="lg" padding={2}>
+        <icon name="chart-no-axes-combined" size="lg" />
+      </box>
+      <box gap={0}>
+        **Acme Analytics**
+        <caption>Workspace metrics</caption>
+      </box>
+    </row>
+    <badge color="success">
+      <icon name="circle-check" size="xs" inline />
+      Operational
+    </badge>
+  </row>
+  <divider color="subtle" />
+  <row justify="between" align="center" wrap="wrap">
+    <title size="lg">Performance overview</title>
+    <segmented-control
+      size="md"
+      value={period}
+      onChange={setPeriod}
+      options={[
+        { label: "3M", value: "3m" },
+        { label: "6M", value: "6m" },
+        { label: "12M", value: "12m" },
+      ]}
+    />
+  </row>
+  <grid columns={2} gap={2}>
+    <grid-item>
+      <box
+        background="surface-secondary"
+        padding={3}
+        radius="lg"
+        gap={2}
+      >
+        <row justify="between" align="center">
+          <caption>Monthly revenue</caption>
+          <icon name="wallet" color="secondary" />
+        </row>
+        <title size="xl" color="default" tabularNums>€{euro(last.revenue * 1000)}</title>
+        <text color="success" size="xs">
+          <icon name="trending-up" inline size="xs" />
+          +{(100 * (growthFactor - 1)).toFixed(1)}% over period
+        </text>
+      </box>
+    </grid-item>
+    <grid-item>
+      <box
+        background="surface-secondary"
+        padding={3}
+        radius="lg"
+        gap={2}
+      >
+        <row justify="between" align="center">
+          <caption>Active users</caption>
+          <icon name="users" color="secondary" />
+        </row>
+        <title size="xl" tabularNums>{euro(last.users)}</title>
+        <text color="success" size="xs">
+          <icon name="trending-up" inline size="xs" />
+          +{growth}% annualized
+        </text>
+      </box>
+    </grid-item>
+    <grid-item>
+      <box border radius="lg" padding={3} gap={1}>
+        <caption>Conversion rate</caption>
+        <title size="xl" tabularNums>{(3.4 + growth / 100).toFixed(2)}%</title>
+      </box>
+    </grid-item>
+    <grid-item>
+      <box border radius="lg" padding={3} gap={1}>
+        <caption>Customer satisfaction</caption>
+        <title size="xl">98.2%</title>
+      </box>
+    </grid-item>
+  </grid>
+  <row align="center" justify="between" wrap="wrap">
+    **Performance trend**
+    <segmented-control
+      size="sm"
+      value={metric}
+      onChange={setMetric}
+      options={[
+        { label: "Revenue", value: "revenue" },
+        { label: "Users", value: "users" },
+      ]}
+    />
+  </row>
+  <Chart content={{
+    chartType: "line",
+    meta: { footer: "Generated synthetic series" },
+    xKey: "month",
+    series:
+      metric === "revenue"
+        ? [
+            { dataKey: "revenue", label: "Revenue (€k)" },
+            ...(showTarget
+              ? [{ dataKey: "target", label: "Target (€k)" }]
+              : []),
+          ]
+        : [{ dataKey: "users", label: "Active users" }],
+    data: series,
+  }} />
+  <checkbox
+    checked={showTarget}
+    onChange={setShowTarget}
+    disabled={metric !== "revenue"}
+    lineThrough={false}
+  >
+    Show revenue target
+  </checkbox>
+  <divider color="subtle" />
+  <row justify="between" align="center">
+    **Annual growth assumption**
+    <title size="lg" tabularNums>{growth}%</title>
+  </row>
+  <slider
+    min={-20}
+    max={60}
+    step={2}
+    value={growth}
+    onChange={setGrowth}
+    marks={[
+      { value: -20, label: "-20%" },
+      { value: 0, label: "0%" },
+      { value: 20, label: "20%" },
+      { value: 40, label: "40%" },
+      { value: 60, label: "60%" },
+    ]}
+  />
+  <row justify="between" align="center">
+    **Starting revenue (€k)**
+    <title size="lg" tabularNums>€{base}k</title>
+  </row>
+  <slider
+    min={50}
+    max={300}
+    step={5}
+    value={base}
+    onChange={setBase}
+  />
+  <row justify="end" align="center">
+    <button
+      size="md"
+      color="secondary"
+      variant="outline"
+      onClick={() => {
+        setGrowth(18);
+        setBase(125);
+        setPeriod("6m");
+        setMetric("revenue");
+        setShowTarget(true);
+      }}
+    >
+      <icon name="rotate-ccw" inline />
+      Reset
+    </button>
+  </row>
+  <checkbox checked={showBreakdown} onChange={setShowBreakdown} lineThrough={false}>
+    Show monthly breakdown
+  </checkbox>
+  {#if showBreakdown}
+    <table>
+      <table-row>
+        <table-cell>Month</table-cell>
+        <table-cell>Revenue</table-cell>
+        <table-cell>Active users</table-cell>
+      </table-row>
+      {#each series as month}
+        <table-row>
+          <table-cell>{month.month}</table-cell>
+          <table-cell>€{euro(month.revenue * 1000)}</table-cell>
+          <table-cell>{euro(month.users)}</table-cell>
+        </table-row>
+      {/each}
+    </table>
+  {/if}
+</box>
+
+## Workspace pricing
+
+<box border radius="2xl" padding={4} gap={3}>
+  <row justify="between" align="center" wrap="wrap">
+    <box gap={1}>
+      <title size="lg">Configure your workspace</title>
+      <caption>Choose a plan and billing period</caption>
+    </box>
+    <segmented-control
+      size="md"
+      value={billing}
+      onChange={setBilling}
+      options={[
+        { label: "Monthly", value: "monthly" },
+        { label: "Annual", value: "annual" },
+      ]}
+    />
+  </row>
+  <grid columns={3} gap={2}>
+    {#each [
+      { id: "starter", name: "Starter", price: 12 },
+      { id: "pro", name: "Pro", price: 29 },
+      { id: "enterprise", name: "Scale", price: 69 },
+    ] as plan}
+    <grid-item key={plan.id}>
+      <pressable
+        onClick={() => setTier(plan.id)}
+        background={tier === plan.id ? "surface-secondary" : undefined}
+        border={{
+          size: tier === plan.id ? 2 : 1,
+          color: tier === plan.id ? "strong" : "subtle",
+        }}
+        radius="xl"
+        padding={3}
+        gap={2}
+      >
+        <row justify="between" align="center">
+          <text weight="medium" size="sm">{plan.name}</text>
+          {#if tier === plan.id}
+          <icon name="circle-check" color="default" />
+          {:else}
+          <icon name="circle" color="tertiary" />
+          {/if}
+        </row>
+        <title size="xl" tabularNums>€{plan.price}</title>
+        <caption>seat / month</caption>
+      </pressable>
+    </grid-item>
+    {/each}
+  </grid>
+  <row align="center" justify="between">
+    **Team members**
+    <title size="lg" tabularNums>{seats}</title>
+  </row>
+  <slider
+    value={seats}
+    onChange={setSeats}
+    min={1}
+    max={50}
+    step={1}
+  />
+  <checkbox
+    checked={addon}
+    onChange={setAddon}
+    lineThrough={false}
+  >
+    Advanced analytics add-on (+€35/month)
+  </checkbox>
+  <box
+    background="surface-secondary"
+    radius="xl"
+    padding={4}
+    gap={3}
+  >
+    <row justify="between" align="center">
+      <box gap={1}>
+        <caption>Estimated monthly cost</caption>
+        <title size="2xl" tabularNums>€{monthlyPrice.toFixed(2)}</title>
+      </box>
+      <badge color={billing === "annual" ? "success" : "secondary"}>{billing === "annual" ? "20% discount" : "Standard price"}</badge>
+    </row>
+    <divider />
+    <row justify="between">
+      <text color="secondary" size="sm">
+        {seats} seats × €{tierPrice}
+      </text>
+      <text size="sm" tabularNums>€{(seats * tierPrice).toFixed(2)}</text>
+    </row>
+    <row justify="between">
+      <text color="secondary" size="sm">Analytics add-on</text>
+      <text size="sm" tabularNums>€{addon ? 35 : 0}</text>
+    </row>
+    {#if billing === "annual"}
+    <row justify="between">
+      <text color="success" size="sm">Annual discount</text>
+      <text color="success" size="sm" tabularNums>−€{((seats * tierPrice + (addon ? 35 : 0)) * 0.2).toFixed(2)}</text>
+    </row>
+    {/if}
+    <divider />
+    <row justify="between">**Annualized cost** **€{euro(monthlyPrice * 12)}**</row>
+  </box>
+  <button block onClick={() =>
+    GenUI.copy(
+      `Plan: ${tier}\nSeats: ${seats}\nBilling: ${billing}\nAnalytics: ${addon}\nMonthly: €${monthlyPrice.toFixed(2)}\nAnnual: €${(monthlyPrice * 12).toFixed(2)}`,
+    )}>
+    <icon name="copy" inline />
+    Copy configuration
+  </button>
+</box>
+
+## Charts
+
+<box gap={3}>
+  <box border radius="xl" padding={3} gap={1}>
+    **Categorical bar chart**
+    <caption>Deployments by region</caption>
+    <Chart content={{
+      chartType: "bar",
+      xKey: "region",
+      series: [
+        { dataKey: "successful", label: "Successful" },
+        { dataKey: "failed", label: "Failed" },
+      ],
+      data: [
+        { region: "EU", successful: 94, failed: 6 },
+        { region: "US", successful: 78, failed: 9 },
+        { region: "APAC", successful: 57, failed: 3 },
+        { region: "Other", successful: 34, failed: 2 },
+      ],
+    }} />
+  </box>
+  <box border radius="xl" padding={3} gap={1}>
+    **Proportional donut/pie chart**
+    <caption>Traffic by source</caption>
+    <Chart content={{
+      chartType: "pie",
+      nameKey: "source",
+      valueKey: "share",
+      series: [{ dataKey: "share", label: "Share" }],
+      data: [
+        { source: "Organic", share: 45 },
+        { source: "Direct", share: 28 },
+        { source: "Referral", share: 17 },
+        { source: "Social", share: 10 },
+      ],
+    }} />
+  </box>
+  <box border radius="xl" padding={3} gap={1}>
+    **Scatter plot**
+    <caption>
+      Latency and throughput
+    </caption>
+    <Chart content={{
+      chartType: "scatter",
+      xKey: "latency",
+      xAxisLabel: "Latency (ms)",
+      series: [{ dataKey: "throughput", label: "Requests/s" }],
+      data: [
+        { latency: 25, throughput: 920 },
+        { latency: 32, throughput: 870 },
+        { latency: 40, throughput: 950 },
+        { latency: 53, throughput: 740 },
+        { latency: 61, throughput: 800 },
+        { latency: 75, throughput: 650 },
+        { latency: 95, throughput: 530 },
+        { latency: 115, throughput: 420 },
+      ],
+    }} />
+  </box>
+</box>
+
+## Service topology
+
+{@body const nodes = [
+  { label: "Gateway", sub: "Ingress", x: 18, y: 105 },
+  { label: "API Service", sub: "Compute", x: 182, y: 40 },
+  { label: "Worker", sub: "Async jobs", x: 182, y: 170 },
+  { label: "Database", sub: "Storage", x: 350, y: 40 },
+  { label: "Queue", sub: "Messaging", x: 350, y: 170 },
+]}
+{@body const [node, setNode] = DIL.useState(1)}
+<box border radius="2xl" padding={3} gap={3}>
+  <row align="center" justify="between">
+    **Service architecture**
+    <badge color="success">5 healthy nodes</badge>
+  </row>
+  <svg viewBox="0 0 480 258" width="100%" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <marker
+        id="arrow-ui-demo"
+        markerWidth="7"
+        markerHeight="7"
+        refX="6"
+        refY="3.5"
+        orient="auto"
+      >
+        <path d="M0 0 L7 3.5 L0 7 Z" fill="#8b8e9d" />
+      </marker>
+    </defs>
+    {#each [
+      [0, 1],
+      [0, 2],
+      [1, 3],
+      [2, 4],
+    ] as link}
+    <path
+      d={`M${nodes[link[0]].x + 110} ${nodes[link[0]].y + 23} C${nodes[link[0]].x + 140} ${nodes[link[0]].y + 23}, ${nodes[link[1]].x - 28} ${nodes[link[1]].y + 23}, ${nodes[link[1]].x - 6} ${nodes[link[1]].y + 23}`}
+      stroke="#9195a1"
+      strokeWidth="2"
+      fill="none"
+      markerEnd="url(#arrow-ui-demo)"
+    />
+    {/each}
+    {#each nodes as item,i}
+    <rect
+      x={item.x}
+      y={item.y}
+      width="110"
+      height="49"
+      rx="10"
+      fill={node === i ? "#343d75" : "#2a303b"}
+      stroke={node === i ? "#a6b6ff" : "#747d8e"}
+      strokeWidth={node === i ? 2.5 : 1}
+    />
+    <circle cx={item.x + 12} cy={item.y + 14} r="4" fill="#5cda9d" />
+    <text
+      x={item.x + 21}
+      y={item.y + 18}
+      fontSize="12"
+      fill="#ffffff"
+      fontWeight="600"
+    >
+      {item.label}
+    </text>
+    <text
+      x={item.x + 12}
+      y={item.y + 36}
+      fontSize="10.5"
+      fill="#c2c8d5"
+    >
+      {item.sub}
+    </text>
+    {/each}
+    <text x="18" y="246" fill="currentColor" opacity="0.65" fontSize="11">
+      Choose a service below to inspect its properties
+    </text>
+  </svg>
+  <row wrap="wrap" gap={2}>
+    {#each nodes as item,i}
+    <button
+      key={i}
+      size="sm"
+      variant={node === i ? "solid" : "outline"}
+      color={node === i ? "primary" : "secondary"}
+      onClick={() => setNode(i)}
+    >
+      {item.label}
+    </button>
+    {/each}
+  </row>
+  <box
+    background="surface-secondary"
+    radius="lg"
+    padding={3}
+    gap={2}
+  >
+    <row justify="between" align="center">
+      **{nodes[node].label}**
+      <badge color="success">Healthy</badge>
+    </row>
+    <grid columns={3} gap={2}>
+      <grid-item>
+        <caption>CPU</caption>
+        <title size="lg">{[12, 38, 61, 27, 14][node]}%</title>
+      </grid-item>
+      <grid-item>
+        <caption>Memory</caption>
+        <title size="lg">{[128, 512, 768, 1024, 256][node]} MB</title>
+      </grid-item>
+      <grid-item>
+        <caption>Replicas</caption>
+        <title size="lg">{[2, 4, 3, 2, 3][node]}</title>
+      </grid-item>
+    </grid>
+  </box>
+</box>
+
+## Personalize the interface
+
+<box border radius="2xl" padding={4} gap={3}>
+  <row align="center" justify="between">
+    **UI component lab**
+    <icon name="sliders-horizontal" color="secondary" />
+  </row>
+  <label>Accent theme</label>
+  <radio-group
+    direction="row"
+    value={theme}
+    onChange={setTheme}
+  >
+    <radio value="indigo">Indigo</radio>
+    <radio value="green">Emerald</radio>
+    <radio value="amber">Amber</radio>
+  </radio-group>
+  <label>Corner radius</label>
+  <slider
+    min={4}
+    max={24}
+    step={2}
+    value={radius}
+    onChange={setRadius}
+  />
+  <label>Content density</label>
+  <segmented-control
+    block={false}
+    value={density}
+    onChange={setDensity}
+    options={[
+      { label: "Compact", value: "compact" },
+      { label: "Comfortable", value: "comfortable" },
+    ]}
+  />
+  <divider />
+  <box border radius="xl" padding={density === "compact" ? 2 : 4} gap={density === "compact" ? 2 : 4}>
+    <row align="center" justify="between">
+      <badge color="secondary">Live preview</badge>
+      <icon name="ellipsis" color="secondary" />
+    </row>
+    <box gap={2}>
+      <title size="lg">Welcome back, {name || "there"}</title>
+      <text color="secondary" size="sm">
+        Appearance and display-name changes stay in this message.
+      </text>
+      <input
+        value={name}
+        onChange={setName}
+        placeholder="Enter a display name"
+      />
+    </box>
+    <box
+      radius={`${radius}px`}
+      background={theme === "indigo"
+        ? "#e4e9ff"
+        : theme === "green"
+          ? "#dcfce7"
+          : "#fff0cc"}
+      padding={density === "compact" ? 2 : 3}
+    >
+      <row align="center" gap={3}>
+        <box
+          radius={`${Math.max(4, radius - 4)}px`}
+          background={theme === "indigo"
+            ? "#5865cb"
+            : theme === "green"
+              ? "#25875b"
+              : "#b67c1d"}
+          padding={2}
+        >
+          <icon name="palette" color="#ffffff" />
+        </box>
+        <box flex="1" gap={1}>
+          <text weight="medium" color="#202020">Customizable design</text>
+          <text size="xs" color="#565e70">
+            Radius: {radius}px · {density} layout
+          </text>
+        </box>
+        <icon name="check-circle-2" color={theme === "indigo"
+          ? "#5865cb"
+          : theme === "green"
+            ? "#25875b"
+            : "#b67c1d"} />
+      </row>
+    </box>
+    <button block onClick={() => setNotice(`Action triggered for ${name || "guest"}.`)}>
+      <icon name="mouse-pointer-click" inline />
+      Test interaction
+    </button>
+    {#if notice}
+    <row
+      background="surface-secondary"
+      radius="md"
+      padding={2}
+      gap={2}
+      align="center"
+    >
+      <icon name="check-circle-2" color="success" />
+      <text size="sm">{notice}</text>
+      <spacer />
+      <button
+        size="xs"
+        variant="ghost"
+        color="secondary"
+        onClick={() => setNotice("")}
+      >
+        <icon name="x" />
+      </button>
+    </row>
+    {/if}
+  </box>
+</box>
+
+## Launch checklist
+
+<box border radius="xl" padding={4} gap={3}>
+  <row align="center" justify="between">
+    <box gap={1}>
+      **Launch checklist**
+      <caption>{completed} of {tasks.length} tasks completed</caption>
+    </box>
+    <title size="lg">{Math.round((completed / tasks.length) * 100)}%</title>
+  </row>
+  <box background="surface-tertiary" height="9px" radius="full" clip>
+    <box
+      width={`${(completed / tasks.length) * 100}%`}
+      height="100%"
+      background={completed === 4 ? "#1d9a69" : "#6483db"}
+      radius="full"
+    />
+  </box>
+  {#each taskNames as task,i}
+  <row
+    key={i}
+    align="center"
+    gap={2}
+    padding={{ y: 1 }}
+  >
+    <checkbox checked={tasks[i]} onChange={(v) => setTasks((old) => old.map((t, j) => (i === j ? v : t)))}>
+      {task}
+    </checkbox>
+  </row>
+  {/each}
+  {#if completed === 4}
+  <box background="surface-secondary" radius="lg" padding={3}>
+    <row align="center" gap={2}>
+      <icon name="check-circle-2" color="success" />
+      **All launch requirements complete**
+    </row>
+  </box>
+  {:else}
+  <caption>
+    {4 - completed} remaining task{4 - completed === 1 ? "" : "s"} before launch.
+  </caption>
+  {/if}
+  <button variant="outline" color="secondary" block onClick={() => setTasks([false, false, false, false])}>
+    Reset checklist
+  </button>
+</box>
+
+## Image gallery
+
+Browse the local illustrations with the carousel controls.
+
+<carousel gap={3}>
+  <carousel-item width="80%" gap={2}>
+    <AsyncImage
+      query="architectural photography modern minimalist concrete museum curved interior skylight"
+      aspectRatio="16:9"
+      width="100%"
+    />
+    **Architectural photography**
+    <caption>Image retrieval, aspect-ratio control, and cropping</caption>
+  </carousel-item>
+  <carousel-item width="80%" gap={2}>
+    <AsyncImage
+      query="macro photography orange butterfly wing fine detailed pattern dark background"
+      aspectRatio="16:9"
+      width="100%"
+    />
+    **Macro photography**
+    <caption>Independent media items within a swipeable carousel</caption>
+  </carousel-item>
+  <carousel-item width="80%" gap={2}>
+    <AsyncImage
+      query="aerial photograph dramatic winding mountain road alpine forest morning fog"
+      aspectRatio="16:9"
+      width="100%"
+    />
+    **Landscape photography**
+    <caption>Flexible visual cards and rich content layout</caption>
+  </carousel-item>
+</carousel>
+
+## Service health
+
+{@body const [actionResult, setActionResult] = DIL.useState("")}
+{@body const [serviceSearch, setServiceSearch] = DIL.useState("")}
+{@body const [unhealthyOnly, setUnhealthyOnly] = DIL.useState(false)}
+{@body const [showActivityDetails, setShowActivityDetails] = DIL.useState(true)}
+{@body const [showOperationalMetrics, setShowOperationalMetrics] = DIL.useState(false)}
+{@body const services = [
+  {
+    name: "api-gateway",
+    latency: "18 ms",
+    requests: 2840,
+    errors: "0.01%",
+    status: "Healthy",
+    good: true,
+  },
+  {
+    name: "auth-service",
+    latency: "32 ms",
+    requests: 1290,
+    errors: "0.02%",
+    status: "Healthy",
+    good: true,
+  },
+  {
+    name: "payments",
+    latency: "240 ms",
+    requests: 610,
+    errors: "0.42%",
+    status: "Degraded",
+    good: false,
+  },
+  {
+    name: "database",
+    latency: "12 ms",
+    requests: 4200,
+    errors: "0.00%",
+    status: "Healthy",
+    good: true,
+  },
+  {
+    name: "job-queue",
+    latency: "24 ms",
+    requests: 980,
+    errors: "0.03%",
+    status: "Healthy",
+    good: true,
+  },
+  {
+    name: "search",
+    latency: "84 ms",
+    requests: 1740,
+    errors: "0.16%",
+    status: "Review",
+    good: false,
+  },
+  {
+    name: "object-storage",
+    latency: "41 ms",
+    requests: 860,
+    errors: "0.01%",
+    status: "Healthy",
+    good: true,
+  },
+  {
+    name: "notifications",
+    latency: "57 ms",
+    requests: 430,
+    errors: "0.02%",
+    status: "Healthy",
+    good: true,
+  },
+]}
+{@body const visibleServices = services.filter(service =>
+  service.name.includes(serviceSearch.trim().toLowerCase()) &&
+  (!unhealthyOnly || !service.good)
+)}
+
+<box border radius="xl" padding={3} gap={3}>
+  <row align="center" justify="between">
+    **Infrastructure status**
+    <badge color="secondary">{visibleServices.length} / {services.length} services</badge>
+  </row>
+  <label>Find a service</label>
+  <input
+    aria-label="Find a service"
+    value={serviceSearch}
+    onChange={setServiceSearch}
+    placeholder="Search by service name"
+  />
+  <row justify="between" align="center" wrap="wrap">
+    <checkbox checked={unhealthyOnly} onChange={setUnhealthyOnly} lineThrough={false}>
+      Needs attention only
+    </checkbox>
+    <button
+      size="sm"
+      variant="ghost"
+      disabled={!serviceSearch && !unhealthyOnly}
+      onClick={() => {
+        setServiceSearch("");
+        setUnhealthyOnly(false);
+      }}
+    >
+      Clear filters
+    </button>
+  </row>
+  <table>
+    <table-row>
+      <table-cell width="35%">
+        <caption>Service</caption>
+      </table-cell>
+      <table-cell>
+        <caption>Latency</caption>
+      </table-cell>
+      <table-cell>
+        <caption>Requests / s</caption>
+      </table-cell>
+      <table-cell>
+        <caption>Error rate</caption>
+      </table-cell>
+      <table-cell>
+        <caption>Status</caption>
+      </table-cell>
+    </table-row>
+    {#each visibleServices as service}
+    <table-row>
+      <table-cell>
+        <text weight="medium" size="sm">{service.name}</text>
+      </table-cell>
+      <table-cell>
+        <text size="sm" tabularNums>{service.latency}</text>
+      </table-cell>
+      <table-cell>
+        <text size="sm" tabularNums>{euro(service.requests)}</text>
+      </table-cell>
+      <table-cell>
+        <text size="sm" tabularNums>{service.errors}</text>
+      </table-cell>
+      <table-cell>
+        <row align="center" gap={1}>
+          <icon name={service.good ? "circle-check" : "alert-triangle"} color={service.good ? "success" : "warning"} size="xs" />
+          <text size="xs">{service.status}</text>
+        </row>
+      </table-cell>
+    </table-row>
+    {/each}
+  </table>
+  {#if visibleServices.length === 0}
+    <text color="secondary">No services match your filters.</text>
+  {/if}
+</box>
+
+## Activity and preferences
+
+<box border radius="xl" padding={3} gap={3}>
+  <row justify="between" align="center">
+    <title size="lg">Recent activity</title>
+    <badge color="secondary">3 events</badge>
+  </row>
+  <box gap={3}>
+    {#each [
+      {
+        ic: "git-merge",
+        title: "Pull request merged",
+        time: "09:42 UTC",
+        desc: "feature/dashboard-ui → main",
+      },
+      {
+        ic: "package-check",
+        title: "Deployment successful",
+        time: "09:30 UTC",
+        desc: "Production release v2.8.0",
+      },
+      {
+        ic: "shield-check",
+        title: "Health checks passed",
+        time: "08:55 UTC",
+        desc: "All five services responding",
+      },
+    ] as event,i}
+    <row gap={3} key={i} align="start">
+      <box
+        radius="lg"
+        padding={2}
+        background="surface-secondary"
+      >
+        <icon name={event.ic} />
+      </box>
+      <box flex="1" gap={1}>
+        <row justify="between" align="center" wrap="wrap">
+          <text size="sm" weight="medium">{event.title}</text>
+          <caption>{event.time}</caption>
+        </row>
+        {#if showActivityDetails}
+          <text color="secondary" size="xs">{event.desc}</text>
+        {/if}
+      </box>
+    </row>
+    {/each}
+  </box>
+  <divider />
+  <row align="center" gap={2}>
+    <icon name="settings-2" />
+    <title size="lg">Workspace preferences</title>
+  </row>
+  <checkbox checked={showActivityDetails} onChange={setShowActivityDetails} lineThrough={false}>
+    Show activity details
+  </checkbox>
+  <checkbox checked={showOperationalMetrics} onChange={setShowOperationalMetrics} lineThrough={false}>
+    Show operational metrics
+  </checkbox>
+  {#if showOperationalMetrics}
+  <grid columns={2} gap={2}>
+    {#each [
+      { k: "Uptime", v: "99.99%" },
+      { k: "Deployments", v: "128" },
+      { k: "Incidents", v: "2" },
+      { k: "Mean latency", v: "28ms" },
+    ] as item}
+    <grid-item>
+      <box
+        background="surface-secondary"
+        radius="lg"
+        padding={3}
+        gap={1}
+      >
+        <caption>{item.k}</caption>
+        <title size="xl">{item.v}</title>
+      </box>
+    </grid-item>
+    {/each}
+  </grid>
+  {/if}
+  <button variant="outline" onClick={() => GenUI.copy(JSON.stringify({
+    showActivityDetails,
+    showOperationalMetrics,
+  }, null, 2))}>
+    <icon name="copy" inline />
+    Copy workspace preferences
+  </button>
+</box>
+
+## Actions and code
+
+<box border radius="xl" padding={3} gap={3}>
+  <row wrap="wrap" align="center" gap={2}>
+    <badge color="success">Success</badge>
+    <badge color="warning">Warning</badge>
+    <badge color="danger">Error</badge>
+    <badge color="secondary">Neutral</badge>
+  </row>
+  <row wrap="wrap" align="center" gap={2}>
+    <button
+      size="sm"
+      variant="solid"
+      color="primary"
+      onClick={() => setActionResult("Primary action selected")}
+    >
+      Primary
+    </button>
+    <button
+      size="sm"
+      variant="outline"
+      color="secondary"
+      onClick={() => setActionResult("Secondary action selected")}
+    >
+      Secondary
+    </button>
+    <button
+      size="sm"
+      variant="ghost"
+      color="secondary"
+      onClick={() => setActionResult("Ghost action selected")}
+    >
+      Ghost
+    </button>
+    <button size="sm" color="secondary" disabled>Disabled</button>
+  </row>
+  {#if actionResult}
+    <row background="surface-secondary" padding={2} radius="md" justify="between" align="center">
+      <text>{actionResult}</text>
+      <button size="sm" variant="ghost" onClick={() => setActionResult("")}>Dismiss</button>
+    </row>
+  {/if}
+  <row justify="between" align="center">
+    <text size="sm">Additional information</text>
+    <popover>
+      <popover-trigger>
+        <button size="sm" color="secondary" variant="outline">
+          <icon name="info" inline />
+          Show popover
+        </button>
+      </popover-trigger>
+      <popover-content side="top" align="end">
+        <box gap={2} padding={2} maxWidth="220px">
+          **Contextual popover**
+          <text size="sm">
+            Supplementary information without navigating away from the current
+            conversation.
+          </text>
+        </box>
+      </popover-content>
+    </popover>
+  </row>
+  <divider />
+  <row justify="between" align="center" wrap="wrap">
+    <row align="center" gap={2}>
+      <icon name="code-2" color="secondary" />
+      <text size="sm">Editable TypeScript</text>
+    </row>
+    <badge>TypeScript</badge>
+  </row>
+  <CodeBlock language="typescript" editable>
+type Result<T> =
+  | { ok: true; data: T }
+  | { ok: false; error: Error };
+
+const success = <T,>(data: T): Result<T> => ({
+  ok: true,
+  data,
+});
+  </CodeBlock>
+</box>
+
+<button variant="outline" onClick={() => GenUI.copy(JSON.stringify({
+  period,
+  metric,
+  growth,
+  startingRevenue: base * 1000,
+  showTarget,
+  showBreakdown,
+  plan: tier,
+  seats,
+  billing,
+  analytics: addon,
+  monthlyCost: monthlyPrice,
+  displayName: name,
+  theme,
+  radius,
+  density,
+  tasks,
+  selectedService: nodes[node].label,
+  serviceSearch,
+  unhealthyOnly,
+  showActivityDetails,
+  showOperationalMetrics,
+}, null, 2))}>
+  <icon name="copy" inline />
+  Copy all settings
+</button>

@@ -1,0 +1,14 @@
+{
+  "name": "@opendil/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": "./index.mjs",
+  "dependencies": {
+    "@eslint/js": "^10.0.1",
+    "@typescript-eslint/parser": "^8.72.1",
+    "@typescript-eslint/eslint-plugin": "^8.72.1",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "globals": "^14.0.0"
+  }
+}

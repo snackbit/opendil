@@ -1,0 +1,17 @@
+<script is:inline>
+  (() => {
+    let theme = "system";
+    try {
+      const stored = localStorage.getItem("opendil-theme");
+      if (stored === "light" || stored === "dark") theme = stored;
+    } catch {
+      /* Storage is optional. */
+    }
+    document.documentElement.dataset.theme =
+      theme === "system"
+        ? matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light"
+        : theme;
+  })();
+</script>

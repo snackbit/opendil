@@ -1,0 +1,23 @@
+node_modules/
+public/dil-runtime/
+.next/
+**/.astro/
+next-env.d.ts
+*.tsbuildinfo
+coverage/
+playwright-report/
+test-results/
+dist/
+apps/demo/public/opendil/
+.tmp/
+*.tgz
+# Local research captures are not redistributed.
+messages.stream
+desired-output.html
+reference-css.css
+recharts-css.css
+d6f2b1bf665b.css
+dd5e3ee4dbe9.css
+packages/opendil/README.md
+packages/opendil/LICENSE
+packages/opendil/THIRD_PARTY_NOTICES.md

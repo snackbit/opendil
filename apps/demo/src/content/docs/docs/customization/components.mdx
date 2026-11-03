@@ -1,0 +1,104 @@
+---
+title: Custom React components
+description: Register new tags or replace stock adapters with trusted application components.
+sidebar: { order: 4 }
+---
+
+import { Code } from "@astrojs/starlight/components";
+import { CustomizationPlayground } from "../../../../site/examples/customization-playground";
+import { customizationDocsSource } from "../../../../site/examples/customization-source";
+import { customComponentSource } from "../../../../examples/customization";
+
+Register your application's React components to add DIL tags or replace stock adapters. OpenDIL evaluates the document's attributes and callbacks; your component owns the markup and native interaction.
+
+Custom registrations work in **Shadow DOM and host modes**. The default iframe runtime cannot receive host React components. See [Iframe restrictions](#iframe-restrictions) below.
+
+## Try a registered component
+
+The `Callout` tag renders an application component. The `button` tag uses a custom `Action` adapter. Increment the counter, disable the action, or switch rendering modes. Both modes use the same registry and DIL source.
+
+<CustomizationPlayground variant="components" client:only="react" />
+
+<details>
+  <summary>View the DIL source</summary>
+  <Code code={customizationDocsSource} lang="mdx" title="message.dil" />
+</details>
+
+## Register components
+
+Pass a tag-to-component map through `components`. Names are case-sensitive: `Callout` adds a new tag, while `button` replaces the stock button adapter for this renderer instance. Other tags keep their stock implementations.
+
+```tsx title="Answer.tsx"
+import { DilRenderer } from "@snackbit/opendil";
+import { components } from "./components";
+import "@snackbit/opendil/styles.css";
+
+export function Answer({ text }: { text: string }) {
+  return (
+    <DilRenderer
+      mode="host"
+      showStatus={false}
+      text={text}
+      components={components}
+      componentConfig={{ Callout: { label: "From our design system" } }}
+      classNames={{ Callout: "rounded-xl border p-4" }}
+    />
+  );
+}
+```
+
+Keep component definitions and the registry at module scope. Defining a new component type inside a parent render can remount it and lose its local React state. Registrations are compiled application code; a DIL response cannot import or compile arbitrary TSX.
+
+The module below is the implementation used by the live example. `Callout` validates its label and forwards named style slots. `Action` forwards DIL clicks and accepts the document's boolean `disabled` attribute.
+
+<details>
+  <summary>View the React implementations</summary>
+  <Code code={customComponentSource} lang="tsx" title="components.tsx" />
+</details>
+
+For Shadow DOM, use `mode="shadow"` and supply any additional application CSS through `shadowStyles`. The stock stylesheet is installed automatically. See [Tokens and Tailwind](../styling/#shadow-dom-css).
+
+## Component props
+
+| Prop                        | Purpose                                                          |
+| --------------------------- | ---------------------------------------------------------------- |
+| `name`                      | The registered tag name.                                         |
+| `attributes`                | Evaluated document attributes, with component defaults applied.  |
+| `children`                  | Rendered document children.                                      |
+| `config`                    | Application-owned component configuration.                       |
+| `className`, `slots`        | Caller-supplied class and named style parts.                     |
+| `ready`                     | Whether callbacks can currently be invoked.                      |
+| `invoke(attribute, value?)` | Calls the DIL callback for that attribute if ready.              |
+| `presentationRef`           | Forward to the visual root to participate in progressive reveal. |
+
+Treat attributes as document input, not native React DOM props. Avoid spreading them onto elements; validate URLs and supported fields at your boundary. Use `ready` for disabled semantics and `invoke` for DIL callbacks. Leave the reveal ref off wrappers whose children should reveal individually.
+
+## Callbacks and streaming
+
+Call `invoke("onClick")` from your native click handler, or `invoke("onChange", nextValue)` when a control produces a value. The callback runs in the document's QuickJS runtime. Pass the value the DIL handler expects, such as a string, number, or boolean; a browser event is not a document value.
+
+`ready` becomes false while the component is incomplete or its expressions are unavailable. The `Action` example disables its button until ready and also honors `attributes.disabled === true`. `invoke` ignores a missing callback or a call made while the component is not ready.
+
+Forward `presentationRef` to a visual root to include it in progressive reveal. A layout-only wrapper can omit it so that its children reveal independently. Custom controls still own focus behavior, labels, keyboard interaction, and pending states for any application work they start.
+
+## Limitations
+
+### Iframe restrictions
+
+The prebuilt `mode="isolated"` runtime renders its own stock registry. React component functions cannot be passed across that iframe boundary; the public TypeScript API rejects `components`, `componentConfig`, `classNames`, `slots`, and theme overrides in this mode.
+
+`copy-assets` copies the prebuilt runtime. It does not register application components inside it. Adding components there requires maintaining a custom iframe runtime build with its own compiled registry. That is separate from the host-registration API described on this page. Keep the frame's sandbox and CSP intact if you take that route.
+
+### Trust and execution limits
+
+Custom React components run with the application's browser privileges in both host and Shadow DOM modes. Shadow DOM isolates styles, not JavaScript access. The DIL expressions invoked by those components still run in isolated, bounded QuickJS runtimes.
+
+QuickJS limits do not bound a React component's own render loop, effects, network calls, or internally generated DOM. Keep that application code responsive and handle its asynchronous errors and loading states yourself. Validate document attributes before using them in URLs, DOM properties, or service requests.
+
+### State, errors, and styling
+
+Local React state belongs to a mounted component. It can be lost when a conditional branch disappears, virtualization unmounts the component, or the renderer is restarted. Store document values in `DIL.useState`, or keep application state outside the renderer when it must outlive the document.
+
+Component render failures are reported through the renderer's error boundary; other renderer instances remain independent. The [customization demo](../../../demo/customization/) includes an intentional render error and recovery control. Asynchronous work and event-handler failures need application-level handling.
+
+CSS from the surrounding page does not cross a ShadowRoot. Custom class names and slot classes must exist in styles available inside it. Third-party overlays that portal to `document.body` also leave that style boundary; use a portal container inside the root or choose host mode. See [Shadow DOM CSS](../styling/#shadow-dom-css) for the stylesheet setup.

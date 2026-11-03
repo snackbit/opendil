@@ -1,0 +1,6 @@
+{
+  "extends": "@opendil/tsconfig/base.json",
+  "compilerOptions": { "types": ["astro/client", "node"] },
+  "include": [".astro/types.d.ts", "src/**/*", "astro.config.mjs"],
+  "exclude": ["dist", "node_modules"]
+}

@@ -1,0 +1,17 @@
+node_modules
+**/dist
+**/coverage
+.next
+**/.astro
+apps/demo/public/opendil
+public/dil-runtime
+test-results
+playwright-report
+package-lock.json
+messages.stream
+message.txt
+desired-output.html
+reference-css.css
+recharts-css.css
+d6f2b1bf665b.css
+dd5e3ee4dbe9.css

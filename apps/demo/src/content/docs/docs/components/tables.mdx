@@ -1,0 +1,17 @@
+---
+title: Tables
+description: Native table structure and virtualized repeated rows.
+sidebar: { order: 7 }
+---
+
+import { LiveExample } from "../../../../site/components/live-example";
+import ExampleSource from "../../../../site/components/example-source.astro";
+
+Use `table`, `table-row`, and `table-cell`. Keep rows directly inside the table and cells inside rows; repeated row templates preserve native structure.
+
+<ExampleSource id="table" />
+<LiveExample id="table" client:only="react" />
+
+Cells accept supported layout attributes such as width and alignment. The stock adapter does not expose a separate table-header tag, sorting API, or arbitrary native table attributes.
+
+Large repeated row collections use virtualization with spacer rows. Stable item IDs preserve identity and active controls. Try the [long table](../../../demo/long-table/) to inspect the behavior at 5,000 entries. Include meaningful labels and an appropriate document heading for the table's purpose.

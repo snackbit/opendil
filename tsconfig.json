@@ -1,0 +1,17 @@
+{
+  "extends": "@opendil/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["vite/client", "astro/client", "node"]
+  },
+  "include": [
+    "apps/**/*.ts",
+    "apps/**/*.tsx",
+    "apps/demo/.astro/types.d.ts",
+    "tests/**/*.ts",
+    "tests/**/*.tsx",
+    "*.config.ts",
+    "packages/opendil/src/dil/isolation/globals.d.ts"
+  ],
+  "exclude": ["**/dist", "node_modules"]
+}

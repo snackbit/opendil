@@ -1,0 +1,48 @@
+---
+title: Customization
+description: Bring your design system to OpenDIL without changing document expression execution.
+sidebar: { order: 1 }
+---
+
+import { CustomizationPlayground } from "../../../../site/examples/customization-playground";
+
+Start with tokens and class overrides when the stock components already do what you need. Register a React component when you need different markup, behavior, or a new DIL tag.
+
+Customization props are available in `mode="shadow"` and `mode="host"`. Shadow DOM gives the document its own style boundary; host mode uses your page's DOM and CSS. Both retain isolated QuickJS expression workers. Their React components run with the application's browser privileges.
+
+## Try the extension points
+
+This example registers a `Callout` tag and replaces the stock button adapter. The counter and disabled state belong to the DIL document. Switch between Shadow DOM and host rendering to use the same components in both environments.
+
+<CustomizationPlayground variant="components" client:only="react" />
+
+## Choose what to customize
+
+| Change                                      | API                    | Guide                                          |
+| ------------------------------------------- | ---------------------- | ---------------------------------------------- |
+| Palette, corners, and stock theme           | `tokens`, `appearance` | [Tokens and Tailwind](../styling/)             |
+| Component root classes                      | `classNames`           | [Class overrides](../styling/#class-overrides) |
+| Default attributes and application settings | `componentConfig`      | [Configuration](../configuration/)             |
+| Named parts of a compound component         | `slots`                | [Named slots](../configuration/#named-slots)   |
+| New tags or replacement adapters            | `components`           | [Custom React components](../components/)      |
+| Application styles inside a ShadowRoot      | `shadowStyles`         | [Shadow DOM CSS](../styling/#shadow-dom-css)   |
+
+For example, changing the primary color and button shape does not require a replacement component:
+
+```tsx
+<DilRenderer
+  mode="shadow"
+  text={source}
+  appearance="light"
+  tokens={{ "--primary": "#156f55", "--radius": "1rem" }}
+  classNames={{ button: "rounded-full" }}
+/>
+```
+
+## Iframe availability
+
+The public renderer defaults to iframe isolation. Its prebuilt runtime does not accept host React registrations or these customization props. Select host or Shadow DOM explicitly to use them. `copy-assets` only supplies the stock iframe runtime; it does not install your components into that frame.
+
+See [Isolation](../../isolation/) for the security differences and [Custom component limitations](../components/#limitations) for state, execution, and styling constraints.
+
+The site shell's `--od-*` variables belong to this website. Generated interfaces use their own renderer tokens and do not inherit the OpenDIL brand by default.

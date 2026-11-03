@@ -1,0 +1,103 @@
+name: Release
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: release
+  cancel-in-progress: false
+jobs:
+  version:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    outputs:
+      hasChangesets: ${{ steps.changesets.outputs.hasChangesets }}
+      unpublished: ${{ steps.package.outputs.unpublished }}
+    steps:
+      - uses: actions/create-github-app-token@64ab729a6294000f5aa4a4bc0b73d1f32bc45510 # v3.3.0
+        id: app
+        with:
+          client-id: ${{ vars.RELEASE_APP_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-pull-requests: write
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app.outputs.token }}
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - uses: changesets/action@a45c4d594aa4e2c509dc14a9f2b3b67ba3780d0d # v1.9.0
+        id: changesets
+        with:
+          version: npm run version:packages
+          title: Release OpenDIL
+          commit: "chore: version OpenDIL"
+        env:
+          GITHUB_TOKEN: ${{ steps.app.outputs.token }}
+      # Only an unpublished version needs verification and the approval-gated publish job.
+      - id: package
+        if: steps.changesets.outputs.hasChangesets == 'false'
+        run: |
+          version=$(node -p 'require("./packages/opendil/package.json").version')
+          if npm view "@snackbit/opendil@$version" version --registry=https://registry.npmjs.org > /dev/null 2> "$RUNNER_TEMP/npm-view.log"; then
+            echo "unpublished=false" >> "$GITHUB_OUTPUT"
+          elif grep -q E404 "$RUNNER_TEMP/npm-view.log"; then
+            echo "unpublished=true" >> "$GITHUB_OUTPUT"
+          else
+            cat "$RUNNER_TEMP/npm-view.log"
+            exit 1
+          fi
+  verify:
+    needs: version
+    if: needs.version.outputs.hasChangesets == 'false' && needs.version.outputs.unpublished == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run build
+      - run: npm run check
+      - run: npx --no-install playwright install --with-deps chromium
+      - run: npm run test:e2e
+      - run: npm run check:package
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-package
+          path: .tmp/release/*.tgz
+          retention-days: 7
+          if-no-files-found: error
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    environment: npm
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: .nvmrc
+          package-manager-cache: false
+      - run: npm install --global npm@11.17.0 --ignore-scripts
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+          path: .tmp/release
+      - run: node scripts/publish-package.mjs
+        env:
+          GH_TOKEN: ${{ github.token }}

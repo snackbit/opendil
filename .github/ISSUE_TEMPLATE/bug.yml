@@ -1,0 +1,16 @@
+name: Bug report
+description: Report a reproducible OpenDIL problem.
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction
+      description: Include a minimal DIL document, rendering mode, package version, and browser.
+    validations:
+      required: true
+  - type: textarea
+    id: outcome
+    attributes:
+      label: Expected and observed behavior
+    validations:
+      required: true

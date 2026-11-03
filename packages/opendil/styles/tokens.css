@@ -1,0 +1,29 @@
+/* Default OpenDIL tokens, scoped to each renderer. */
+.dil-scope {
+  --dil-text-color: #0d0d0d;
+  --dil-muted-text-color: #5d5d5d;
+  --foreground: #0d0d0d;
+  --muted-foreground: #5d5d5d;
+  --secondary: #f4f4f4;
+  --muted: #f7f7f7;
+  --border: #e5e5e5;
+  --font-dil:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+  --dil-control-radius: 12px;
+  --dil-item-radius: 8px;
+  --dil-success: #22825e;
+  --dil-warning: #ad751a;
+  --dil-tertiary: #8f8f8f;
+  --dil-node-selected: #343d75;
+  --dil-node-surface: #2a303b;
+  --dil-chart-height: 280px;
+  --dil-spacing: 4px;
+}
+[data-slot="toggle-group"] {
+  border-radius: var(--dil-control-radius);
+  gap: var(--dil-spacing);
+}
+[data-slot="toggle-group-item"] {
+  border-radius: var(--dil-item-radius);
+}

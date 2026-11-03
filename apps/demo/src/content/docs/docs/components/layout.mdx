@@ -1,0 +1,31 @@
+---
+title: Layout
+description: Compose boxes, rows, and responsive grids.
+sidebar: { order: 1 }
+---
+
+import { LiveExample } from "../../../../site/components/live-example";
+import ExampleSource from "../../../../site/components/example-source.astro";
+
+`box` stacks children vertically. `row` lays them out horizontally, and `grid` creates equal-width columns. Use `grid-item` for a grid child, `spacer` for flexible inline space, and `divider` for a structural rule.
+
+<ExampleSource id="layout" />
+<LiveExample id="layout" client:only="react" />
+
+| Attribute                     | Values                                            | Behavior                            |
+| ----------------------------- | ------------------------------------------------- | ----------------------------------- |
+| `padding`                     | Number or `{ x, y }`                              | 4 px per unit.                      |
+| `gap`                         | Number                                            | 4 px between children per unit.     |
+| `align`                       | `start`, `center`, `end`, other CSS alignments    | Cross-axis alignment.               |
+| `justify`                     | `start`, `center`, `end`, `between`               | Main-axis alignment.                |
+| `columns`                     | Number                                            | Grid column count; default 2.       |
+| `wrap`                        | `"wrap"`                                          | Allows row wrapping.                |
+| `width`, `height`, `maxWidth` | Number or CSS string                              | Numeric values are pixels.          |
+| `border`                      | Boolean or `{ size, color }`                      | Border size and supported color.    |
+| `radius`                      | `sm`, `md`, `lg`, `xl`, `2xl`, `full`, CSS radius | Corner shape.                       |
+| `background`                  | Semantic name or supported CSS color              | Container surface.                  |
+| `flex`, `clip`                | Flex sizing, boolean                              | Flex behavior and clipped overflow. |
+
+Stock grids collapse to one column at viewport widths of 520 px or less. Use an appropriate document structure for narrow screens; arbitrary CSS props are not an extension mechanism.
+
+Keep controls named and in a meaningful reading order. Layout tags do not create application semantics such as a form or landmark on their own.

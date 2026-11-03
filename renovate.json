@@ -1,0 +1,35 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended", "group:monorepos"],
+  "dependencyDashboard": true,
+  "minimumReleaseAge": "3 days",
+  "semanticCommits": "enabled",
+  "labels": ["dependencies", "renovate"],
+  "timezone": "UTC",
+  "gitAuthor": "Renovate Bot <renovate@snackbit.com>",
+  "osvVulnerabilityAlerts": true,
+  "lockFileMaintenance": {
+    "enabled": true,
+    "schedule": ["before 4am on Monday"]
+  },
+  "packageRules": [
+    {
+      "description": "Group non-major development updates",
+      "matchDepTypes": ["devDependencies"],
+      "matchUpdateTypes": ["minor", "patch"],
+      "groupName": "development dependencies"
+    },
+    {
+      "description": "Group non-major GitHub Actions updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["minor", "patch", "digest"],
+      "groupName": "GitHub Actions"
+    },
+    {
+      "description": "Published runtime dependencies change what consumers install; review them individually",
+      "matchFileNames": ["packages/opendil/package.json"],
+      "matchDepTypes": ["dependencies", "peerDependencies"],
+      "addLabels": ["package-runtime"]
+    }
+  ]
+}

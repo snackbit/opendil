@@ -1,0 +1,82 @@
+{
+  "name": "@snackbit/opendil",
+  "version": "0.1.0",
+  "description": "Streaming interactive documents for React using Dynamic Interface Language",
+  "type": "module",
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/snackbit/opendil.git",
+    "directory": "packages/opendil"
+  },
+  "homepage": "https://opendil.com",
+  "bugs": "https://github.com/snackbit/opendil/issues",
+  "keywords": [
+    "react",
+    "generative-ui",
+    "streaming",
+    "dil"
+  ],
+  "engines": {
+    "node": ">=22"
+  },
+  "files": [
+    "dist",
+    "styles",
+    "bin",
+    "THIRD_PARTY_NOTICES.md"
+  ],
+  "sideEffects": [
+    "**/*.css"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/types/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./styles.css": "./dist/styles.css",
+    "./tailwind.css": "./styles/tailwind.css",
+    "./package.json": "./package.json",
+    "./ui": {
+      "types": "./dist/types/ui.d.ts",
+      "import": "./dist/ui.js"
+    }
+  },
+  "bin": {
+    "opendil": "./bin/opendil.mjs"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "typecheck": "tsc --noEmit -p tsconfig.json"
+  },
+  "peerDependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "dependencies": {
+    "@tanstack/react-virtual": "^3.13.12",
+    "@xyflow/react": "^12.12.1",
+    "acorn": "^8.16.0",
+    "acorn-walk": "^8.3.4",
+    "class-variance-authority": "^0.7.1",
+    "clsx": "^2.1.1",
+    "dompurify": "^3.4.17",
+    "embla-carousel-react": "^8.6.0",
+    "lowlight": "3.3.0",
+    "lucide-react": "^0.468.0",
+    "mermaid": "^12.2.0",
+    "quickjs-emscripten": "^0.32.0",
+    "radix-ui": "^1.8.1",
+    "react-markdown": "^10.1.0",
+    "recharts": "^3.8.0",
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remend": "^1.4.0",
+    "tailwind-merge": "^3.3.1",
+    "unified": "^11.0.5",
+    "zustand": "^5.0.8"
+  }
+}

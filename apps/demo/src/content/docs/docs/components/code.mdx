@@ -1,0 +1,21 @@
+---
+title: Code blocks
+description: Literal source with language highlighting, direct editing, wrap, and copy.
+sidebar: { order: 10 }
+---
+
+import { LiveExample } from "../../../../site/components/live-example";
+import ExampleSource from "../../../../site/components/example-source.astro";
+
+<ExampleSource id="code" />
+<LiveExample id="code" client:only="react" />
+
+| Attribute  | Contract                                                                                             |
+| ---------- | ---------------------------------------------------------------------------------------------------- |
+| `language` | A supported syntax language, such as `typescript`, `javascript`, `json`, `html`, `css`, or `python`. |
+| `editable` | Boolean; enables the native text editor. Default false.                                              |
+| Children   | Literal source rather than evaluated DIL.                                                            |
+
+The editor and read-only view share highlighting. Wrap and copy controls have keyboard-accessible tooltips. Editing retains drafts through virtualized unmounts, and copying reports success or denial. Highlighting falls back to plain text for unknown languages or oversized workloads.
+
+Syntax colors can be customized with `--dil-code-keyword`, `--dil-code-string`, `--dil-code-number`, and `--dil-code-title`. Markdown fences are also supported for literal code; the dedicated `CodeBlock` provides editing and copy controls.

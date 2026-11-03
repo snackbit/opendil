@@ -1,0 +1,269 @@
+---
+import Layout from "../site/layouts/site-layout.astro";
+import { HeroDemo } from "../site/components/hero-demo";
+import { encode } from "gpt-tokenizer/encoding/o200k_base";
+import { featuredExamples } from "../examples/catalog";
+import {
+  Activity,
+  SlidersHorizontal,
+  Network,
+  Layers,
+  Cpu,
+  ShieldCheck,
+} from "lucide-react";
+import CodeSample from "../site/components/code-sample.astro";
+import "../site/styles/hero-preview.css";
+import "../site/styles/architecture.css";
+import "../site/styles/workbench.css";
+import { teamBudget } from "../examples/team-budget";
+import { sitePath, repository } from "../site/links";
+import pricing from "../site/assets/pricing.png";
+import charts from "../site/assets/charts.png";
+import diagram from "../site/assets/graph.png";
+const cards = [
+  {
+    id: "charts",
+    title: "Reactive charts",
+    category: "DATA",
+    description: "Hover detail and multi-series selection from a document.",
+    image: charts,
+  },
+  {
+    id: "pricing",
+    title: "Pricing calculator",
+    category: "FORMS",
+    description: "A seat slider and billing toggle update a derived total.",
+    image: pricing,
+  },
+  {
+    id: "graph",
+    title: "Dependency graph",
+    category: "DIAGRAMS",
+    description: "Nodes and edges describe topology; selection reveals detail.",
+    image: diagram,
+  },
+];
+const installation =
+  "npm install @snackbit/opendil react react-dom\nnpx opendil copy-assets --out public/opendil";
+const tokenCounts = Object.fromEntries(
+  featuredExamples.map((example) => [
+    example.id,
+    encode(example.source()).length,
+  ]),
+);
+---
+
+<Layout
+  title="OpenDIL — Generate interfaces. Keep control."
+  description="A React renderer for streaming, interactive interfaces. Compose Markdown, controls, charts, and state in one declarative document."
+>
+  <section class="od-hero od-container">
+    <div class="od-grid-motif" aria-hidden="true">
+      <i />
+      <i />
+      <i />
+      <i />
+    </div>
+    <div class="od-eyebrow">OPEN SOURCE · INTELLIGENT UI</div>
+    <h1>
+      Generate interfaces.
+      <br />
+      <span>Keep control.</span>
+    </h1>
+    <p class="od-hero-copy">
+      Build ChatGPT-style interactive interfaces in your React app. OpenDIL
+      renders DIL (Declarative Interface Language), combining Markdown, charts,
+      and interactive controls in one streaming document.
+    </p>
+    <div class="od-hero-actions">
+      <a class="od-link-button" data-primary href={sitePath("demo/")}>
+        Open playground <span aria-hidden="true">↗</span>
+      </a>
+      <a class="od-link-button" href={sitePath("docs/getting-started/")}>
+        Read the docs <span aria-hidden="true">→</span>
+      </a>
+    </div>
+    <div class="od-hero-meta">
+      <span>Apache 2.0</span>
+      <span>React 19</span>
+      <span>Your interface. Your application.</span>
+    </div>
+    <aside class="od-hero-install" aria-label="Install OpenDIL">
+      <CodeSample code={installation} language="bash" label="Getting started" />
+      <p class="od-workbench-note">
+        <code>copy-assets</code> is only required for iframe isolation.
+      </p>
+    </aside>
+  </section>
+  <section class="od-container" aria-label="Source to interface">
+    <div class="od-preview-frame">
+      <HeroDemo tokenCounts={tokenCounts} client:only="react">
+        <div slot="fallback" class="od-hero-demo-fallback">
+          <pre>{teamBudget}</pre>
+          <div class="od-live-placeholder">Loading the live renderer…</div>
+        </div>
+      </HeroDemo>
+    </div>
+  </section>
+  <section class="od-section od-container">
+    <div class="od-columns">
+      <div class="od-column">
+        <Activity className="od-feature-icon" size={20} aria-hidden="true" />
+        <h3>Useful before it’s finished.</h3>
+        <p>
+          Readers can interact with content that has arrived while the rest
+          keeps streaming. Pass in the growing text; OpenDIL handles the
+          rendering.
+        </p>
+      </div>
+      <div class="od-column">
+        <Layers className="od-feature-icon" size={20} aria-hidden="true" />
+        <h3>More than a text response.</h3>
+        <p>
+          Mix Markdown, charts, tables, diagrams, and form controls. Add
+          reactive state and expressions to make the document respond to its
+          reader.
+        </p>
+      </div>
+      <div class="od-column">
+        <ShieldCheck className="od-feature-icon" size={20} aria-hidden="true" />
+        <h3>A boundary you can inspect.</h3>
+        <p>
+          The default renderer uses a sandboxed iframe and bounded expression
+          workers. Choose host or shadow mode when your application needs custom
+          components.
+        </p>
+      </div>
+    </div>
+  </section>
+  <section class="od-section od-container">
+    <div class="od-eyebrow">UNDER THE HOOD</div>
+    <h2>Performant prefix memoization and virtualization</h2>
+    <p class="od-section-intro">
+      Send the growing source prefix. OpenDIL keeps the parsed document and
+      existing control state, then processes the new suffix.
+    </p>
+    <div
+      class="od-runtime-diagram"
+      aria-label="A cached source prefix and a new chunk feed the parser, worker, and visible interface"
+    >
+      <div class="od-prefix-graphic">
+        <span class="od-prefix-cached">
+          Parsed prefix <small>memoized · reused</small>
+        </span>
+        <span class="od-prefix-new">New chunk</span>
+      </div>
+      <div class="od-runtime-path">
+        <span>
+          <Layers size={18} /> Incremental parser
+        </span>
+        <i class="od-runtime-connector" aria-hidden="true" />
+        <span>
+          <Cpu size={18} /> QuickJS worker
+        </span>
+        <i class="od-runtime-connector" aria-hidden="true" />
+        <span>
+          <Activity size={18} /> React interface
+        </span>
+      </div>
+    </div>
+    <div class="od-runtime-details">
+      <div>
+        <h3>Reuse the prefix</h3>
+        <p>
+          The completed source prefix is memoized: each new chunk extends the
+          parsed document instead of rebuilding it. Existing controls keep their
+          identity, state, and focus. Expression results are cached too, then
+          refreshed when their dependencies change.
+        </p>
+      </div>
+      <div>
+        <h3>Mount what’s visible</h3>
+        <div class="od-virtual-graphic" aria-hidden="true">
+          <i />
+          <i />
+          <i data-visible />
+          <i data-visible />
+          <i data-visible />
+          <i />
+          <i />
+        </div>
+        <p>
+          Large flows and repeated tables use virtualization. Offscreen content
+          leaves the DOM while its document state remains.
+        </p>
+      </div>
+      <div>
+        <h3>Choose the boundary</h3>
+        <p>
+          <strong>Iframe + CSP</strong> provides the strongest security and
+          isolation. <strong>Shadow DOM</strong> isolates styles.{" "}
+          <strong>Host</strong> renders directly in your application’s DOM with
+          the lowest isolation overhead.
+        </p>
+        <p>
+          All modes execute expressions in separate, isolated QuickJS runtimes
+          with bounded memory and execution time.
+        </p>
+        <a class="od-text-link" href={sitePath("docs/isolation/")}>
+          Compare isolation modes
+        </a>
+      </div>
+    </div>
+  </section>
+  <section class="od-section od-container" id="examples">
+    <div class="od-section-top">
+      <div>
+        <div class="od-eyebrow">EXAMPLE SURFACES</div>
+        <h2>Interfaces that arrive ready to use.</h2>
+      </div>
+      <a class="od-text-link" href={sitePath("demo/")}>
+        Explore the examples ↗
+      </a>
+    </div>
+    <p class="od-section-intro">
+      Calculators, tables, charts, and diagrams, described in the same document
+      language.
+    </p>
+    <div class="od-example-grid">
+      {cards.map((card) => (
+        <a class="od-example-card" href={sitePath("demo/" + card.id + "/")}>
+          <img
+            src={card.image.src}
+            width={card.image.width}
+            height={card.image.height}
+            alt={card.description}
+            loading="lazy"
+          />
+          <div class="od-example-card-body">
+            <span class="od-column-label od-category">
+              {card.id === "charts" ? (
+                <Activity size={14} />
+              ) : card.id === "pricing" ? (
+                <SlidersHorizontal size={14} />
+              ) : (
+                <Network size={14} />
+              )}
+              {card.category}
+            </span>
+            <h3>{card.title}</h3>
+            <p>{card.description}</p>
+            <span class="od-text-link">Open this example ↗</span>
+          </div>
+        </a>
+      ))}
+    </div>
+  </section>
+  <section class="od-open-line od-container">
+    <div>
+      <h2>Open source. Open to what you build.</h2>
+      <p>
+        Read the language. Explore the runtime. Make it part of your
+        application.
+      </p>
+    </div>
+    <a class="od-link-button" href={repository}>
+      Explore on GitHub ↗
+    </a>
+  </section>
+</Layout>

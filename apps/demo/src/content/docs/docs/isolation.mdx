@@ -1,0 +1,48 @@
+---
+title: Isolation
+description: Choose a rendering boundary without changing DIL expression execution.
+---
+
+Every mode evaluates document expressions in a separate bounded QuickJS worker. The rendering boundary determines where React components and styles live.
+
+The website demos use Shadow DOM by default. The public `DilRenderer` component defaults to iframe isolation; choose a different mode explicitly in your application.
+
+| Mode       | DOM and styles                         | Security boundary                                                   | Custom components               |
+| ---------- | -------------------------------------- | ------------------------------------------------------------------- | ------------------------------- |
+| `isolated` | Opaque-origin iframe                   | Sandboxed frame with restrictive CSP and denied network connections | Requires a custom runtime build |
+| `shadow`   | Open ShadowRoot with installed styles  | Shares the host page's JavaScript privileges                        | Supported                       |
+| `host`     | Renderer-scoped styles in the page DOM | Shares the host page's privileges                                   | Supported                       |
+
+## Iframe: the default
+
+```tsx
+<DilRenderer text={source} runtimeBaseUrl="/opendil/" />
+```
+
+This mode requires `copy-assets`; follow the [installation steps](../getting-started/#install) and self-host the runtime assets from the same package version. Host and Shadow DOM modes bundle their runtime with your application and do not need this copy step.
+
+Keep `sandbox="allow-scripts"` and the supplied CSP intact. Do not add `allow-same-origin` or expose browser execution capabilities to authored expressions. The frame refuses to start outside an opaque origin. Also serve `frame.html` with these response headers, so the browser enforces the sandbox and other sites cannot embed it; list your application's origin instead of `'self'` when the assets live elsewhere:
+
+```http
+Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'
+```
+
+## Shadow DOM
+
+```tsx
+<DilRenderer mode="shadow" text={source} tokens={{ "--primary": "#156f55" }} />
+```
+
+Stock styles are installed inside the ShadowRoot before content appears. Popovers and tooltips stay in that tree. Page CSS does not style its internals; use `shadowStyles` for trusted application styles or compiled utilities.
+
+Shadow DOM is a DOM/style boundary, not a replacement for the iframe's containment. Consumer React components still have access to the application, network, and host DOM.
+
+## Host DOM
+
+```tsx
+<DilRenderer mode="host" text={source} components={components} />
+```
+
+Use host mode for trusted documents and trusted React extensions. Package styles are scoped to `.dil-scope` and omit a global reset. Validate custom-component attributes and URLs before using them.
+
+The [isolation demo](../../demo/isolation/) intentionally exercises execution and rendering limits. See [Security](https://github.com/snackbit/opendil/blob/main/SECURITY.md) for reporting vulnerabilities and the supported security target.
