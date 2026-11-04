@@ -165,7 +165,7 @@ console.log(JSON.stringify(specs));`,
     `
 import { createRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { DilRenderer, type DilComponentProps, type DilRendererHandle } from "@snackbit/opendil";
+import { DilRenderer, type DilComponentProps, type DilRendererHandle, type DilRenderError } from "@snackbit/opendil";
 import { Button, Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectTrigger, SelectValue } from "@snackbit/opendil/ui";
 import "@snackbit/opendil/styles.css";
 function Custom({children, className}: DilComponentProps) { return <aside className={className} aria-label="Consumer extension">{children}</aside>; }
@@ -178,9 +178,17 @@ function LayoutProbe({mode}: {mode: "host" | "shadow"}) {
   function next() { setStep(value => Math.min(chunks.length - 1, value + 1)); }
   return <section aria-label={mode + " layout"}><button onClick={next}>Next chunk</button><DilRenderer mode={mode} text={chunks.slice(0, step + 1).join("")} isStreaming={step < chunks.length - 1} /></section>;
 }
+// A response cut off after malformed source, finalized without new text as after Stop.
+function StopProbe({mode}: {mode: "isolated" | "host" | "shadow"}) {
+  const [streaming, setStreaming] = useState(true);
+  const [problems, setProblems] = useState<DilRenderError[]>([]);
+  const text = '<slider max=5 value="1"/><grid><box border>First card</box><box border>Thi';
+  const props = { text, isStreaming: streaming, onError: (problem: DilRenderError) => setProblems(list => [...list, problem]) };
+  return <section aria-label={mode + " stop"}><button onClick={() => setStreaming(false)}>Stop</button><output aria-label={mode + " problems"}>{problems.map(problem => problem.kind + "@" + problem.offset).join(" ")}</output>{mode === "isolated" ? <DilRenderer {...props} runtimeBaseUrl="/consumer/opendil/" /> : <DilRenderer {...props} mode={mode} />}</section>;
+}
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
-createRoot(root).render(<>
+createRoot(root).render(location.search === "?stop" ? <><StopProbe mode="isolated" /><StopProbe mode="host" /><StopProbe mode="shadow" /></> : <>
 <Button>Package UI</Button>
 <Select><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></Select>
 <Tabs defaultValue="source"><TabsList><TabsTrigger value="source">Source</TabsTrigger></TabsList><TabsContent value="source">Content</TabsContent></Tabs>
@@ -274,9 +282,9 @@ createRoot(root).render(<>
           : file.endsWith(".css")
             ? "text/css"
             : "application/octet-stream";
-      response
-        .writeHead(200, { "Content-Type": type })
-        .end(await readFile(file));
+      // Read first: a missing file must still be answered with a 404.
+      const body = await readFile(file);
+      response.writeHead(200, { "Content-Type": type }).end(body);
     } catch {
       response.writeHead(404).end();
     }
@@ -362,6 +370,29 @@ createRoot(root).render(<>
       .poll(async () => (await box.boundingBox())?.height ?? Infinity)
       .toBeLessThan(grown.height);
   }
+  await page.goto("http://127.0.0.1:" + address.port + "/consumer/?stop");
+  for (const mode of ["isolated", "host", "shadow"]) {
+    const probe = page.getByLabel(mode + " stop", { exact: true });
+    const ui = mode === "isolated" ? probe.frameLocator("iframe") : probe;
+    await expect(ui.getByText("First card", { exact: true })).toBeVisible();
+    await expect(
+      ui.getByText("Receiving document", { exact: true }),
+    ).toBeVisible();
+    await probe.getByRole("button", { name: "Stop", exact: true }).click();
+    await expect(ui.getByText("Incomplete", { exact: true })).toBeVisible();
+    await expect(
+      ui.getByText("This response ended before it was finished."),
+    ).toBeVisible();
+    await expect(
+      ui.getByText("This part of the response couldn't be shown."),
+    ).toBeVisible();
+    await expect(probe.getByLabel(mode + " problems")).toHaveText(
+      "syntax@0 incomplete@25",
+    );
+  }
+  if (errors.length) throw new Error(errors.join("\n"));
+  // Rebuild before opening the page: a page still loading while the build
+  // replaces its assets fails to fetch the lazy host chunk.
   const main = await readFile(join(scratch, "main.tsx"), "utf8");
   await writeFile(
     join(scratch, "main.tsx"),
@@ -380,7 +411,7 @@ createRoot(root).render(<>
     "--base",
     "/consumer/",
   ]);
-  await page.reload();
+  await page.goto("http://127.0.0.1:" + address.port + "/consumer/");
   const hostExtension = page
     .locator('[data-dil-mode="host"]')
     .first()
@@ -398,7 +429,7 @@ createRoot(root).render(<>
     );
   if (errors.length) throw new Error(errors.join("\n"));
   console.log(
-    "Verified packed package contents, declarations, agent spec exports, CLI, all rendering modes, scoped CSS, stable streaming layout, and /consumer/ runtime paths: " +
+    "Verified packed package contents, declarations, agent spec exports, CLI, all rendering modes, scoped CSS, stable streaming layout, interrupted documents with onError, and /consumer/ runtime paths: " +
       archive,
   );
 } catch (error) {

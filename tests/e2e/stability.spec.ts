@@ -1,5 +1,7 @@
 import { expect, test } from "@playwright/test";
-import { dilPage, openShowcase } from "./dil-page";
+import { dilPage, openShowcase, scrollPreview } from "./site-demo-page";
+
+/* stability.spec.ts, run against the Next.js playground with URLs relative to SITE_BASE_PATH. */
 test.use({
   viewport: { width: 1250, height: 1212 },
   video: { mode: "on", size: { width: 1250, height: 1212 } },
@@ -10,6 +12,8 @@ test("streamed Markdown keeps already presented element identities", async ({
   await openShowcase(page);
   await page.getByRole("button", { name: "Replay", exact: true }).click();
   const ui = dilPage(page);
+  // Replay mounts a new renderer once its tokens are prepared.
+  await expect(ui.locator('[data-complete="false"]')).toBeAttached();
   const heading = ui.getByRole("heading", {
     name: "Interactive workspace",
     exact: true,
@@ -60,17 +64,12 @@ test("fast viewport replacement does not exhaust execution or rendering resource
       await page.getByRole("radio", { name: fixture, exact: true }).click();
       await expect(ui.locator('[data-complete="true"]')).toBeAttached();
       for (let index = 0; index < 28; index++) {
-        await page.evaluate(
-          (offset) => {
-            window.scrollTo(0, offset);
-            return new Promise<void>((done) =>
-              requestAnimationFrame(() => requestAnimationFrame(() => done())),
-            );
-          },
+        await scrollPreview(
+          page,
           [0, 80000, 400000, 120000, 700000, 250000, 1200000][index % 7] ?? 0,
         );
       }
-      await page.evaluate(() => window.scrollTo(0, 0));
+      await scrollPreview(page, 0);
       const first =
         fixture === "Large document" ? "Select record 1" : "Inspect Entry 1";
       await expect(

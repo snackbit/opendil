@@ -1,0 +1,133 @@
+---
+title: Tables
+description: Build tables with table, table-row, and table-cell, including components in cells and thousands of repeated rows.
+---
+
+Use a Markdown table for plain text. Use `table` when cells contain components or the rows come from data.
+
+<LiveExample id="table" />
+
+## Markdown table or `table`?
+
+- **Markdown table:** the cells hold text and inline Markdown. It has a real header row, so screen readers announce column names. Choose it whenever the content is plain text.
+- **`table`:** the cells can hold badges, buttons, layout, or a small chart, and `{#each}` can produce the rows from an array. There is no header row; use a first row of labels instead.
+
+## `table`
+
+The container for rows.
+
+**Usage**
+
+```dil
+<table>
+  <table-row><table-cell><text weight="medium">Name</text></table-cell><table-cell><text weight="medium">Units</text></table-cell></table-row>
+  <table-row><table-cell>Alpha</table-cell><table-cell>12</table-cell></table-row>
+</table>
+```
+
+**Attributes**
+
+<ComponentProps name="table" />
+
+A `table` contains only `table-row` children, which contain only `table-cell` children. `{#each}` and `{#if}` may produce rows. There are no header, section, caption, `colSpan`, or `rowSpan` tags. Give every row the same number of cells.
+
+**Accessibility:** put a heading or a sentence before the table that says what it shows, and make the first row a row of clear column labels.
+
+**Styling:** `classNames` does not apply to table tags.
+
+<SpecExcerpt name="table" />
+
+## `table-row`
+
+One row of cells.
+
+**Usage**
+
+```dil
+{@body const records = [{id:"a",name:"Alpha",amount:12},{id:"b",name:"Beta",amount:18}]}
+<table>
+  {#each records as item}<table-row><table-cell>{item.name}</table-cell><table-cell>{item.amount}</table-cell></table-row>{/each}
+</table>
+```
+
+A condition can add or remove a row:
+
+```dil
+{@body const [showExtra,setShowExtra] = DIL.useState(false)}
+<checkbox checked={showExtra} onChange={setShowExtra} lineThrough={false}>Show extra row</checkbox>
+<table>
+  <table-row><table-cell>Alpha</table-cell><table-cell>12</table-cell></table-row>
+  {#if showExtra}<table-row><table-cell>Beta</table-cell><table-cell>18</table-cell></table-row>{/if}
+</table>
+```
+
+**Attributes**
+
+<ComponentProps name="table-row" />
+
+A row has no click action or selected state. To act on a row, put a `button` in one of its cells.
+
+**Accessibility:** give a button in a row a label that names the row, such as `aria-label="Remove Alpha"`, so the reader knows which row it affects.
+
+**Styling:** `classNames` does not apply to `table-row`.
+
+<SpecExcerpt name="table-row" />
+
+## `table-cell`
+
+One cell. It can hold any content.
+
+**Usage**
+
+```dil
+<table>
+  <table-row>
+    <table-cell padding={3}><row gap={2} align="center"><icon name="package-check"/><text>Alpha</text></row></table-cell>
+    <table-cell><badge color="success">Ready</badge></table-cell>
+  </table-row>
+</table>
+```
+
+**Attributes**
+
+<ComponentProps name="table-cell" />
+
+`table-cell` accepts the [shared layout attributes](/docs/components/layout/#shared-layout-attributes), such as `padding` and `width`. They style the cell; they do not change the table's structure.
+
+**Accessibility:** keep each cell's content short and readable on its own.
+
+**Styling:** `classNames` does not apply to `table-cell`.
+
+<SpecExcerpt name="table-cell" />
+
+## Show thousands of rows
+
+When `{#each}` produces more than 100 rows, the renderer virtualizes them. It mounts only the rows near the visible area and keeps native table rows, with empty spacer rows standing in for the rest. Give every record a stable `id`, so that inputs and buttons in a row keep their state while rows mount and unmount.
+
+Rows mount as the page scrolls, or as your chat's message list scrolls when the answer renders inside one, in every rendering mode. If they stay blank, see [Name the scroll container](/docs/performance/#name-the-scroll-container).
+
+This example repeats a row for 5,000 records. It is also available as a full page at [/demo/long-table/](/demo/long-table/).
+
+<LiveExample id="long-table" />
+
+For long conversations with many large answers, see [Long conversations and performance](/docs/performance/).
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Charts"
+    href="/docs/components/charts/"
+    description="Plot the same records as a chart, next to the table."
+  />
+  <Card
+    title="Layout"
+    href="/docs/components/layout/"
+    description="See every layout attribute a table cell accepts."
+  />
+  <Card
+    title="Long conversations and performance"
+    href="/docs/performance/"
+    description="Keep long answers and long chats fast."
+  />
+</Cards>

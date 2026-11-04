@@ -1,0 +1,305 @@
+/* Site shell: header, footer, menus, and the controls shared by every route. */
+html {
+  scrollbar-gutter: stable;
+  overflow-y: scroll;
+  scroll-padding-top: calc(var(--od-header-height) + 32px);
+}
+/* The root owns the scrollbar gutter; Radix must not reserve a second one on the body. */
+html body[data-scroll-locked] {
+  overflow: visible !important;
+  margin-right: 0 !important;
+  --removed-body-scroll-bar-size: 0px !important;
+}
+body {
+  background: var(--od-canvas);
+  color: var(--od-text);
+  font: 400 16px/1.55 var(--od-font-body);
+}
+.od-container {
+  width: min(calc(100% - 2 * var(--od-page-gutter)), var(--od-page-max));
+  margin-inline: auto;
+}
+:is(.od-header, .od-footer, .od-menu) :is(a, button):focus-visible {
+  outline: 2px solid var(--od-focus);
+  outline-offset: 3px;
+}
+.od-skip {
+  position: fixed;
+  transform: translateY(-150%);
+  z-index: 60;
+  top: 8px;
+  left: 12px;
+  background: var(--od-surface);
+  color: var(--od-text);
+  padding: 12px;
+  border: 1px solid var(--od-border);
+  border-radius: var(--od-radius-md);
+}
+.od-skip:focus {
+  transform: none;
+}
+#od-content:focus,
+#od-content main:focus {
+  outline: none;
+}
+
+/* Header: z-index 40 keeps Fumadocs drawers and dialogs (z-40 and up, later in the DOM) above it. */
+.od-site-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  box-sizing: border-box;
+  height: var(--od-header-height);
+  border-bottom: 1px solid var(--od-border);
+  background: var(--od-canvas);
+}
+.od-header {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 40px;
+  width: min(calc(100% - 2 * var(--od-page-gutter)), var(--od-page-max));
+  margin: auto;
+  color: var(--od-text);
+  font: 500 14px var(--od-font-body);
+}
+.od-header a,
+.od-footer a {
+  color: inherit;
+  text-decoration: none;
+}
+.od-brand {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  font: 600 22px var(--od-font-display);
+  letter-spacing: -0.04em;
+  white-space: nowrap;
+}
+.od-brand-dot {
+  color: var(--od-accent);
+}
+.od-primary-nav {
+  display: flex;
+  gap: 28px;
+  align-items: center;
+  height: 100%;
+}
+.od-primary-nav a {
+  position: relative;
+  display: flex;
+  align-items: center;
+  height: 100%;
+  color: var(--od-text-secondary);
+  transition: color 140ms ease-out;
+}
+.od-primary-nav a:hover,
+.od-primary-nav a[aria-current="page"] {
+  color: var(--od-text);
+}
+.od-primary-nav a[aria-current="page"]::after {
+  content: "";
+  position: absolute;
+  bottom: -1px;
+  height: 2px;
+  left: 0;
+  right: 0;
+  background: var(--od-accent);
+}
+.od-header-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+.od-search {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  width: 160px;
+  min-height: 40px;
+  padding: 0 8px 0 12px;
+  border: 1px solid var(--od-border-strong);
+  border-radius: var(--od-radius-md);
+  background: var(--od-surface);
+  color: var(--od-text);
+  font: 500 14px var(--od-font-body);
+  cursor: pointer;
+  transition: border-color 140ms ease-out;
+}
+.od-search:hover {
+  border-color: var(--od-text-muted);
+}
+.od-search kbd {
+  display: inline-flex;
+  gap: 3px;
+  margin-left: auto;
+  padding: 1px 6px;
+  border-radius: var(--od-radius-xs);
+  background: var(--od-surface-muted);
+  color: var(--od-text-secondary);
+  font: 500 12px var(--od-font-body);
+}
+.od-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 0;
+  border-radius: var(--od-radius-md);
+  background: transparent;
+  color: var(--od-text);
+  cursor: pointer;
+  transition: background-color 140ms ease-out;
+}
+.od-icon-button:hover,
+.od-icon-button[data-state="open"] {
+  background: var(--od-surface-muted);
+}
+/* The theme toggle shows the theme it switches to; the html class decides before hydration. */
+:root.dark .od-theme-icon-light,
+:root:not(.dark) .od-theme-icon-dark {
+  display: none;
+}
+.od-search-icon {
+  display: none;
+}
+.od-github {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 40px;
+}
+.od-star-count {
+  color: var(--od-text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+/* Floating menus. */
+.od-menu {
+  z-index: 100;
+  min-width: 160px;
+  padding: 6px;
+  border: 1px solid var(--od-border);
+  border-radius: var(--od-radius-md);
+  background: var(--od-surface);
+  color: var(--od-text);
+  box-shadow: var(--od-shadow-overlay);
+  font: 400 14px var(--od-font-body);
+}
+.od-menu-item {
+  position: relative;
+  padding: 9px 12px 9px 32px;
+  border-radius: var(--od-radius-xs);
+  outline: none;
+  cursor: pointer;
+}
+.od-menu-item[data-highlighted] {
+  background: var(--od-accent-soft);
+}
+/* A flex box drops the inline icon's baseline gap, so the check centers on the item's text line. */
+.od-menu-check {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  display: flex;
+  transform: translateY(-50%);
+}
+
+/* Footer. */
+.od-footer {
+  display: flex;
+  align-items: center;
+  gap: 24px;
+  padding-block: 32px;
+  color: var(--od-text-secondary);
+  font-size: 12px;
+  flex-wrap: wrap;
+}
+.od-footer .od-brand {
+  font-size: 18px;
+  color: var(--od-text);
+}
+.od-footer nav {
+  margin-left: auto;
+  display: flex;
+  gap: 20px;
+  flex-wrap: wrap;
+}
+.od-footer a:hover {
+  color: var(--od-text);
+}
+.od-footer-credit {
+  flex-basis: 100%;
+  margin: 0;
+}
+.od-footer .od-footer-credit a {
+  color: var(--od-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+@media (max-width: 639px) {
+  .od-header {
+    gap: 12px;
+  }
+  .od-brand {
+    font-size: 20px;
+  }
+  .od-primary-nav {
+    gap: 16px;
+  }
+  .od-primary-nav a:first-child,
+  .od-github {
+    display: none;
+  }
+  .od-header-actions {
+    gap: 4px;
+  }
+  .od-footer {
+    gap: 16px;
+  }
+  .od-footer nav {
+    width: 100%;
+    margin: 0;
+    gap: 16px;
+  }
+}
+/* Phones: the docs header holds the brand, the other section, and three icon buttons. */
+@media (max-width: 479px) {
+  .od-header {
+    gap: 8px;
+  }
+  .od-brand {
+    font-size: 18px;
+  }
+  .od-primary-nav a[aria-current="page"] {
+    display: none;
+  }
+  .od-header-actions {
+    gap: 2px;
+  }
+  .od-header-actions .od-icon-button {
+    width: 36px;
+    height: 36px;
+  }
+}
+@media (max-width: 1023px) {
+  .od-search {
+    display: none;
+  }
+  .od-search-icon {
+    display: inline-flex;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

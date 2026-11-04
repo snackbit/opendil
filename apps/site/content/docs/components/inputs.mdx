@@ -1,0 +1,189 @@
+---
+title: Inputs
+description: Collect text, numbers, and choices with input, slider, checkbox, and radio-group, bound to the answer's state.
+---
+
+Inputs change the answer's state. Their callbacks receive plain values, never browser events.
+
+The model writes these tags in its answer. For state, expressions such as `{@body …}`, and `{#if}`, see the [DIL tour](/docs/language/).
+
+<LiveExample id="form" />
+
+## Bind an input to state
+
+Every input follows the same controlled pattern. Declare state with `{@body const [name,setName] = DIL.useState("")}`, pass the value to the input, and pass the setter as its callback: `value={name} onChange={setName}`. Any text or condition that reads `name` updates as the reader types.
+
+Two behaviors keep inputs responsive while the answer streams:
+
+- An input shows each keystroke immediately while the expression engine (a sandboxed JavaScript engine, QuickJS, in a Web Worker) applies the change. A slow update never overwrites newer typing.
+- An input stays disabled until its tag is complete, even with `disabled={false}`. It is also disabled after the expression engine stops at one of its limits; see [Expression limits](/docs/limits/#expressions).
+
+To choose between a few views, use [`segmented-control`](/docs/components/actions/#segmented-control) on the Actions and views page.
+
+## `input`
+
+A single-line text field.
+
+**Usage**
+
+```dil
+{@body const [name,setName] = DIL.useState("")}
+<input aria-label="Display name" placeholder="Your name" value={name} onChange={setName}/>
+<text>Hello, {name.trim() || "reader"}.</text>
+```
+
+**Attributes**
+
+<ComponentProps name="input" />
+
+**Callback value:** `onChange` receives the whole current text as a string.
+
+**Accessibility:** give every input an `aria-label`. A placeholder disappears as soon as the reader types, so it is not a label. A visible [`label`](/docs/components/text/#label) next to the input is not connected to it either.
+
+**Styling:** `classNames.input` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="input" />
+
+## `slider`
+
+A single number in a range.
+
+**Usage**
+
+```dil
+{@body const [level,setLevel] = DIL.useState(40)}
+<slider aria-label="Level" min={0} max={100} step={5} value={level} onChange={setLevel} marks={[{label:"Low"},{label:"High"}]}/>
+<text tabularNums>Level: {level}%</text>
+```
+
+**Attributes**
+
+<ComponentProps name="slider" />
+
+Keep `min` below `max` and `step` above 0. `marks` are labels spread evenly along the track. A mark labeled "50" does not sit at the value 50.
+
+**Callback value:** `onChange` receives the new number.
+
+**Accessibility:** give the slider an `aria-label`. Arrow keys change the value. Show the current value as text when the exact number matters.
+
+**Styling:** `classNames.slider` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="slider" />
+
+## `checkbox`
+
+An on or off choice, such as a checklist item or a setting.
+
+**Usage**
+
+```dil
+{@body const [done,setDone] = DIL.useState(false)}
+<checkbox checked={done} onChange={setDone}>Review Alpha</checkbox>
+<caption>{done ? "Review complete" : "Review pending"}</caption>
+```
+
+**Attributes**
+
+<ComponentProps name="checkbox" />
+
+By default a checked checkbox strikes through its label, which suits a task list. Set `lineThrough={false}` for settings and preferences.
+
+**Callback value:** `onChange` receives `true` or `false`.
+
+**Accessibility:** the children are the checkbox's visible, clickable label. Space toggles it.
+
+**Styling:** `classNames.checkbox` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="checkbox" />
+
+## `radio-group`
+
+One choice among a few visible options.
+
+**Usage**
+
+```dil
+{@body const [billing,setBilling] = DIL.useState("monthly")}
+<radio-group aria-label="Billing" value={billing} onChange={setBilling} direction="row">
+  <radio value="monthly">Monthly</radio><radio value="annual">Annual</radio>
+</radio-group>
+<text>Billing: {billing}</text>
+```
+
+**Attributes**
+
+<ComponentProps name="radio-group" />
+
+Options stack vertically by default. `direction="row"` lays them out horizontally and wraps them when space runs out.
+
+**Callback value:** `onChange` receives the `value` of the selected `radio` as a string.
+
+**Accessibility:** give the group an `aria-label`. Arrow keys move the selection between options.
+
+**Styling:** `classNames["radio-group"]` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="radio-group" />
+
+## `radio`
+
+One option inside a `radio-group`.
+
+**Usage**
+
+```dil
+{@body const choices = [{id:"small",label:"Small"},{id:"large",label:"Large"}]}
+{@body const [size,setSize] = DIL.useState("small")}
+<radio-group aria-label="Size" value={size} onChange={setSize}>
+  {#each choices as choice}<radio value={choice.id}>{choice.label}</radio>{/each}
+</radio-group>
+<caption>Selected: {size}</caption>
+```
+
+**Attributes**
+
+<ComponentProps name="radio" />
+
+Place each `radio` directly inside a `radio-group`, or produce them with `{#each}` or `{#if}`. Give every option a unique, nonempty `value`.
+
+**Accessibility:** the children are the option's visible, clickable label.
+
+**Styling:** `classNames.radio` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="radio" />
+
+## Validate input
+
+DIL has no `select`, `textarea`, `type`, `required`, `pattern`, or form submit. Validate with a derived value instead: compute whether the input is valid, show a visible message, disable the action, and check validity again inside the handler.
+
+```dil
+{@body const [name,setName] = DIL.useState("")}
+{@body const valid = name.trim().length >= 2 && name.trim().length <= 80}
+<box gap={3} maxWidth={420}>
+  <label>Name</label>
+  <input aria-label="Name" value={name} onChange={setName} placeholder="At least two characters"/>
+  {#if !valid}<caption color="danger">Enter a name between 2 and 80 characters.</caption>{/if}
+  <button disabled={!valid} onClick={() => { if (valid) GenUI.copy(name.trim()); }}>Copy name</button>
+</box>
+```
+
+Nothing here submits or saves the name. The button copies it to the clipboard, the only action an answer can trigger in your app.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Actions and views"
+    href="/docs/components/actions/"
+    description="Act on input values with buttons and switch views with a segmented control."
+  />
+  <Card
+    title="DIL tour"
+    href="/docs/language/"
+    description="Learn how state, derived values, and callbacks work."
+  />
+  <Card
+    title="Custom components"
+    href="/docs/custom-components/"
+    description="Replace a built-in input with a component from your design system."
+  />
+</Cards>

@@ -1,0 +1,346 @@
+---
+title: Streaming
+description: "Feed a growing answer to DilRenderer, finish it, fade in new content, follow the stream, and control how often the screen updates."
+---
+
+A model's answer arrives in pieces. `DilRenderer` shows each piece as soon as it is complete enough to use, and keeps controls usable while the rest arrives. This page explains the contract between your app and the renderer while an answer streams, and the options that tune what readers see.
+
+## What you will learn
+
+- How to pass a growing answer to the renderer and finish it.
+- What readers see while a tag, an expression, or a block is still incomplete.
+- How to handle an answer that stops early.
+- How to fade in new content and follow the stream as it grows.
+- How to limit how often the screen updates.
+
+**Prerequisites:** an app that renders answers with `DilRenderer`. [Quickstart](/docs/getting-started/) sets one up, and [Add OpenDIL to your chat app](/docs/chat-integration/) connects it to your model.
+
+## Pass the text as it grows
+
+Give the renderer all the text received so far in `text`, and keep `isStreaming` `true` until the model is done:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer text={text} isStreaming={isStreaming} showStatus={false} />
+  );
+}
+```
+
+`showStatus={false}` hides the "Receiving document", "Incomplete", and "Complete" label, which chats rarely want. Give every answer its own renderer with a stable `key`:
+
+```tsx title="components/message-list.tsx"
+import { Answer } from "./answer";
+
+interface AssistantMessage {
+  id: string;
+  text: string;
+  isStreaming: boolean;
+}
+
+export function MessageList({ messages }: { messages: AssistantMessage[] }) {
+  return messages.map((message) => (
+    <Answer
+      key={message.id}
+      text={message.text}
+      isStreaming={message.isStreaming}
+    />
+  ));
+}
+```
+
+The renderer expects append-only text: each new `text` starts with the previous one.
+
+- **Append only.** The renderer remembers how much text it has already seen and sends only the new end to its parser. It does not compare the whole string, so an edit in the middle goes unnoticed.
+- **Pause** by leaving `text` unchanged while `isStreaming` stays `true`. Nothing times out.
+- **Finish** by setting `isStreaming={false}`, even when the last update adds no text. The renderer then shows any trailing content, stops its parser, and treats the text as final.
+- **Replace, edit, or replay** an answer with a new `key`. Text that gets shorter, or grows after `isStreaming` became `false`, shows "Start a new renderer instance before replacing or restarting the document." In iframe mode, shorter text shows "Start a new message instance before replacing its source."
+- **Count in UTF-16 code units.** Lengths and offsets are JavaScript string lengths. If you read bytes from the network, decode them with a `TextDecoder` and `{ stream: true }` before you append them, so a character split across two chunks stays whole. [Add OpenDIL to your chat app](/docs/chat-integration/) shows this for `fetch`.
+
+<Callout type="warn" title="Do not rewrite text you already passed">
+  Trimming whitespace, removing a code fence the model opened, or any other
+  cleanup that can remove characters from the end of `text` breaks the
+  append-only rule. Clean up only text you have not passed to the renderer yet.
+  To remove a ` ```dil ` fence safely, use the helper in [Strip a code fence
+  the model added](/docs/chat-integration/#strip-a-code-fence-the-model-added).
+</Callout>
+
+## Know what readers see while an answer streams
+
+The renderer does not draw placeholders of guessed size. It shows each part once it can show the real thing:
+
+| When the text…                                          | Readers see…                                                                                   |
+| ------------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| contains readable prose                                 | The Markdown so far. Unfinished formatting, such as an open `**`, is closed for display        |
+| ends inside an opening tag or an attribute expression   | Nothing for that tag yet. Incomplete expressions are never evaluated                           |
+| completes an opening tag                                | The real component, at its real size. Its controls stay disabled                               |
+| opens a container, such as a `box` or `grid`            | Its finished children, before the container closes                                             |
+| closes a control's own tag                              | The control becomes usable, while later content keeps streaming                                |
+| refers to a value that is not available yet             | The content shown so far stays in place until the value is available                           |
+| ends, with `isStreaming={false}`                        | All trailing content. Unfinished parts are left out; see [below](#when-an-answer-stops-early)  |
+| contains an unknown tag, or a component fails to render | A short error in that component's place. The rest of the answer keeps working                  |
+| makes the parser fail                                   | The content shown so far and "The document parser stopped. Remount the renderer to try again." |
+
+A few more rules:
+
+- A repeated block (`{#each}`) appears when its `{/each}` arrives.
+- An inline code span appears once its closing backticks arrive or its block ends. Code spans are literal: tags and expressions inside them are not parsed.
+- Component render errors stay hidden while the answer streams, because more text may fix them. They show once the answer finishes.
+- State survives later text. A slider the reader dragged early keeps its value when a later part of the answer arrives.
+- Containers grow and shrink with their content. The renderer does not hold a container at its largest height.
+
+Lower the animation speed below and press **Replay** to watch these stages.
+
+<LiveExample id="deployment" />
+
+## Handle an answer that stops early [#when-an-answer-stops-early]
+
+An answer can end before the model finished it: the reader presses Stop, the model reaches its output limit, or the stream fails. Set `isStreaming={false}` in all of these cases. The renderer then keeps everything that was complete:
+
+- An open container, such as a `grid`, shows its finished children.
+- An unfinished opening tag, closing tag, expression, or `{#each}` block is left out.
+- The note "This response ended before it was finished." follows the content, even with `showStatus={false}`. With `showStatus`, the label reads "Incomplete".
+
+Only unfinished DIL structure marks an answer incomplete. An answer cut off in the middle of plain prose still reads "Complete", because the text alone does not show that it stopped early.
+
+To log what went wrong, pass `onError`. It receives each distinct problem once, in every rendering mode. This version of `components/answer.tsx` replaces the one above and adds `onError`:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer, type DilRenderError } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+function report(error: DilRenderError) {
+  // Send it to your error tracker instead.
+  console.info(`OpenDIL ${error.kind}`, error.message, error.offset);
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      text={text}
+      isStreaming={isStreaming}
+      showStatus={false}
+      onError={report}
+    />
+  );
+}
+```
+
+`error.kind` is `"incomplete"`, `"syntax"`, `"runtime"`, `"limit"`, or `"source"`. `message` is meant for developers; readers see shorter wording, such as "This part of the response couldn't be shown." for malformed DIL. `offset` is the position in `text` for parse problems. The [renderer reference](/docs/renderer/) lists the details.
+
+To retry, render the new answer with a new `key`. With the AI SDK, a text part can stay in the `"streaming"` state after `stop()` or a stream error, so derive `isStreaming` from the chat status and the newest message too:
+
+```tsx
+isStreaming={
+  part.state === "streaming" &&
+  status === "streaming" &&
+  message.id === lastId
+}
+```
+
+[Finish each answer at the right time](/docs/chat-integration/#finish-each-answer-at-the-right-time) shows the mapping for each SDK.
+
+## Fade in new content
+
+`progressiveReveal` fades in each new block once, instead of letting it pop in. It is off by default.
+
+```tsx
+<DilRenderer text={text} isStreaming={isStreaming} progressiveReveal />
+```
+
+`true` staggers new blocks by 50 ms and fades each in over 180 ms. Pass an object to change either value:
+
+```tsx
+<DilRenderer
+  text={text}
+  isStreaming={isStreaming}
+  progressiveReveal={{ staggerMs: 80, durationMs: 240 }}
+/>
+```
+
+- Both values must be finite numbers of 0 or more. In host and Shadow DOM modes, other values throw "Reveal timings must be finite nonnegative numbers." In iframe mode, they turn the reveal off.
+- A wave of blocks that arrives together is staggered for at most six stagger intervals, so a large chunk does not trickle in.
+- Readers who ask for reduced motion see content at once.
+- Content that was already shown does not fade again, for example when it scrolls back into view in a [virtualized](/docs/performance/) list.
+
+A [custom component](/docs/custom-components/#read-attributes-and-call-back-into-the-answer) joins the reveal when it forwards `presentationRef` to its visual root.
+
+## Follow the stream
+
+`autoScroll` keeps the end of a streaming answer in view. `onFollowChange` tells you whether the renderer is following, and the `resumeAutoScroll()` method on the renderer's ref starts following again. This final version of `components/answer.tsx` keeps `onError` from above, follows the newest answer, and shows a "Jump to latest" button while the reader has scrolled away:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { useRef, useState } from "react";
+import {
+  DilRenderer,
+  type DilRenderError,
+  type DilRendererHandle,
+} from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+  /** True only for the newest answer in the conversation. */
+  isLatest: boolean;
+}
+
+function report(error: DilRenderError) {
+  // Send it to your error tracker instead.
+  console.info(`OpenDIL ${error.kind}`, error.message, error.offset);
+}
+
+export function Answer({ text, isStreaming, isLatest }: AnswerProps) {
+  const renderer = useRef<DilRendererHandle>(null);
+  const [following, setFollowing] = useState(false);
+  return (
+    <>
+      <DilRenderer
+        ref={renderer}
+        text={text}
+        isStreaming={isStreaming}
+        showStatus={false}
+        onError={report}
+        autoScroll={isLatest ? { behavior: "smooth", padding: 32 } : false}
+        onFollowChange={setFollowing}
+      />
+      {isLatest && isStreaming && !following && (
+        <button
+          type="button"
+          onClick={() => renderer.current?.resumeAutoScroll()}
+        >
+          Jump to latest
+        </button>
+      )}
+    </>
+  );
+}
+```
+
+In `MessageList`, pass `isLatest={message.id === messages.at(-1)?.id}`.
+
+`autoScroll={true}` scrolls instantly with no padding. The object form takes `behavior` (`"instant"` or `"smooth"`) and `padding`, the extra distance in pixels to scroll past the end of the answer. Other values throw "Auto-scroll behavior must be instant or smooth." or "Auto-scroll padding must be a finite nonnegative number."
+
+How following behaves:
+
+- **Reading pauses it.** The wheel, a touch drag, a press on the scrollbar, a middle click, a link press, or a scrolling key (arrows, Page Up and Page Down, Home, End, Space) pauses following at once. Keys typed into inputs, sliders, and radio buttons do not.
+- **Only you resume it.** Following stays paused until you call `resumeAutoScroll()`. Changing the `autoScroll` options does not undo a pause.
+- **Padding uses real space.** The renderer scrolls past the answer only as far as the content below it allows. It does not add blank space.
+- **Reduced motion** turns smooth scrolling into instant scrolling.
+- **It outlasts the stream.** Following continues after the answer finishes, to catch charts and values that settle late. Only a reading gesture or turning `autoScroll` off ends it, so enable `autoScroll` only on the newest answer.
+
+### Follow inside a scrolling message list
+
+Most chat layouts scroll a message list, not the page. The renderer finds the element that scrolls it: the nearest ancestor with `overflow-y` set to `auto`, `scroll`, or `overlay` whose content overflows, crossing Shadow DOM boundaries. It uses the window when there is none, and checks again when the layout changes, so a list that starts short and overflows later is picked up.
+
+In that list, following scrolls the list, `padding` uses the space below the answer in the list, and only gestures inside the list pause following. Wheeling a sidebar leaves it alone. Long answers [virtualize](/docs/performance/) against the same list.
+
+When detection picks the wrong element, set `scrollContainer`:
+
+- `"auto"` (default) detects the scroller as described above.
+- `"window"` always uses the page.
+- An element, or a React ref to one, names the scroller. An empty ref, or `null`, behaves like `"auto"`.
+
+```tsx title="components/chat-pane.tsx"
+"use client";
+import { useRef } from "react";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AssistantMessage {
+  id: string;
+  text: string;
+  isStreaming: boolean;
+}
+
+export function ChatPane({ messages }: { messages: AssistantMessage[] }) {
+  const pane = useRef<HTMLDivElement>(null);
+  const latest = messages.at(-1)?.id;
+  return (
+    <div ref={pane} style={{ height: "100dvh", overflowY: "auto" }}>
+      {messages.map((message) => (
+        <DilRenderer
+          key={message.id}
+          text={message.text}
+          isStreaming={message.isStreaming}
+          showStatus={false}
+          autoScroll={message.id === latest}
+          scrollContainer={pane}
+        />
+      ))}
+    </div>
+  );
+}
+```
+
+While following, the renderer sets `overflow-anchor: none` on the element it scrolls, and restores the previous value when following pauses. The renderer's root is `position: relative`, so it paints above app chrome that overlaps the list without its own stacking order: give a sticky header a `z-index`.
+
+## Control how often the screen updates
+
+By default the renderer applies new text as fast as it arrives, at most once per animation frame. For very fast streams or slow devices, set `updateInterval` to a number of milliseconds:
+
+```tsx
+<DilRenderer text={text} isStreaming={isStreaming} updateInterval={100} />
+```
+
+- The renderer then updates the screen for streamed text at most once per interval. It does not wait for the stream to go quiet.
+- Typing, clicks, and the updates they cause stay immediate.
+- `"instant"` (default) and `0` both mean no limit. Any value other than `"instant"` or a finite number of 0 or more throws "Update interval must be instant or a finite nonnegative number of milliseconds."
+
+[Long conversations and performance](/docs/performance/) covers other ways to keep long chats fast.
+
+## Know when text has been applied
+
+Two callbacks report progress. Use them for tests and metrics, not to time animations:
+
+```tsx
+<DilRenderer
+  text={text}
+  isStreaming={isStreaming}
+  onInput={({ length }) => console.log("sent", length)}
+  onCommit={({ scanned, complete, incomplete }) =>
+    console.log("applied", scanned, complete, incomplete)
+  }
+/>
+```
+
+- `onInput` runs when the renderer passes new text, or the signal that the answer finished, to its parser. `length` is the length of all the text so far.
+- `onCommit` runs after the renderer applies parsed text, at most once per animation frame. `scanned` is how much of the text has been parsed. `complete` is `true` once the final text is applied, and `incomplete` is `true` when the answer [stopped early](#when-an-answer-stops-early).
+
+`onCommit` does not mean the screen has painted, or that charts have finished their layout.
+
+## Try it
+
+The [demo](/demo/) replays real model answers token by token, at 1 to 1,000 tokens per second, so you can watch each stage at any speed. It counts tokens with the `o200k_base` tokenizer; the tokenizer is part of the demo, not of the package.
+
+## Recap
+
+- Pass all the text received so far in `text`, and set `isStreaming={false}` once when the answer ends, including after Stop or an error.
+- Text only grows within one renderer. Use a new `key` to replace or replay an answer.
+- The renderer shows each component once its opening tag is complete and enables controls once their tag closes. An answer that stops early keeps everything it completed.
+- `progressiveReveal` fades in new blocks, `autoScroll` follows the newest answer in the page or in a scrolling list, and `updateInterval` limits screen updates.
+
+## Next steps
+
+<Cards>
+  <Card title="Add OpenDIL to your chat app" href="/docs/chat-integration/" description="Map each SDK's stream to text and isStreaming." />
+  <Card title="Long conversations and performance" href="/docs/performance/" description="Keep chats with many answers fast." />
+  <Card title="DilRenderer API" href="/docs/renderer/" description="Every prop, the ref handle, and the error types." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/" description="Fix answers that do not finish, follow, or render." />
+</Cards>

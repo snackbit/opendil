@@ -1,5 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
-import { openShowcase } from "./dil-page";
+import {
+  openShowcase,
+  previewPane,
+  replaceSource,
+  tailGap,
+} from "./site-demo-page";
+
+/* rendering-modes.spec.ts, run against the Next.js playground with URLs relative to SITE_BASE_PATH. */
 test.use({ video: { mode: "on", size: { width: 1280, height: 900 } } });
 async function mode(page: Page, name: "Shadow DOM" | "Host DOM") {
   await page
@@ -195,17 +202,8 @@ test("scroll behavior and ahead padding update following without undoing a manua
     .getByRole("spinbutton", { name: "Scroll ahead (px)", exact: true })
     .fill("32");
   await page.keyboard.press("Escape");
-  await expect
-    .poll(() =>
-      page
-        .locator("iframe")
-        .evaluate((element) =>
-          Math.abs(
-            element.getBoundingClientRect().bottom - window.innerHeight + 32,
-          ),
-        ),
-    )
-    .toBeLessThan(3);
+  await expect.poll(() => tailGap(page.locator("iframe"), 32)).toBeLessThan(3);
+  await previewPane(page).hover();
   await page.mouse.wheel(0, -1);
   const jump = page.getByRole("button", {
     name: "Jump to latest",
@@ -221,17 +219,7 @@ test("scroll behavior and ahead padding update following without undoing a manua
   await jump.click();
   await expect(jump).toHaveCount(0);
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
-  await expect
-    .poll(() =>
-      page
-        .locator("iframe")
-        .evaluate((element) =>
-          Math.abs(
-            element.getBoundingClientRect().bottom - window.innerHeight + 32,
-          ),
-        ),
-    )
-    .toBeLessThan(3);
+  await expect.poll(() => tailGap(page.locator("iframe"), 32)).toBeLessThan(3);
 });
 test.describe("High-throughput playback", () => {
   test("smooth following catches the tail at 500 tokens/sec with 200 ms presentation commits", async ({
@@ -263,11 +251,17 @@ test.describe("High-throughput playback", () => {
       const commit = () => commits.push(performance.now());
       window.addEventListener("dil:commit", commit);
       let frame = 0;
+      const pane = document.querySelector(".od-hero-output");
       const sample = () => {
         const root = document.querySelector('[data-dil-mode="shadow"]');
-        if (root && window.scrollY > 0)
+        if (root && pane && pane.scrollTop > 0)
           lag.push(
-            Math.max(0, root.getBoundingClientRect().bottom - innerHeight + 32),
+            Math.max(
+              0,
+              root.getBoundingClientRect().bottom +
+                32 -
+                pane.getBoundingClientRect().bottom,
+            ),
           );
         frame = requestAnimationFrame(sample);
       };
@@ -287,13 +281,7 @@ test.describe("High-throughput playback", () => {
     await expect(ui.locator('[data-complete="true"]')).toBeAttached({
       timeout: 30000,
     });
-    await expect
-      .poll(() =>
-        ui.evaluate((element) =>
-          Math.abs(element.getBoundingClientRect().bottom - innerHeight + 32),
-        ),
-      )
-      .toBeLessThan(3);
+    await expect.poll(() => tailGap(ui, 32)).toBeLessThan(3);
     const result = await page.evaluate(() => {
       const data: unknown = Reflect.get(window, "followSample");
       if (
@@ -334,4 +322,43 @@ test.describe("High-throughput playback", () => {
     expect(result.p95Lag).toBeLessThan(900);
     await expect(ui.getByRole("alert")).toHaveCount(0);
   });
+});
+test("host mode keeps Markdown lists under a page CSS reset and themes status badges", async ({
+  page,
+}) => {
+  await page.goto("demo/form/");
+  await mode(page, "Host DOM");
+  // An unlayered reset like Tailwind's preflight in a host app.
+  await page.addStyleTag({
+    content:
+      "ol, ul { list-style: none; margin: 0; padding: 0 } blockquote { margin: 0 }",
+  });
+  const source = page.getByRole("textbox", { name: "DIL source", exact: true });
+  await replaceSource(
+    page,
+    source,
+    '1. First\n2. Second\n\n- Bullet\n  - Nested\n\n> Tip: quoted\n\n<badge color="success">Healthy</badge>',
+  );
+  await source.press("ControlOrMeta+Enter");
+  const ui = page.locator('[data-dil-mode="host"]').first();
+  const ordered = ui.locator(".dil-markdown ol").first();
+  await expect(ordered).toHaveCSS("list-style-type", "decimal");
+  await expect(ordered).toHaveCSS("padding-left", "40px");
+  const bullets = ui.locator(".dil-markdown ul").first();
+  await expect(bullets).toHaveCSS("list-style-type", "disc");
+  await expect(bullets.locator("ul")).toHaveCSS("list-style-type", "circle");
+  await expect(ui.locator(".dil-markdown blockquote")).toHaveCSS(
+    "margin-left",
+    "40px",
+  );
+  const badge = ui.locator('[data-slot="badge"]', { hasText: "Healthy" });
+  await expect(badge).toHaveCSS("background-color", "rgb(229, 245, 238)");
+  await page.getByRole("button", { name: "Demo settings" }).click();
+  await page
+    .getByRole("button", { name: "Output appearance", exact: true })
+    .click();
+  await page.getByRole("radio", { name: "Dark output", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await expect(badge).toHaveCSS("background-color", "rgb(29, 58, 47)");
+  await expect(badge).toHaveCSS("color", "rgb(92, 197, 154)");
 });

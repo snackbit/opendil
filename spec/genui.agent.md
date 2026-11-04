@@ -30,10 +30,14 @@ state-bound inputs. Links render their labels as inert text; Markdown images are
 suppressed. Use a visible URL as text when the destination matters. No authored
 HTML link or image tag is supported. Mermaid fences render diagrams.
 
-Keep fences on separate lines with at most three leading spaces. Fences protect
-their contents from DIL parsing. Inline backticks do not provide that protection:
-use fenced code or `CodeBlock` for literal braces, tags, and directives. For a
-literal brace in ordinary prose, use an expression such as `{"{"}`.
+Keep fences on separate lines with at most three leading spaces. Fences and
+inline code spans protect their contents from DIL parsing: braces, tags, and
+directives inside them display literally and never evaluate. A code span ends at
+a blank line or at a line that starts a list item, heading, blockquote,
+component tag, or block directive; an unmatched backtick protects nothing.
+Lowercase HTML-like tags that are not DIL tags, such as `<div>` or `<br>`,
+display as plain text; capitalized unknown tags are unsupported components. For
+a literal brace in ordinary prose, use an expression such as `{"{"}`.
 
 ### JavaScript expressions
 

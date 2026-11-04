@@ -1,0 +1,353 @@
+/*
+ * The bounded source/preview workbench (playground and landing demo), the Monaco editor,
+ * the example picker and the output appearance settings. Uses the DESIGN.md --od-* tokens.
+ */
+.od-stream-demo {
+  background: var(--od-surface);
+  border-radius: 12px;
+  --od-preview-canvas: #ffffff;
+}
+:root:is(.dark, [data-theme="dark"]) .od-stream-demo {
+  --od-preview-canvas: #171717;
+}
+.od-hero-demo-toolbar {
+  min-height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 4px 16px;
+  border-bottom: 1px solid var(--od-border);
+  background: var(--od-surface-subtle);
+  border-radius: 12px 12px 0 0;
+}
+.od-demo-caption {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 100%;
+  font: 11px var(--od-font-code);
+}
+.od-demo-caption i {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--od-border-strong);
+}
+.od-demo-caption > span {
+  margin-left: 12px;
+}
+.od-demo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: transparent;
+}
+.od-demo-actions button[data-variant="ghost"] {
+  background: transparent;
+  border: 0;
+  box-shadow: none;
+}
+.od-demo-actions button[data-variant="ghost"]:hover {
+  color: var(--od-link);
+}
+.od-demo-actions button[data-slot="button"] {
+  height: 28px;
+  min-height: 28px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+.od-stream-demo .od-hero-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  height: 700px;
+}
+.od-hero-code,
+.od-hero-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.od-hero-code {
+  border-right: 1px solid var(--od-border);
+  background: var(--od-surface-subtle);
+  border-bottom-left-radius: 11px;
+}
+.od-hero-preview {
+  background: var(--od-preview-canvas);
+  color: var(--od-text);
+  color-scheme: inherit;
+  border-bottom-right-radius: 11px;
+}
+.od-hero-code .od-source-editor {
+  flex: 1;
+  min-height: 0;
+}
+.od-hero-code .monaco-editor {
+  height: 100%;
+  min-height: 0;
+  font-size: 11px;
+}
+.od-hero-output {
+  background: var(--od-preview-canvas);
+  border-bottom-left-radius: inherit;
+  border-bottom-right-radius: inherit;
+  padding: 16px 24px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.od-source-editor {
+  position: relative;
+  height: 100%;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+}
+.od-source-editor[data-appearance="subtle"] {
+  --od-code-canvas: var(--od-surface-subtle);
+  --od-code-text: var(--od-text);
+  --od-code-keyword: #4935d0;
+  --od-code-string: #16794b;
+  --od-code-number: #9a5b00;
+  --od-code-comment: var(--od-text-muted);
+  --od-code-active: var(--od-surface-muted);
+  --od-code-selection: var(--od-accent-border);
+}
+:root:is(.dark, [data-theme="dark"])
+  .od-source-editor[data-appearance="subtle"] {
+  --od-code-keyword: #c5a7ff;
+  --od-code-string: #91d7af;
+  --od-code-number: #f2b685;
+}
+.od-code-upcoming {
+  opacity: 0.3;
+}
+.od-example-picker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  min-width: 200px;
+  border: 1px solid var(--od-border-strong);
+  border-radius: 8px;
+  background: var(--od-surface);
+  color: var(--od-text);
+  padding: 10px 12px;
+  font: 500 14px var(--od-font-body);
+  cursor: pointer;
+}
+.od-example-picker:focus-visible {
+  outline: 2px solid var(--od-focus);
+  outline-offset: 2px;
+}
+.od-example-picker.od-example-picker-compact {
+  min-width: 0;
+  max-width: 210px;
+  height: 28px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 1px solid var(--od-border-strong);
+  background: var(--od-surface);
+  border-radius: 4px;
+  gap: 8px;
+  font: 11px var(--od-font-code);
+  user-select: none;
+}
+.od-example-picker-compact > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.od-example-menu {
+  max-height: min(600px, 75vh);
+  overflow-y: auto;
+  min-width: 240px;
+}
+.od-example-detail {
+  margin-left: auto;
+  color: var(--od-text-secondary);
+  font: 11px var(--od-font-code);
+  white-space: nowrap;
+}
+.od-example-menu[data-compact="true"] {
+  min-width: min(340px, calc(100vw - 32px));
+}
+.od-example-menu[data-compact="true"] .od-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  min-height: 36px;
+  padding-block: 7px;
+  font: 12px var(--od-font-code);
+}
+.od-render-mode-picker {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 28px;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--od-text-secondary);
+  font: 11px var(--od-font-code);
+  cursor: pointer;
+}
+.od-render-mode-picker:hover,
+.od-render-mode-picker[data-state="open"] {
+  background: var(--od-surface-muted);
+  color: var(--od-text);
+}
+.od-render-mode-picker:focus-visible {
+  outline: 2px solid var(--od-focus);
+  outline-offset: 2px;
+}
+.od-render-mode-menu .od-menu-item[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.od-render-mode-note {
+  max-width: 220px;
+  margin: 8px;
+  color: var(--od-text-secondary);
+  font-size: 12px;
+}
+.od-appearance-trigger {
+  width: 100%;
+  justify-content: flex-start;
+}
+.od-appearance-trigger[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
+.od-appearance fieldset {
+  border: 0;
+  margin: 0;
+  padding: 4px 16px 16px;
+  display: grid;
+  gap: 16px;
+  min-width: 0;
+}
+.od-controls .od-demo-settings .od-appearance fieldset {
+  padding: 8px 0 0;
+  gap: 10px;
+}
+.od-appearance fieldset:disabled {
+  opacity: 0.55;
+}
+.od-appearance label,
+.od-appearance-field {
+  display: grid;
+  gap: 8px;
+  font-size: 12px;
+}
+.od-appearance-fields {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+}
+.od-appearance input {
+  min-height: 36px;
+}
+.od-appearance input[type="color"] {
+  padding: 4px;
+}
+.od-large-source {
+  padding: 20px;
+}
+.od-large-source pre {
+  overflow: hidden;
+  max-height: 360px;
+  font: 12px/1.6 var(--od-font-code);
+  white-space: pre-wrap;
+  color: #b8bece;
+}
+.od-jump {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  z-index: 45;
+  border-radius: 8px;
+}
+.od-demo-workspace {
+  box-sizing: border-box;
+  width: min(
+    calc(100% - 2 * var(--od-page-gutter, 24px)),
+    var(--od-page-max, 1200px)
+  );
+  margin: 24px auto 64px;
+}
+.od-demo-workspace > .od-stream-demo {
+  border: 1px solid var(--od-border);
+}
+.od-demo-extra-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+/* Server-rendered placeholder with the workbench's footprint, shown until the client island loads. */
+.od-workbench-loading {
+  display: grid;
+  place-items: center;
+  height: 744px;
+  border: 1px solid var(--od-border);
+  border-radius: 12px;
+  background: var(--od-surface-subtle);
+  color: var(--od-text-secondary);
+  font: 12px var(--od-font-code);
+}
+.demo-host {
+  max-width: 100%;
+}
+/* The example picker and playback actions need about 850px side by side; below
+   that the actions move to their own row instead of overflowing the page. */
+@media (max-width: 899px) {
+  .od-hero-demo-toolbar {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  .od-demo-actions {
+    flex-wrap: wrap;
+  }
+}
+@media (max-width: 767px) {
+  .od-hero-demo-toolbar {
+    flex-wrap: wrap;
+    height: 112px;
+    align-content: center;
+  }
+  .od-demo-actions {
+    margin-left: 0;
+    flex-wrap: wrap;
+  }
+  .od-demo-actions button[data-slot="button"] {
+    font-size: 11px;
+    padding-inline: 6px;
+    gap: 4px;
+  }
+  .od-stream-demo .od-hero-demo {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 240px 700px;
+    height: 940px;
+  }
+  .od-hero-code {
+    border-right: 0;
+    border-bottom: 1px solid var(--od-border);
+    border-bottom-left-radius: 0;
+  }
+  .od-hero-preview {
+    border-bottom-left-radius: 11px;
+  }
+  .od-hero-output {
+    padding: 20px;
+  }
+  .od-workbench-loading {
+    height: 1056px;
+  }
+}

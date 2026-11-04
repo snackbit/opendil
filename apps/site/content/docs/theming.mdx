@@ -1,0 +1,309 @@
+---
+title: Theming
+description: "Match generated interfaces to your app with dark appearance, CSS variables, class overrides, Tailwind CSS, and Shadow DOM styles."
+---
+
+Generated interfaces use their own theme, separate from your app's CSS, so a model's answer cannot restyle your page. You bring them in line with your app with a few props: a light or dark appearance and your colors work in every rendering mode, and classes and stylesheets work in host and Shadow DOM modes.
+
+## What you will learn
+
+- How to follow your app's light and dark mode.
+- How to set colors, radius, and fonts with CSS variables.
+- How to add classes to built-in components.
+- How to build the styles with Tailwind CSS 4.
+- How to style your own components inside a shadow root.
+
+## Choose what to change
+
+| Change                                | Prop              | Modes        |
+| ------------------------------------- | ----------------- | ------------ |
+| Light or dark                         | `appearance`      | All          |
+| Colors, radius, font                  | `tokens`          | All          |
+| Class on the answer's root            | `className`       | Host, Shadow |
+| Classes on built-in components        | `classNames`      | Host, Shadow |
+| Your CSS inside the shadow root       | `shadowStyles`    | Shadow       |
+| Default attributes, such as `variant` | `componentConfig` | Host, Shadow |
+| Your own markup for a tag             | `components`      | Host, Shadow |
+
+`componentConfig` and `components` are covered in [Custom components](/docs/custom-components/). [Rendering modes](/docs/rendering-modes/) explains the modes.
+
+Switch the accent color and the theme below. The answer keeps its state, because styling changes do not restart it. In Shadow DOM mode, the custom components get their CSS through `shadowStyles`.
+
+<CustomizationPlayground variant="styling" />
+
+## Switch to dark appearance
+
+`appearance` is `"light"` by default. Pass `"dark"` to use the dark theme, in any mode. Keep it in step with your app's theme, for example with `next-themes`:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { useTheme } from "next-themes";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  const { resolvedTheme } = useTheme();
+  return (
+    <DilRenderer
+      text={text}
+      isStreaming={isStreaming}
+      appearance={resolvedTheme === "dark" ? "dark" : "light"}
+    />
+  );
+}
+```
+
+- Changing `appearance` updates the answer in place. In iframe mode the frame does not reload.
+- The renderer sets CSS `color-scheme` from `appearance`, so scrollbars and form controls match.
+- The built-in components follow `appearance`, not the operating system's color preference. A reader whose system is dark sees a light answer until you pass `"dark"`.
+
+If you use `UiScope` from `@snackbit/opendil/ui` for your own controls, pass `appearance` to it as well; it defaults to `"light"`. See [React UI exports](/docs/ui/).
+
+## Set colors and radius with tokens
+
+`tokens` sets CSS variables on the answer's root. Use it for your brand colors and corner radius:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+  appearance: "light" | "dark";
+}
+
+const brand = {
+  light: {
+    "--primary": "#156f55",
+    "--primary-foreground": "#ffffff",
+    "--ring": "#156f55",
+  },
+  dark: {
+    "--primary": "#7fd8b5",
+    "--primary-foreground": "#0b2a20",
+    "--ring": "#7fd8b5",
+  },
+} as const;
+
+export function Answer({ text, isStreaming, appearance }: AnswerProps) {
+  return (
+    <DilRenderer
+      text={text}
+      isStreaming={isStreaming}
+      appearance={appearance}
+      tokens={{
+        ...brand[appearance],
+        "--background": "transparent",
+        "--radius": "0.5rem",
+      }}
+    />
+  );
+}
+```
+
+Tokens apply on top of the theme that `appearance` selects, so pass values that suit each appearance. Check text, focus, and disabled contrast for each set you supply.
+
+The renderer reads these variables:
+
+| Group             | Tokens                                                                                                                             |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Surfaces          | `--background`, `--card`, `--popover`, `--secondary`, `--muted`, `--accent`                                                        |
+| Text              | `--foreground`, `--card-foreground`, `--popover-foreground`, `--secondary-foreground`, `--muted-foreground`, `--accent-foreground` |
+| Accents           | `--primary`, `--primary-foreground`, `--destructive`                                                                               |
+| Borders and focus | `--border`, `--input`, `--ring`                                                                                                    |
+| Charts            | `--chart-1` to `--chart-5`                                                                                                         |
+| Code              | `--dil-code-keyword`, `--dil-code-string`, `--dil-code-number`, `--dil-code-title`                                                 |
+| Shape and type    | `--radius` (default `0.75rem`; smaller and larger radii derive from it), `--font-dil`                                              |
+
+The default light and dark values are in [`styles/tailwind.css`](https://github.com/snackbit/opendil/blob/main/packages/opendil/styles/tailwind.css) in the package. A DIL attribute can still set its own size, radius, or color, which wins over a token. The background colors of `success`, `warning`, and `danger` badges are fixed and do not follow tokens.
+
+### Show your page behind the answer
+
+The answer's root paints `--background`, white or near-black by default. Inside a chat bubble with its own background, set `"--background": "transparent"`, as in the example above, so the bubble shows through. This works in every mode, including the iframe.
+
+### Tokens in iframe mode
+
+The frame must not load anything from the network, so it drops tokens whose values could load a resource or end the declaration. It logs one warning per dropped token name:
+
+```text
+OpenDIL: the iframe renderer ignores theme token "--hero-image". Tokens must be
+CSS custom properties (--name) with values that cannot load resources or
+contain ; { } @ \ ! < > or comments.
+```
+
+[Iframe startup and theme](/docs/limits/#iframe-startup-and-theme) lists the exact rules and the maximum number and length of tokens. The frame also cannot load web fonts, so in iframe mode `--font-dil` can only name fonts installed on the reader's device. Host and Shadow DOM modes apply tokens as you pass them, without these checks.
+
+## Add classes to built-in components [#class-overrides]
+
+In host and Shadow DOM modes, `className` adds a class to the answer's `.dil-scope` root, and `classNames` adds classes to the root element of built-in components, keyed by tag name:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="host"
+      text={text}
+      isStreaming={isStreaming}
+      className="chat-answer"
+      classNames={{ button: "chat-answer-button", box: "chat-answer-card" }}
+    />
+  );
+}
+```
+
+These built-in tags accept `classNames`: `box`, `row`, `grid`, `grid-item`, `text`, `title`, `caption`, `badge`, `button`, `pressable`, `input`, `slider`, `checkbox`, `radio-group`, `radio`, and `segmented-control`. Other tags ignore it. To style one of them, replace it with a [custom component](/docs/custom-components/), which receives its class as `className`.
+
+Scope your CSS under the root class. In host mode your stylesheet applies to the whole page, so a rule such as `button { … }` styles your app's buttons and the answer's buttons alike. Write `.chat-answer .chat-answer-button { … }` instead.
+
+## Use Tailwind CSS [#tailwind-v4]
+
+This section matters in host mode, and in Shadow DOM mode through `shadowStyles`. The iframe brings its own compiled styles, and your app's CSS never reaches it.
+
+The package ships its styles twice. Import one of them, not both:
+
+- `@snackbit/opendil/styles.css` is compiled CSS. Import it from JavaScript, as the examples on this page do.
+- `@snackbit/opendil/tailwind.css` is the Tailwind CSS 4 source of the same styles. Use it when you build your CSS with Tailwind 4 and want the `dil-dark` variant below.
+
+If your app already imports Tailwind, add the OpenDIL source after it, and point Tailwind at the package's compiled code so it generates the classes the built-in components use:
+
+```css title="app/globals.css"
+@import "tailwindcss";
+@import "@snackbit/opendil/tailwind.css";
+@source "../node_modules/@snackbit/opendil/dist";
+```
+
+When your CSS already imports `tailwindcss`, Tailwind ignores the source path inside the OpenDIL file, so name the package's compiled code yourself. The `@source` path is relative to the CSS file and depends on where the package is installed. In a monorepo it is often hoisted to the root `node_modules`.
+
+<Callout type="warn" title="This recipe changes your app's own utilities">
+  The OpenDIL source maps Tailwind's `rounded-*` scale and color utilities,
+  such as `bg-primary` and `border-border`, to OpenDIL's variables (`--radius`,
+  `--primary`, and so on). They then apply everywhere in your app. That works
+  when your app defines the same variables at `:root`, as shadcn/ui apps do.
+  Otherwise your own rounded and colored elements lose their radius and color.
+  In that case, keep `import "@snackbit/opendil/styles.css"` for the built-in
+  components, and build the CSS for your custom components with the next
+  recipe in a separate CSS file.
+</Callout>
+
+If your app does not import Tailwind itself, import only the OpenDIL source and tell Tailwind where your components are. This adds no global reset. It still needs Tailwind's build plugin, `@tailwindcss/postcss` for Next.js or `@tailwindcss/vite` for Vite; see [Tailwind's installation guide](https://tailwindcss.com/docs/installation):
+
+```css title="app/globals.css"
+@import "@snackbit/opendil/tailwind.css";
+@source "../components";
+```
+
+### Follow the answer's appearance in your components
+
+`tailwind.css` defines a `dil-dark` variant. It applies inside answers whose `appearance` is `"dark"`, whatever the operating system prefers. Use it in your [custom components](/docs/custom-components/):
+
+```tsx title="components/status-chip.tsx"
+import type { DilComponentProps } from "@snackbit/opendil";
+
+const chip = [
+  "rounded-full bg-sky-100 px-2 text-sky-900",
+  "dil-dark:bg-sky-900 dil-dark:text-sky-100",
+].join(" ");
+
+export function StatusChip({
+  attributes,
+  className,
+  presentationRef,
+}: DilComponentProps) {
+  return (
+    <span ref={presentationRef} className={`${chip} ${className}`}>
+      {String(attributes.label ?? "")}
+    </span>
+  );
+}
+```
+
+Register it in `components`, for example as `{ StatusChip }`, and tell the model about the tag; see [Custom components](/docs/custom-components/#register-components).
+
+Your own `dark` variant is unchanged. The model cannot add classes: DIL has no class attribute, so only the classes in your code matter. In Shadow DOM mode, pass the compiled CSS for your components with `shadowStyles`, as described next.
+
+## Style inside a shadow root [#shadow-dom-css]
+
+Your page's CSS does not reach into a shadow root. The renderer installs its built-in styles there itself. For your classes and custom components, pass compiled CSS as a string with `shadowStyles`:
+
+```ts title="components/answer-styles.ts"
+/** CSS for the classes this app passes to its Shadow DOM renderers. */
+export const answerStyles = `
+.chat-answer {
+  padding: 12px;
+}
+.chat-answer .chat-answer-card {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+}
+.chat-answer .chat-answer-button {
+  border-radius: 9999px;
+}
+`;
+```
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import { answerStyles } from "./answer-styles";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="shadow"
+      text={text}
+      isStreaming={isStreaming}
+      className="chat-answer"
+      classNames={{ button: "chat-answer-button", box: "chat-answer-card" }}
+      shadowStyles={answerStyles}
+    />
+  );
+}
+```
+
+- The renderer applies `shadowStyles` after its built-in styles, so your rules win at equal specificity.
+- Use the [tokens](#set-colors-and-radius-with-tokens) in your CSS, as `var(--card)` does above, so your components follow `appearance` and `tokens`.
+- `shadowStyles` is trusted app code, not something the model controls. Keep model output out of it.
+- In Vite, you can keep the CSS in a file and import it as a string with `import answerStyles from "./answer.css?inline"`.
+- A component that portals to `document.body`, such as a third-party dialog or menu, leaves the shadow root and loses these styles. Render its overlay into a container inside the root, or use host mode.
+
+## Keep your site theme separate
+
+Your app's own CSS variables do not reach generated interfaces. The renderer resets its theme on its root, so a variable such as `--primary` in your page does not change an answer unless you pass it in `tokens`. This site, for example, styles itself with `--od-*` variables, and its answers use the stock tokens unless an example passes its own. In host mode your page's CSS rules still apply to elements inside the answer; [scope them](#class-overrides).
+
+## Recap
+
+- `appearance` and `tokens` work in every mode. `appearance` also sets `color-scheme`, and built-in components follow it rather than the operating system.
+- In iframe mode the frame ignores tokens that could load a resource and logs a warning for each.
+- `className`, `classNames`, and `shadowStyles` work in host and Shadow DOM modes. Only some built-in tags accept `classNames`.
+- With Tailwind 4, `@snackbit/opendil/tailwind.css` replaces `styles.css` and adds `dil-dark:` for your components. In a build shared with your app, it also maps your `rounded-*` and color utilities to OpenDIL's variables.
+
+## Next steps
+
+<Cards>
+  <Card title="Custom components" href="/docs/custom-components/" description="Replace built-in tags and set default attributes." />
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose the mode your styling needs." />
+  <Card title="React UI exports" href="/docs/ui/" description="Use the same buttons, popovers, and scope in your app." />
+  <Card title="Components" href="/docs/components/layout/" description="Every built-in tag and the classes it accepts." />
+</Cards>

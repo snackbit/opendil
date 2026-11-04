@@ -1,0 +1,102 @@
+---
+title: Charts
+description: Draw line, bar, pie, and scatter charts from data in the answer, with hover detail and series selection.
+---
+
+`Chart` draws data the answer already contains. It does not fetch data. The model writes the chart and its data in its answer; see the [DIL tour](/docs/language/) for how answers hold data and state.
+
+<LiveExample id="charts" />
+
+## `Chart`
+
+One component draws four chart types: line, bar, scatter, and pie.
+
+**Usage**
+
+```dil
+<Chart content={{chartType:"line",data:[{month:"Jan",actual:10,plan:12},{month:"Feb",actual:15,plan:14}],xKey:"month",series:[{dataKey:"actual",label:"Actual"},{dataKey:"plan",label:"Plan"}]}}/>
+<caption>Synthetic units. Actual rises from 10 to 15.</caption>
+```
+
+A pie chart uses a different content shape:
+
+```dil
+<Chart content={{chartType:"pie",data:[{name:"Alpha",amount:30},{name:"Beta",amount:70}],nameKey:"name",valueKey:"amount"}}/>
+<caption>Synthetic shares: Alpha 30%, Beta 70%.</caption>
+```
+
+**Attributes**
+
+<ComponentProps name="Chart" />
+
+### Content shape
+
+All chart settings live in the `content` object. The agent spec defines two shapes:
+
+Line, bar, and scatter charts:
+
+```text
+{
+  chartType: "line" | "bar" | "scatter",
+  data: object[],
+  xKey: string,
+  series: {dataKey:string,label?:string}[]
+}
+```
+
+Pie charts:
+
+```text
+{
+  chartType: "pie",
+  data: object[],
+  nameKey: string,
+  valueKey: string
+}
+```
+
+- `xKey` names the field for the horizontal axis. Line and bar charts accept category strings; scatter needs numbers.
+- Each `series[].dataKey` names a numeric field. `label` defaults to the `dataKey`.
+- `nameKey` and `valueKey` name the slice label and its value.
+- Without `chartType`, the chart draws a line.
+
+There are no attributes for size, colors, axes, tooltips, or the legend. Put units and a title in text next to the chart.
+
+### Interaction
+
+- Hovering a series or slice highlights it and its legend entry.
+- In a line chart, the tooltip snaps to the nearest x value. In a scatter chart, it snaps to the nearest point.
+- In a bar chart, the tooltip appears while the pointer is over a bar or anywhere above it, and lists every visible series for that category. Gaps between bars show nothing. In a pie chart, the tooltip appears only over a slice.
+- When a tooltip lists several series, the hovered series is bold.
+- In a line or bar chart with several series, clicking a legend entry shows only that series. A second click shows all series again. Ctrl-click (Cmd-click on macOS) hides or shows one series at a time. Hidden series stay in the legend, dimmed.
+- Pie legends only describe the slices; clicking them does nothing.
+
+Legend selection belongs to the chart. The answer cannot read it or react to it.
+
+**Accessibility:** keyboard focus on a legend entry highlights its series or slice. Enter or Space on a legend entry works like a click: it shows only that series, or shows all series again. Hold Ctrl (Cmd on macOS) to hide or show one series. In line charts, every series after the first is dashed, so series differ by more than color. A chart is still hard to read without sight. Always add a caption or a small table that states the key values, as the examples do.
+
+**Styling:** series colors come from the tokens `--chart-1` to `--chart-5`; set them with `tokens` on `DilRenderer`, as described in [Theming](/docs/theming/). The renderer sets these colors as inline custom properties, so charts work under a Content Security Policy without `style-src 'unsafe-inline'`. `classNames` does not apply to `Chart`.
+
+**Size:** large data sets count against the display limit of an answer. See [Display limits](/docs/limits/#display).
+
+<SpecExcerpt name="Chart" />
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Tables"
+    href="/docs/components/tables/"
+    description="Show the exact values behind a chart."
+  />
+  <Card
+    title="Diagrams and SVG"
+    href="/docs/components/diagrams/"
+    description="Draw node graphs, Mermaid diagrams, and custom vector graphics."
+  />
+  <Card
+    title="Theming"
+    href="/docs/theming/"
+    description="Change the chart color tokens to match your brand."
+  />
+</Cards>

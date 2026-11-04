@@ -1,0 +1,171 @@
+---
+title: Media
+description: Show offline illustrations with AsyncImage and browse content with a carousel; connect real images with a custom component.
+---
+
+OpenDIL makes no network requests for media. `AsyncImage` draws an offline illustration; your app can replace it with real images.
+
+<LiveExample id="media" />
+
+## `AsyncImage`
+
+A placeholder illustration with a description.
+
+**Usage**
+
+```dil
+<box maxWidth={480}>
+  <AsyncImage query="Placeholder mountain landscape"/>
+  <caption>Offline illustration, not a photograph.</caption>
+</box>
+```
+
+**Attributes**
+
+<ComponentProps name="AsyncImage" />
+
+The built-in `AsyncImage` draws a simple landscape in a 16:9 frame with rounded corners. `query` becomes the image's alt text. A few keywords change the tint, so most illustrations look the same. It is not a URL, a search, or a request to generate an image. If the browser cannot show the illustration, the frame stays in place and shows "Image unavailable". To size the image, constrain its parent, for example with `maxWidth` on a `box`.
+
+**Accessibility:** write `query` as a description of the picture, because screen readers read it as alt text. Do not present the illustration as a real photo or as evidence.
+
+**Styling:** `classNames` does not apply to `AsyncImage`. To change it, replace it as described in [Show real images](#show-real-images).
+
+<SpecExcerpt name="AsyncImage" />
+
+## `carousel`
+
+A horizontal set of slides with previous and next buttons.
+
+**Usage**
+
+```dil
+<carousel>
+  <carousel-item><box border padding={4}><title>Alpha</title><text>First option.</text></box></carousel-item>
+  <carousel-item><box border padding={4}><title>Beta</title><text>Second option.</text></box></carousel-item>
+</carousel>
+```
+
+**Attributes**
+
+<ComponentProps name="carousel" />
+
+Navigation is built in. There is no attribute for the active slide and no callback when it changes. Do not use a carousel for steps the reader must complete in order.
+
+**Accessibility:** screen readers announce the carousel as a carousel region. The previous and next buttons are labeled "Previous slide" and "Next slide", and the Left and Right arrow keys move between slides. Make each slide understandable on its own, and keep essential information off later slides the reader may never open.
+
+**Styling:** `classNames` does not apply to `carousel`.
+
+<SpecExcerpt name="carousel" />
+
+## `carousel-item`
+
+One slide in a carousel.
+
+**Usage**
+
+```dil
+{@body const cards = [{id:"a",title:"Alpha"},{id:"b",title:"Beta"}]}
+<carousel>
+  {#each cards as card}<carousel-item><box border padding={4}><title>{card.title}</title></box></carousel-item>{/each}
+</carousel>
+```
+
+**Attributes**
+
+<ComponentProps name="carousel-item" />
+
+Place every `carousel-item` directly inside `carousel`, written out or produced by `{#each}`. A slide takes no layout attributes; put a [`box`](/docs/components/layout/#box) inside it for borders and padding.
+
+**Accessibility:** screen readers announce each item as a slide.
+
+**Styling:** `classNames` does not apply to `carousel-item`.
+
+<SpecExcerpt name="carousel-item" />
+
+## Show real images
+
+To show real images, replace `AsyncImage` with your own React component. Custom components work in host and Shadow DOM modes, not in the default iframe mode. See [Rendering modes](/docs/rendering-modes/).
+
+This replacement passes `query` to an image route in your own app, `/api/images`, which you implement to look up a matching image and return it or redirect to it:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer, type DilComponentProps } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+function LibraryImage({ attributes, presentationRef }: DilComponentProps) {
+  const query = typeof attributes.query === "string" ? attributes.query : "";
+  return (
+    <img
+      ref={presentationRef}
+      src={"/api/images?query=" + encodeURIComponent(query)}
+      alt={query}
+      loading="lazy"
+      style={{ width: "100%", aspectRatio: "16 / 9", objectFit: "cover" }}
+    />
+  );
+}
+
+const components = { AsyncImage: LibraryImage };
+
+export function Answer(props: { text: string; isStreaming: boolean }) {
+  return (
+    <DilRenderer
+      mode="host"
+      text={props.text}
+      isStreaming={props.isStreaming}
+      components={components}
+    />
+  );
+}
+```
+
+Your component builds the URL itself, so the model cannot point the page at an arbitrary address. If you add an attribute that takes a URL, check it against a list of hosts you trust before you render it.
+
+The agent spec tells the model that `AsyncImage` is only a placeholder. Append a contract after the spec, in the spec's own notation, so the model knows it now shows real images:
+
+```ts title="lib/dil-instructions.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+const hostComponents = `## Host components
+
+This application registers these components. Use them only as described.
+
+- <AsyncImage>: query:string; children: none
+
+In this application, AsyncImage shows a real photo from our image library that
+matches query. Write query as a short description of the photo you want; it is
+also the alt text.`;
+
+export const instructions = agentSpec + "\n\n" + hostComponents;
+```
+
+If you already describe other components this way, add the `AsyncImage` entry to the same list. Send the contract only when the answer renders in host or Shadow DOM mode with this component registered; see [Tell the model about your components](/docs/custom-components/#tell-the-model-about-your-components).
+
+Markdown images stay hidden in every mode.
+
+<Callout type="error" title="Custom components run with your page's privileges">
+  A replacement component is your own React code in your page, outside the
+  sandbox that protects the default iframe mode. Treat every attribute as
+  untrusted input from the model.
+</Callout>
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Custom components"
+    href="/docs/custom-components/"
+    description="Register, configure, and test your own components."
+  />
+  <Card
+    title="Layout"
+    href="/docs/components/layout/"
+    description="Size and frame images and carousels with boxes and grids."
+  />
+  <Card
+    title="Popovers"
+    href="/docs/components/overlays/"
+    description="Show extra detail next to a button."
+  />
+</Cards>

@@ -1,0 +1,23 @@
+{
+  "extends": "@opendil/tsconfig/base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "allowJs": true,
+    "incremental": true,
+    "resolveJsonModule": true,
+    "plugins": [{ "name": "next" }],
+    "paths": {
+      "@/*": ["./*"],
+      "collections/*": ["./.source/*"]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts",
+    ".source/**/*.ts"
+  ],
+  "exclude": ["node_modules", "public"]
+}

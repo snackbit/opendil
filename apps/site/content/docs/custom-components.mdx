@@ -1,0 +1,368 @@
+---
+title: Custom components
+description: Register your own React components as DIL tags, replace built-in ones, set default attributes, and tell the model how to use them.
+---
+
+In host and Shadow DOM modes you can add your own tags or replace built-in ones with React components from your app. The answer's expressions still run in a sandboxed JavaScript engine (QuickJS) in a Web Worker, the expression engine; your component owns the markup and the interaction. Use this when your design system has a component the built-in set lacks, or when a built-in component must look and behave like yours.
+
+<Callout type="error" title="Custom components run with your page's privileges">
+  Custom components run with your page's full privileges in both host and
+  Shadow DOM modes. Treat every attribute as untrusted model output: validate
+  it, and never spread it onto DOM elements or use it in URLs without checking.
+</Callout>
+
+## What you will build
+
+- A new `Callout` tag rendered by your own React component.
+- A replacement for the built-in `button` with your own click handling and classes.
+- Default attributes and named style slots set from your app.
+- A short contract in the system prompt that teaches the model the new tag.
+
+<CustomizationPlayground variant="components" />
+
+<SourceDisclosure label="message.dil">
+
+```dil title="message.dil"
+{@body const [count, setCount] = DIL.useState(0)}
+{@body const [locked, setLocked] = DIL.useState(false)}
+
+<Callout>
+  This tag renders a React component registered by the application.
+  The button below replaces the stock button adapter.
+</Callout>
+
+<row gap={3} align="center" wrap="wrap">
+  <button disabled={locked} onClick={() => setCount(value => value + 1)}>
+    Custom increment
+  </button>
+  <text>Custom count: {count}</text>
+</row>
+
+<checkbox checked={locked} onChange={setLocked} lineThrough={false}>
+  Disable custom action
+</checkbox>
+```
+
+</SourceDisclosure>
+
+**Prerequisites:** an app that renders answers with `DilRenderer` (see [Quickstart](/docs/getting-started/)) and a decision to use host or Shadow DOM mode (see [Rendering modes](/docs/rendering-modes/)). The default iframe mode cannot render custom components; see [Iframe restrictions](#iframe-restrictions).
+
+## Register components
+
+Pass a map from tag names to React components through `components`:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { components } from "./dil-components";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="host"
+      text={text}
+      isStreaming={isStreaming}
+      showStatus={false}
+      components={components}
+      componentConfig={{ Callout: { label: "From our design system" } }}
+      classNames={{ Callout: "od-custom-callout", button: "od-custom-action" }}
+    />
+  );
+}
+```
+
+Define `od-custom-callout` and `od-custom-action` in your app's stylesheet.
+
+- Names are case-sensitive. `Callout` adds a new tag. `button` replaces the built-in button in this renderer only; other tags keep their built-in components.
+- A capitalized tag name always parses as a component. A lowercase name parses as a component only when it is a built-in tag or a key in `components`. Other lowercase tags, such as `<div>`, display as text.
+- Keep the components and the registry at module scope. A component defined inside a render function is a new type on every render, so React remounts it and loses its state.
+- Pass the registry from the first render. The renderer recognizes a lowercase custom name only in text that arrives after it receives the registry.
+- In Next.js, keep this file a Client Component. A Server Component cannot pass React components as props.
+
+For Shadow DOM, use `mode="shadow"` and pass the CSS for your classes through `shadowStyles`; page CSS does not reach inside the shadow root. See [Style inside a shadow root](/docs/theming/#shadow-dom-css).
+
+The module below implements both tags. `Callout` reads its label from your app's configuration and forwards named style slots. `Action` replaces `button`: it forwards clicks to the answer and honors the answer's `disabled` attribute. It renders `Button` from `@snackbit/opendil/ui` (see [React UI exports](/docs/ui/)); import your design system's button instead. A replacement button cannot authorize clipboard writes; see [Clipboard](#clipboard).
+
+<SourceDisclosure label="dil-components.tsx">
+
+```tsx title="components/dil-components.tsx"
+import { useCallback } from "react";
+import type { DilComponentProps } from "@snackbit/opendil";
+import { Button } from "@snackbit/opendil/ui";
+
+function Callout({
+  children,
+  className,
+  config,
+  slots,
+  presentationRef,
+}: DilComponentProps) {
+  const label = typeof config.label === "string" ? config.label : "Note";
+  return (
+    <aside
+      ref={presentationRef}
+      className={className}
+      aria-label="Custom callout"
+    >
+      <strong className={slots.title}>{label}</strong>
+      <div className={slots.body}>{children}</div>
+    </aside>
+  );
+}
+
+function Action({
+  children,
+  attributes,
+  className,
+  ready,
+  invoke,
+  presentationRef,
+}: DilComponentProps) {
+  const click = useCallback(() => invoke("onClick"), [invoke]);
+  return (
+    <Button
+      type="button"
+      ref={presentationRef}
+      disabled={!ready || attributes.disabled === true}
+      className={className}
+      onClick={click}
+    >
+      {children}
+    </Button>
+  );
+}
+
+export const components = { Callout, button: Action };
+```
+
+</SourceDisclosure>
+
+## Read attributes and call back into the answer
+
+Every registered component receives `DilComponentProps`:
+
+| Prop              | Type                                           | Description                                          |
+| ----------------- | ---------------------------------------------- | ---------------------------------------------------- |
+| `name`            | `string`                                       | The registered tag name                              |
+| `attributes`      | `Readonly<Record<string, unknown>>`            | Evaluated DIL attributes over `componentConfig[tag]` |
+| `config`          | `Readonly<Record<string, unknown>>`            | `componentConfig[tag]` as you passed it, or `{}`     |
+| `children`        | `ReactNode`                                    | The rendered DIL children                            |
+| `className`       | `string`                                       | `classNames[tag]`, or `""`                           |
+| `slots`           | `Readonly<Record<string, string>>`             | `slots[tag]`, or `{}`                                |
+| `ready`           | `boolean`                                      | Whether callbacks can run now                        |
+| `invoke`          | `(attribute: string, value?: unknown) => void` | Calls the DIL callback in that attribute             |
+| `presentationRef` | `(element: HTMLElement \| null) => void`       | Optional ref for progressive reveal                  |
+
+`attributes` holds evaluated values: strings, numbers, booleans, objects, arrays, and functions for callbacks. Check each type before you use it, as `Callout` does with its label.
+
+Call `invoke("onClick")` from your click handler. When your control produces a value, call `invoke("onChange", value)` with the type the DIL handler expects: a string, a number, or a boolean. Never pass a browser event; it is not a value the answer can use. `invoke` does nothing while `ready` is `false` or when the attribute is not a function.
+
+`ready` is `false` while the tag is still streaming, while its attribute expressions cannot be evaluated, after the expression engine has stopped, and when the answer exceeds the display limit. Use it for your control's disabled state.
+
+This `Rating` component sends a number back to the answer:
+
+```tsx title="components/rating.tsx"
+import type { DilComponentProps } from "@snackbit/opendil";
+
+export function Rating({ attributes, ready, invoke }: DilComponentProps) {
+  const value = typeof attributes.value === "number" ? attributes.value : 0;
+  return (
+    <div role="group" aria-label="Rating">
+      {[1, 2, 3, 4, 5].map((stars) => (
+        <button
+          key={stars}
+          type="button"
+          aria-pressed={stars === value}
+          disabled={!ready}
+          onClick={() => invoke("onChange", stars)}
+        >
+          {stars}
+        </button>
+      ))}
+    </div>
+  );
+}
+```
+
+After you add `Rating` to the registry, an answer can bind it to state:
+
+```dil title="rating.dil"
+{@body const [stars, setStars] = DIL.useState(3)}
+<Rating value={stars} onChange={setStars}/>
+<text>You rated this {stars} of 5.</text>
+```
+
+Built-in controls keep the reader's draft while the expression engine works. A custom component sees the new value only after the expression engine evaluates it, so a text field should keep its typed text in local state and call `invoke` on each change.
+
+Forward `presentationRef` to your component's visual root so it fades in with [progressive reveal](/docs/streaming/). Leave it off layout-only wrappers, so their children reveal one by one.
+
+## Set default attributes
+
+`componentConfig[tag]` sets default attributes for any tag, built-in or custom. Attributes written in the answer win. In an app that keeps the built-in button, this renderer outlines every button unless the answer sets another `variant`:
+
+```tsx title="components/outlined-answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function OutlinedAnswer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="host"
+      text={text}
+      isStreaming={isStreaming}
+      componentConfig={{ button: { variant: "outline" } }}
+    />
+  );
+}
+```
+
+A custom component also receives the configuration unmerged as `config`. Read `attributes.label` when the answer may override the value. Read `config.label` when your app owns it, as `Callout` does.
+
+Your component implements what it accepts. Putting a value in `componentConfig` does not apply it to your markup. `Action`, for example, honors `disabled` but ignores the built-in button's `variant` and `size`.
+
+## Style named parts with slots [#named-slots]
+
+`classNames[tag]` reaches your component as `className`, for its visual root. `slots[tag]` reaches it as `slots`: named class strings for its parts. Add `slots` to the `Answer` component from [Register components](#register-components):
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { components } from "./dil-components";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="host"
+      text={text}
+      isStreaming={isStreaming}
+      showStatus={false}
+      components={components}
+      componentConfig={{ Callout: { label: "From our design system" } }}
+      classNames={{ Callout: "od-custom-callout", button: "od-custom-action" }}
+      slots={{ // [!code highlight:6]
+        Callout: {
+          title: "od-custom-title od-custom-title-strong",
+          body: "od-custom-body",
+        },
+      }}
+    />
+  );
+}
+```
+
+Your component forwards each slot itself, as `Callout` does with `slots.title` and `slots.body`. Slots are class strings, not React elements or replacement content. Built-in components do not read slots; to add classes to them, see [Add classes to built-in components](/docs/theming/#class-overrides).
+
+In host mode, define the slot classes in your app's stylesheet. In Shadow DOM mode, pass them through `shadowStyles`.
+
+Change the label or the title emphasis below. The answer's state survives the change.
+
+<CustomizationPlayground variant="configuration" />
+
+## Tell the model about your components
+
+The [agent spec](/docs/agent-spec/), the instructions that teach a model to write DIL, covers only the built-in tags. It tells the model to use a custom component only when your prompt supplies a contract with its name, attributes, children, and actions. Put that contract after the spec and your product context, in the spec's own notation. This is the system prompt from [Prompting and evaluation](/docs/prompting/#structure-the-system-prompt), with `Rating` added to its `customComponents` string:
+
+```ts title="lib/system-prompt.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+const product = [
+  "You are the planning assistant in a budgeting app.",
+  "Keep answers short. Label estimates and invented values.",
+  "Use components when the user compares numbers, adjusts a value,",
+  "or follows steps. Otherwise answer in Markdown.",
+].join("\n");
+
+const customComponents = `Custom components in this app:
+
+- <Callout>: no props; children: generic
+- <Rating>: value:number, onChange:callback; children: none
+
+Use Callout for at most one important note per answer. The app sets its
+label. Use Rating to ask for a score from 1 to 5; onChange receives the
+new number. Example:
+
+{@body const [stars, setStars] = DIL.useState(3)}
+<Callout>Prices exclude tax.</Callout>
+<Rating value={stars} onChange={setStars}/>`;
+
+export const systemPrompt = [agentSpec, product, customComponents].join(
+  "\n\n",
+);
+```
+
+[Add OpenDIL to your chat app](/docs/chat-integration/) shows how to pass `systemPrompt` with each SDK. Send the contract only when the answer renders in host or Shadow DOM mode with the same registry. When a replacement for a built-in tag ignores some of its attributes, implement them or say so in the contract.
+
+Your component's own checks are the validation of model output. A capitalized tag that is neither built in nor registered shows "Unsupported DIL component: NAME" in its place. [Prompting and evaluation](/docs/prompting/#describe-your-custom-components) covers how to test the model's use of your tags.
+
+## Limitations [#limitations]
+
+### Iframe restrictions
+
+The prebuilt iframe runtime renders only built-in components. React components are functions in your page; they cannot cross into the sandboxed frame.
+
+In iframe mode, TypeScript types `components`, `componentConfig`, `classNames`, `slots`, `className`, and `shadowStyles` as `undefined`. A JavaScript caller that passes one of them gets this error:
+
+```text
+OpenDIL customization (components) requires mode="host" or mode="shadow".
+```
+
+`appearance` and `tokens` work in every mode; see [Theming](/docs/theming/).
+
+`opendil copy-assets` copies the prebuilt runtime. It does not register your components inside it. You can maintain a custom iframe runtime build with its own registry, but that is outside the public API. If you do, keep the frame's sandbox and CSP intact.
+
+### Trust and execution limits
+
+Custom components run with your app's browser privileges in both host and Shadow DOM modes. Shadow DOM separates styles, not JavaScript. The DIL callbacks your component invokes still run in the expression engine.
+
+The expression engine's [limits](/docs/limits/) do not bound your component's own rendering, effects, or network calls. Keep that code responsive, and handle its loading states and asynchronous errors yourself. Validate attributes before you use them in URLs, DOM properties, or requests. See [Security](/docs/security/) for the full trust model.
+
+### Clipboard
+
+`GenUI.copy` works only from the built-in `button` and `pressable`. The renderer counts a reader's click as permission to copy only when it lands on one of those controls. When you replace `button` or `pressable`, a `GenUI.copy` call from the replacement's `onClick` fails. The whole answer then stops with an "Execution stopped" error that says the clipboard requires a user gesture.
+
+The agent spec tells models to copy from a `button`, so keep the built-in `button` and `pressable` when answers may copy text. If you replace them, tell the model in your contract not to call `GenUI.copy`. See [Clipboard](/docs/security/#clipboard) for the other conditions.
+
+### State, errors, and styling
+
+A component's React state lives only while it is mounted. It is lost when a conditional branch hides the component, when virtualization unmounts it, or when the renderer remounts. Keep lasting values in `DIL.useState` through `attributes` and `invoke`, or in app state outside the renderer.
+
+When your component throws while rendering, the renderer replaces only that component with the error's message after the answer finishes streaming. Readers see the message, so keep secrets out of it. The rest of the answer and other renderers keep working. Errors in event handlers and asynchronous work are yours to handle. The [customization demo](/demo/customization/) has a control that breaks a component on purpose.
+
+The renderer's `onError` prop does not report these render errors; it covers problems in the answer itself. To log a failing component, wrap its content in your own React error boundary. See [Report rendering problems](/docs/renderer/#report-rendering-problems).
+
+CSS from your page does not cross a shadow root, so every class you pass through `classNames` or `slots` needs CSS available inside it. Overlays that portal to `document.body` also leave that boundary: portal them into the renderer's root, or use host mode. See [Style inside a shadow root](/docs/theming/#shadow-dom-css).
+
+## Recap
+
+- `components` maps tag names to React components in host and Shadow DOM modes. Capitalized names always parse as tags; a new lowercase tag needs a registration.
+- Read `attributes`, call back with `invoke`, and use `ready` for the disabled state.
+- `componentConfig` sets defaults for any tag; `slots` passes class names for your component's parts.
+- The model uses your tags only when your system prompt describes them after the agent spec.
+- Your components run with your page's privileges, so validate every attribute.
+
+## Next steps
+
+<Cards>
+  <Card title="Theming" href="/docs/theming/" description="Colors, dark appearance, classes, and Shadow DOM styles." />
+  <Card title="Prompting and evaluation" href="/docs/prompting/" description="Structure the system prompt and test what the model writes." />
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose host or Shadow DOM mode and set its CSP." />
+  <Card title="DilRenderer API" href="/docs/renderer/" description="Every prop, including components, componentConfig, and slots." />
+</Cards>

@@ -1,0 +1,298 @@
+---
+title: DIL tour
+description: "Learn DIL in ten minutes: Markdown, component tags, attributes, expressions, state, conditions, and repeated content."
+---
+
+DIL (Dynamic Interface Language) is Markdown with component tags, a little JavaScript, and document state. A model writes it as plain text, and OpenDIL renders it as an interactive interface. This page explains each part of the language with short examples. Read it to understand what your model writes, or to write DIL yourself.
+
+## A complete document
+
+This DIL document is a small team price estimate. It has a heading, a state value, a calculation, a slider, and a condition:
+
+```dil
+# Team estimate
+
+{@body const [seats,setSeats] = DIL.useState(8)}
+{@body const monthly = seats * 29}
+
+<box border radius="xl" padding={4} gap={3}>
+  <title size="xl">€{monthly.toFixed(2)} / month</title>
+  <slider aria-label="Team members" min={1} max={50}
+          value={seats} onChange={setSeats}/>
+  {#if seats >= 20}
+    <badge color="success">Large team</badge>
+  {:else}
+    <caption>{seats} seats selected</caption>
+  {/if}
+</box>
+```
+
+The document holds its own state (`seats`) and calculations (`monthly`). Your app supplies the rendering and a few services, such as the clipboard. The pricing example below is a larger version of the same idea. Edit its source to see the result change:
+
+<LiveExample id="pricing" />
+
+## Write prose with Markdown
+
+Use headings, paragraphs, lists, emphasis, blockquotes, fenced code, and GitHub-flavored tables, strikethrough, and task lists. A few things differ from an ordinary Markdown renderer:
+
+- Links show their label as plain text and do not navigate. Write the URL as visible text when the reader needs it.
+- Images are hidden.
+- Task-list checkboxes are display only. Use the `checkbox` component for choices the reader can change.
+- A fence with the language `mermaid` draws a diagram.
+- While an answer streams, OpenDIL completes unfinished formatting, such as an unclosed `**`, so half-written Markdown does not flash as raw symbols.
+
+Braces start an expression and tags start a component, so code needs protection. Fenced code and inline code spans display their contents literally: braces, tags, and directives inside them never evaluate. An unmatched backtick protects nothing.
+
+```dil
+Pass `{ leading: false }` to `debounce`, and wrap the chart in a `<div>`.
+
+For a literal brace outside code, use an expression: {"{"}
+```
+
+Lowercase HTML-like tags that are not DIL tags, such as `<div>` or `<br>`, display as plain text. A capitalized tag that OpenDIL does not know, such as `<Card>`, shows the error "Unsupported DIL component: Card".
+
+## Add components with tags
+
+Components are tags inside the Markdown:
+
+```dil
+<box border padding={4} gap={3}>
+  <title>Service health</title>
+  <row gap={2} align="center">
+    <badge color="success">Healthy</badge>
+    <caption>All checks passed</caption>
+  </row>
+  <divider/>
+  <text size="sm">3 regions, 12 services</text>
+</box>
+```
+
+- Tag names are case-sensitive. Most built-in tags are lowercase, such as `box` and `slider`. A few are capitalized: `Chart`, `CodeBlock`, `Mermaid`, `NodeGraph`, and `AsyncImage`.
+- Use a pair of tags for a component with children. Write a component without children as one self-closing tag: `<divider/>`.
+- Each component accepts specific children. For example, [`table`](/docs/components/tables/) accepts only `table-row`. Each page in the Components section lists the attributes and children of its tags.
+
+Attributes take one of these forms:
+
+| Form                       | Value                                         |
+| -------------------------- | --------------------------------------------- |
+| `size="lg"` or `size='lg'` | The string `lg`                               |
+| `border`                   | `true`                                        |
+| `padding={4}`              | The value of the expression inside the braces |
+
+Use braces for numbers, booleans, arrays, objects, and callbacks: `max={50}` is a number, but `max="50"` is the string `"50"`. Unquoted values such as `size=lg` and spread attributes such as `{...props}` are not supported. To put a quote inside a string, use an expression: `aria-label={"Say \"hi\""}`.
+
+Numeric `padding` and `gap` count in 4 px units, so `padding={4}` is 16 px. See [Shared layout attributes](/docs/components/layout/#shared-layout-attributes) for the other layout attributes.
+
+## Compute values with expressions
+
+`{expression}` inserts the value of a JavaScript expression into the text:
+
+```dil
+{@body const items = [{id:"a",price:12},{id:"b",price:30}]}
+{@body const total = items.reduce((sum,item) => sum + item.price,0)}
+<text>Total: {total} EUR for {items.length} items</text>
+<text>Average: {(total / items.length).toFixed(1)} EUR</text>
+<text>Names: {items.map(item => item.id).join(", ")}</text>
+```
+
+OpenDIL displays the result as text:
+
+- Strings and numbers display as they are.
+- `null` and `undefined` display nothing.
+- Booleans display as `true` or `false`.
+- Objects and arrays display as `[object Object]`. Pick a field, or join an array into a string first.
+
+A returned string is never parsed as markup. `{"<b>bold</b>"}` shows the tags as text.
+
+Expressions support JavaScript operators, property access, optional chaining, template strings, functions, and array methods such as `filter`, `map`, and `reduce`. Text expressions cannot contain statements such as `if` or `for`; callbacks can. Do not build UI with `.map()` returning tags. Use [`{#each}`](#repeat-content) instead.
+
+Expressions run in a sandboxed JavaScript engine (QuickJS) in a Web Worker. They have no access to the DOM, the network, storage, or timers. `Intl.NumberFormat` is a limited bridge: it formats numbers in en-US style with no fraction digits. Use string methods such as `toFixed(2)` for other formats. The expression engine stops runaway work; see [Limits](/docs/limits/) for the exact bounds.
+
+## Keep state
+
+Declare state and derived values with `{@body ...}` directives:
+
+```dil
+{@body const [count,setCount] = DIL.useState(0)}
+{@body const doubled = count * 2}
+{@body const increment = () => setCount(previous => previous + 1)}
+<button onClick={increment}>Increment</button>
+<text>{doubled}</text>
+```
+
+Each directive declares one name in one of two forms:
+
+- `const [value,setValue] = DIL.useState(initial)` creates state and its setter.
+- `const name = expression` creates a derived value or a callback. OpenDIL evaluates it again whenever it is read, so `doubled` always matches `count`.
+
+<Callout type="warn" title="One const per directive">
+  `{@body const a = 1; const b = 2}` is invalid. The answer stops with an "Execution stopped" error, and nothing in it responds to input after that. Write one `{@body ...}` directive per name.
+</Callout>
+
+Follow these rules:
+
+- Names start with a letter or underscore and contain only letters, digits, and underscores. Each name is unique in the document.
+- There is no `let`, `var`, function declaration, other destructuring, or other hook.
+- State initializes once per document. `DIL.useState(() => [])` with a function runs the function once to get the initial value.
+- Setters accept a new value or a function of the previous value: `setCount(previous => previous + 1)`.
+- Replace arrays and objects instead of changing them in place: `setItems(previous => [...previous, item])`.
+- Declarations belong to the whole document, even when written inside `{#if}` or `{#each}`. Declare them at the top level. They cannot read loop variables or create state per item. Keep per-item state in one top-level object keyed by `id`.
+
+`DIL.useState` looks like the React hook but is not one. State belongs to its name, not to call order, so a declaration can arrive later in the stream without breaking earlier state.
+
+## Respond to input
+
+Callbacks receive values, never DOM events:
+
+| Callback                                             | Receives                         |
+| ---------------------------------------------------- | -------------------------------- |
+| `button.onClick`, `pressable.onClick`                | Nothing                          |
+| `input.onChange`                                     | The text, a string               |
+| `slider.onChange`                                    | The value, a number              |
+| `checkbox.onChange`                                  | Whether it is checked, a boolean |
+| `radio-group.onChange`, `segmented-control.onChange` | The selected value, a string     |
+| `NodeGraph.onSelect`                                 | The node `id`, a string          |
+
+Pass a setter directly, or a function:
+
+```dil
+{@body const [name,setName] = DIL.useState("")}
+{@body const [agreed,setAgreed] = DIL.useState(false)}
+{@body const [sent,setSent] = DIL.useState(false)}
+{@body const ready = agreed && name.trim() !== ""}
+<box gap={3}>
+  <input aria-label="Name" placeholder="Your name"
+         value={name} onChange={setName}/>
+  <checkbox checked={agreed} lineThrough={false}
+            onChange={setAgreed}>I agree to the terms</checkbox>
+  <button disabled={!ready} onClick={() => setSent(true)}>Submit</button>
+  {#if sent}<caption>Thanks, {name}.</caption>{/if}
+</box>
+```
+
+- Write `onChange={setName}`, not `onChange={(event) => setName(event.target.value)}`. There is no event object.
+- Write `onClick={() => setSent(true)}`, not `onClick={setSent(true)}`. The second form calls the setter while assigning the attribute.
+- Keep handlers synchronous and short.
+- Inputs, sliders, and checkboxes show the reader's change at once, while the expression engine updates state in the background.
+
+<LiveExample id="form" />
+
+## Show content conditionally
+
+```dil
+{@body const status = "ready"}
+{#if status === "ready"}
+  <badge color="success">Ready</badge>
+{:else if status === "waiting"}
+  <caption>Waiting</caption>
+{:else}
+  <text>Unavailable</text>
+{/if}
+```
+
+Conditions use JavaScript truthiness, and the first matching branch renders. `{:else if}` and `{:else}` are optional; `{/if}` is required. Hiding a branch does not reset the document's state.
+
+Combine a `segmented-control` with `{#if}` to switch between views:
+
+<LiveExample id="tabs" />
+
+## Repeat content
+
+```dil
+{@body const items = [{id:"a",label:"Alpha"},{id:"b",label:"Beta"}]}
+{#each items as item,index}
+  <text>{index + 1}. {item.label}</text>
+{/each}
+```
+
+- `index` is optional and starts at 0.
+- A value that is not an array renders no items.
+- Give each record a stable, unique `id`. OpenDIL uses it to keep each item's controls in place when the list changes. Without `id`, identity falls back to position. There is no `key` attribute.
+- A nested `{#each}` can read the outer loop's variables.
+- While an answer streams, the repeated content appears once `{/each}` arrives.
+
+This list adds and removes items. The `nextId` counter keeps `id` values unique after a removal:
+
+```dil
+{@body const [items,setItems] = DIL.useState([{id:"item-1",name:"Item 1"}])}
+{@body const [nextId,setNextId] = DIL.useState(2)}
+{@body const add = () => {
+  const id = `item-${nextId}`;
+  setItems(previous => [...previous, {id, name: `Item ${nextId}`}]);
+  setNextId(previous => previous + 1);
+}}
+{@body const remove = (id) =>
+  setItems(previous => previous.filter(entry => entry.id !== id))}
+<button onClick={add}>Add item</button>
+{#if items.length === 0}<caption>No items.</caption>{/if}
+{#each items as item,index}
+  <row gap={2} align="center">
+    <text>{index + 1}. {item.name}</text>
+    <button variant="ghost" onClick={() => remove(item.id)}>
+      Remove {item.name}
+    </button>
+  </row>
+{/each}
+```
+
+## Copy to the clipboard
+
+`GenUI.copy(text)` asks your app to copy text. It is the only action a DIL document can request from your app.
+
+```dil
+{@body const [name,setName] = DIL.useState("")}
+{@body const valid = name.trim().length > 0}
+<input aria-label="Name" value={name} onChange={setName}/>
+{#if !valid}<caption>Enter a name.</caption>{/if}
+<button disabled={!valid}
+        onClick={() => { if (valid) GenUI.copy(name); }}>
+  Copy name
+</button>
+```
+
+- Call it directly inside the `onClick` of a `button` or `pressable`, after the reader clicks. Calls from anywhere else fail. In an `onChange` callback, for example, the answer stops with "Execution stopped: Clipboard requires a user gesture".
+- Do not delay it with promises or timers, and do not use its return value.
+- The button that started the copy shows "Copied" or "Copy failed". Do not add your own success message.
+- Empty text copies nothing. The maximum length is on [Limits](/docs/limits/#clipboard).
+
+## Show literal code
+
+Fenced code displays source as plain text. `CodeBlock` adds syntax highlighting, copy and wrap controls, and can let the reader edit the code:
+
+```dil
+<CodeBlock language="javascript" editable>
+const message = "Hello";
+console.log(message);
+</CodeBlock>
+```
+
+`CodeBlock` reads everything up to the exact `</CodeBlock>` as text. Neither form runs the code, and edits stay inside the code block. See [Code](/docs/components/code/) for the details.
+
+## What DIL does not do
+
+DIL documents cannot:
+
+- import modules or contain arbitrary HTML, JSX, TypeScript, or CSS;
+- fetch data, use storage, or set timers;
+- open URLs or navigate;
+- show maps or load external images;
+- save edits back to your app or a server.
+
+Data reaches a document only as values the model writes into it. The [agent spec](/docs/agent-spec/) gives models the complete rules.
+
+## Recap
+
+- DIL is Markdown plus component tags, `{expression}` values, and `{@body const ...}` declarations, one name per directive.
+- Attribute values in braces are expressions; quoted values are strings.
+- Callbacks receive values such as a string or a number, never DOM events.
+- `{#if}` and `{#each}` build structure; `.map()` returning tags does not work.
+- Code spans and fences show braces and tags literally.
+
+## Next steps
+
+<Cards>
+  <Card title="Components" href="/docs/components/layout/" description="Attributes, children, and examples for each built-in tag, starting with layout." />
+  <Card title="Agent Spec" href="/docs/agent-spec/" description="Load the instructions that teach your model to write DIL." />
+  <Card title="Prompting and evaluation" href="/docs/prompting/" description="Get reliable DIL from your model and test its answers." />
+  <Card title="Limits" href="/docs/limits/" description="Exact size, work, and display bounds for each answer." />
+</Cards>

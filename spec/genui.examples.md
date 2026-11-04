@@ -59,8 +59,8 @@ UI response normally omits the surrounding fence.
 
 #### Syntax: literal-code
 
-CodeBlock protects braces and tags. Inline backticks alone do not protect them
-from DIL parsing.
+CodeBlock, fenced code, and inline code spans protect braces and tags from DIL
+parsing.
 
 ```dil
 <CodeBlock language="text">
@@ -68,6 +68,8 @@ from DIL parsing.
 <unsupported-example>This is displayed source.</unsupported-example>
 </CodeBlock>
 <text>A literal opening brace: {"{"}</text>
+
+Pass `{ leading: false }` to `debounce`, and wrap the chart in a `<div>`.
 ```
 
 ### JavaScript expressions

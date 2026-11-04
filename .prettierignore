@@ -2,8 +2,8 @@ node_modules
 **/dist
 **/coverage
 .next
-**/.astro
-apps/demo/public/opendil
+apps/site/public/opendil
+apps/site/.source
 public/dil-runtime
 test-results
 playwright-report

@@ -1,0 +1,250 @@
+---
+title: Prompting and evaluation
+description: "Get reliable DIL from your model: system prompt structure, when to ask for UI, custom component contracts, and how to test generated answers."
+---
+
+The [agent spec](/docs/agent-spec/), the instructions that teach a model to write DIL, covers the language itself. This page covers the rest: how to combine the spec with your own instructions, and how to check that a model's answers render. Use it when you write a system prompt, or before you change the prompt, the model, or the OpenDIL version.
+
+## What you will learn
+
+- How to order the parts of the system prompt
+- How to steer when the model answers with components
+- How to give the model data and describe your own components
+- Which mistakes models make, and how to fix each one
+- How to test saved answers before you ship a change
+
+You need a chat that already renders answers with `DilRenderer`. If you do not have one yet, start with [Add OpenDIL to your chat app](/docs/chat-integration/).
+
+## Structure the system prompt
+
+Build the system prompt in this order:
+
+1. The agent spec.
+2. Your product context: who the assistant serves, tone, and when to use components.
+3. Contracts for your custom components, if you register any.
+
+Put data for a single request, such as tool results or records, in the conversation instead.
+
+```ts title="lib/system-prompt.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+const product = [
+  "You are the planning assistant in a budgeting app.",
+  "Keep answers short. Label estimates and invented values.",
+  "Use components when the user compares numbers, adjusts a value,",
+  "or follows steps. Otherwise answer in Markdown.",
+].join("\n");
+
+const customComponents = `Custom components in this app:
+
+- <Callout>: no props; children: generic
+
+Use Callout for at most one important note per answer. Example:
+
+<Callout>Prices exclude tax.</Callout>`;
+
+export const systemPrompt = [agentSpec, product, customComponents].join(
+  "\n\n",
+);
+```
+
+[Add OpenDIL to your chat app](/docs/chat-integration/) shows how to pass `systemPrompt` with each SDK.
+
+<Callout type="info" title="Put the spec first">
+  The spec is the longest part of the prompt and the same on every request. Providers that cache prompt prefixes can reuse it when it comes first. See your provider's documentation on prompt caching.
+</Callout>
+
+Two more rules keep answers renderable:
+
+- Send earlier answers back to the model exactly as it wrote them, as DIL source. The model then sees its own format in the history.
+- Do not ask the model to wrap answers in a code fence. A fenced answer shows source code instead of an interface. If your model adds a fence anyway, [strip one outer fence](/docs/chat-integration/#strip-a-code-fence-the-model-added).
+
+## Decide when the model should use UI
+
+The spec tells the model how to mix Markdown and components, but not when an answer needs components. Add a rule that fits your product, for example:
+
+> Use components when the user compares numbers, adjusts a parameter, or follows steps. Otherwise answer in Markdown.
+
+This is a starting point, not a rule from the spec. Check its effect with your [evaluation set](#track-regressions).
+
+## Supply data
+
+A DIL answer can use only the data the model writes into it. There is no prop that passes data from your app into an answer, and an answer cannot fetch anything. The model embeds values as literals in `{@body const ...}` declarations:
+
+```dil
+{@body const records = [{id:"a",name:"Alpha",amount:12}]}
+{@body const total = records.reduce((sum,item) => sum + item.amount,0)}
+<text>Total: {total}</text>
+{#each records as item}<text>{item["name"]}: {item.amount}</text>{/each}
+```
+
+- Put the records in the conversation, for example as a tool result, and ask the model to embed the values it needs.
+- Keep embedded data small. Every value counts toward the answer's [limits](/docs/limits/).
+- Ask the model to label invented values. The spec already tells it to.
+- Controls in an answer change only the answer's own state. Nothing is saved back to your app.
+
+## Describe your custom components
+
+In host and Shadow DOM modes you can register your own React components as tags. The spec tells the model to use only the tags it lists, unless your prompt supplies a contract with the component's name, attributes, children, and actions. Write it in three parts:
+
+- a line in the spec's notation: the tag, its attributes with types and defaults, its callbacks, and its children, such as `- <Rating>: value:number, onChange:callback; children: none`;
+- one rule for when to use it, and what each callback receives, such as "onChange receives the new number";
+- one short example.
+
+The `customComponents` string in the [system prompt above](#structure-the-system-prompt) follows this format; `Callout` has no attributes or callbacks. See [Tell the model about your components](/docs/custom-components/#tell-the-model-about-your-components) for registering and describing components.
+
+## Common mistakes and fixes
+
+| Mistake                                             | What readers see                                                                         | Fix                                                                                                                                              |
+| --------------------------------------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Invents a capitalized tag, such as `<Card>`         | "Unsupported DIL component: Card"                                                        | Check that the spec is in the prompt. Add the full-spec block of the right component                                                             |
+| Writes HTML, such as `<div>`                        | The tags as plain text                                                                   | Repeat the spec's rule against arbitrary HTML, and name the built-in tag to use instead, such as `box`                                           |
+| Wraps the answer in a code fence                    | DIL source instead of an interface                                                       | Repeat the rule in your prompt, or strip one outer fence                                                                                         |
+| Writes braces in prose outside code, such as `{id}` | "Cannot evaluate this value."                                                            | Ask for inline code around literal braces, or `{"{"}` for a single brace in prose                                                                |
+| Builds lists with `.map()` returning tags           | The answer stops at the list and ends with "This response ended before it was finished." | Add the `Task: dynamic-list` example                                                                                                             |
+| Declares two names in one `{@body}`, or uses `let`  | "Execution stopped: …"; the answer stops responding                                      | Add the `Task: controlled-counter` example. The rules are under [State declarations](/docs/agent-spec/full/#state-declarations) in the full spec |
+| Reads DOM events, such as `event.target.value`      | "Execution stopped: …" after the first input                                             | Add the full-spec `Callback:` blocks                                                                                                             |
+| Writes an unbounded loop                            | "Execution stopped: this action exceeded its time limit."                                | Ask for small, bounded calculations                                                                                                              |
+| Embeds too much content                             | "Rendering stopped: this message exceeds the display limit."                             | Ask for summaries instead of full data                                                                                                           |
+| Stops at the output token limit                     | The finished parts, then "This response ended before it was finished."                   | Raise the maximum output tokens, or ask for shorter answers                                                                                      |
+| Leaves an input without `aria-label`                | No error; the control is named only by its placeholder, if it has one                    | Use the review checklist below                                                                                                                   |
+
+To add full-spec blocks or examples for the components your model gets wrong, see [Choose primary or full](/docs/agent-spec/#choose-primary-or-full). [Troubleshooting](/docs/troubleshooting/) lists every error message with its cause.
+
+## Evaluate generated answers
+
+### Review checklist
+
+Check each saved answer against this list. It follows the `Task: output-review` block of the [full spec](/docs/agent-spec/full/).
+
+- Every tag and attribute appears in the spec, or in your custom component contracts.
+- Every name is declared before something reads it.
+- Every callback expects the value its control sends: a string, a number, a boolean, or nothing.
+- Every tag and directive is closed.
+- Every displayed fact comes from the data you supplied, or is labeled as invented.
+- No button does nothing, unless the answer only shows how one looks.
+- Every `input`, `slider`, `radio-group`, and `segmented-control` has an `aria-label`.
+
+### Render answers in a test
+
+Save model answers as `.dil` files and render each one in a browser test. The renderer's `onError` prop reports malformed DIL, an answer that ends with an open tag or expression, and stopped expressions. Errors that OpenDIL shows inside the answer, such as a component that fails to render, have `role="alert"`. A test that checks both catches every problem.
+
+Add a page that only your tests open. It renders the answer that the test puts on `window` and lists what `onError` reports. Host mode keeps the alerts in the page's DOM; in the default iframe mode they are inside a cross-origin frame.
+
+```tsx title="app/dil-check/page.tsx"
+"use client";
+
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { useEffect, useState } from "react";
+
+declare global {
+  interface Window {
+    dilAnswer?: string;
+  }
+}
+
+/** Renders one saved answer for browser tests. */
+export default function DilCheckPage() {
+  const [answer, setAnswer] = useState<string>();
+  const [complete, setComplete] = useState(false);
+  const [problems, setProblems] = useState<string[]>([]);
+  useEffect(() => {
+    setAnswer(window.dilAnswer ?? "");
+  }, []);
+  if (answer === undefined) return null;
+  return (
+    <main data-complete={complete}>
+      <DilRenderer
+        text={answer}
+        mode="host"
+        showStatus={false}
+        onCommit={(detail) => setComplete(detail.complete)}
+        onError={(error) =>
+          setProblems((list) => [...list, `${error.kind}: ${error.message}`])
+        }
+      />
+      <ul aria-label="OpenDIL problems">
+        {problems.map((problem, index) => (
+          <li key={index}>{problem}</li>
+        ))}
+      </ul>
+    </main>
+  );
+}
+```
+
+The expression engine can report an error after the renderer has parsed all of the text, and no public signal says when it is idle. The test therefore checks in three steps:
+
+1. Wait until the renderer reports that it parsed all of the text.
+2. If the answer has a sidecar file, such as `budget.expect.txt` next to `budget.dil`, wait for each of its lines to appear. A computed value appears only after the engine has run, so this also waits for the engine.
+3. Give the engine a short settle time, then expect no reported problem and no alert.
+
+```ts title="tests/dil-answers.spec.ts"
+import { existsSync, readFileSync, readdirSync } from "node:fs";
+import { join } from "node:path";
+import { expect, test } from "@playwright/test";
+
+const folder = "tests/dil-answers";
+const files = readdirSync(folder).filter((file) => file.endsWith(".dil"));
+
+/** Lines of text the answer must show, one per line, if a sidecar exists. */
+function expectedText(file: string) {
+  const sidecar = join(folder, file.replace(/\.dil$/, ".expect.txt"));
+  if (!existsSync(sidecar)) return [];
+  return readFileSync(sidecar, "utf8").split(/\r?\n/).filter(Boolean);
+}
+
+for (const file of files) {
+  test(`${file} renders without errors`, async ({ page }) => {
+    const answer = readFileSync(join(folder, file), "utf8");
+    await page.addInitScript((text) => {
+      Object.assign(window, { dilAnswer: text });
+    }, answer);
+    await page.goto("/dil-check");
+    await expect(page.locator('main[data-complete="true"]')).toBeAttached();
+    for (const text of expectedText(file)) {
+      await expect(page.getByText(text).first()).toBeVisible();
+    }
+    // No public signal reports that the expression engine is idle.
+    await page.waitForTimeout(1000);
+    const problems = page.getByRole("list", { name: "OpenDIL problems" });
+    await expect(problems.getByRole("listitem")).toHaveCount(0);
+    await expect(page.getByRole("alert")).toHaveCount(0);
+  });
+}
+```
+
+Write a sidecar for every answer with state or calculations, for example a `.expect.txt` file containing `Total: 12`. Without one, the settle time is the only guard against a late expression error, and a slow machine can miss it.
+
+### Validate against the spec
+
+The OpenDIL repository has a stricter check for contributors. It parses an answer, checks every tag, attribute, and composition against the spec, and runs its declarations and expressions in the expression engine. In a clone of the repository, run:
+
+```sh
+npm run build:package
+GENUI_RESPONSE_FILE=answer.dil npm run check:agent-spec
+```
+
+This check is not part of the npm package. It does not call a model, judge visual quality, or verify facts.
+
+### Track regressions
+
+Keep a set of prompts and the answers they produced. Render and review them again whenever you change the model, the prompt, or the OpenDIL version. The tasks in the [examples catalog](/docs/agent-spec/examples/), such as `controlled-counter`, `validation-form`, and `external-data`, make a good first set of prompts.
+
+## Recap
+
+- The system prompt holds the agent spec first, then your product context, then custom component contracts.
+- Answers can use only data the model writes into them as literals.
+- Each common model mistake has a recognizable message and a prompt fix.
+- Every reader-facing error has `role="alert"`, so a browser test can catch it.
+- Re-run your saved answers when the model, prompt, or OpenDIL version changes.
+
+## Next steps
+
+<Cards>
+  <Card title="Agent Spec" href="/docs/agent-spec/" description="Load the spec from the package and choose primary or full." />
+  <Card title="Full spec" href="/docs/agent-spec/full/" description="Look up the exact rules for one component or task." />
+  <Card title="Examples catalog" href="/docs/agent-spec/examples/" description="Find runnable examples to use as few-shot prompts." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/" description="Match an error message to its cause and fix." />
+</Cards>

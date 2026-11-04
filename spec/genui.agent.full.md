@@ -120,16 +120,30 @@ composition when cells contain components or reactive controls.
 
 Fenced code protects its contents from DIL parsing. Put triple backticks or triple
 tildes at the beginning of a line, with no more than three preceding spaces.
-Use the same marker to close the fence. Use conventional three-character fences
-rather than depending on extended Markdown fence behavior at the DIL boundary.
+Close the fence with the same marker on a line of its own. A longer fence, such as
+four backticks, can enclose lines that start with three.
 A `mermaid` language fence renders a Mermaid diagram rather than ordinary code.
 Other language labels request display syntax, not code execution.
 
-Inline backticks are processed after the DIL parser. They do not shield braces
-or component-shaped source from expression/tag parsing. To show a literal tag or
-directive reliably, use fenced code or CodeBlock. To insert a brace in prose,
-interpolate a string containing it. Entity spellings can have Markdown-dependent
-display behavior; use a string expression when exact text matters.
+Inline code spans follow Markdown: a run of one or more backticks opens a span
+that the next run of the same length closes. Braces, tags, and directives inside
+a span display literally and never evaluate, so `{ leading: false }` or `<div>`
+in backticks is safe in prose. A span cannot cross a blank line or continue into
+a line that starts another block: a list item, heading, blockquote, fence,
+component tag, or block directive such as `{:else}`. A component tag later on
+the same line stays inside the span. An unmatched backtick protects nothing, and
+a backslash before a backtick makes it literal. A closing fence may be followed
+on its line by a component closing tag or block directive.
+
+Lowercase HTML-like tags that are not DIL tags, such as `<div>`, `</span>`, or
+`<br/>`, display as plain text up to their closing `>`, and so do autolinks such
+as `<https://example.com>`. Their quoted or braced attribute values stay text,
+but any other brace is an expression again, so `a<b then {total}` shows the
+value. Do not rely on this to format output; use Markdown or DIL components. A
+capitalized tag that is not a supported component renders an
+unsupported-component error in its place. To insert a brace in prose, interpolate
+a string containing it. Entity spellings can have Markdown-dependent display
+behavior; use a string expression when exact text matters.
 
 ```dil
 # Review summary
@@ -356,7 +370,8 @@ Streaming rules:
 - Close useful children as they arrive; an enclosing layout may remain open.
 - Leave incomplete tokens pending only while more source will follow.
 - Close an each block before expecting its repeated template to display.
-- End with a complete document; completion converts unfinished syntax into errors.
+- End with a complete document; completion drops unfinished tokens and marks the
+  answer incomplete.
 - Use callbacks and state for interaction; do not patch earlier streamed source.
 
 The parser retains lexical state across chunk boundaries, including quoted strings,

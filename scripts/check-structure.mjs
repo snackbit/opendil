@@ -8,7 +8,12 @@ async function inspect(path) {
   if (sources.length >= 15)
     failures.push(path + ": keep fewer than 15 direct source files");
   for (const entry of entries) {
-    if (["dist", "node_modules", "public"].includes(entry.name)) continue;
+    // Build output and generated sources (Next.js .next*, Fumadocs .source) are not authored code.
+    if (
+      ["dist", "node_modules", "public", ".source"].includes(entry.name) ||
+      entry.name.startsWith(".next")
+    )
+      continue;
     const name = path + "/" + entry.name;
     if (entry.isDirectory()) await inspect(name);
     else if (

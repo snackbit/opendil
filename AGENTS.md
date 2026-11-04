@@ -1,14 +1,16 @@
 # Working in OpenDIL
 
 - `packages/opendil`: public React API, parser, runtime, stock widgets, scoped styles, and asset build.
-- `apps/demo`: Astro site, Starlight docs, and React workbench consuming package exports. `DESIGN.md` defines the site shell; generated interfaces keep their own theme. The shared example catalog supplies playground and docs source. `tests/unit` and `tests/e2e` own regression coverage.
-- `DIL-SPEC.md` is the language/runtime reference; `spec/genui.agent.md` is guidance for authoring DIL, not repository instructions.
+- `apps/site`: Next.js and Fumadocs site with the landing page, docs (`apps/site/content/docs`), and the playground, consuming package exports. `DESIGN.md` defines the site shell; generated interfaces keep their own theme. The shared example catalog supplies playground and docs source.
+- `examples/`: standalone Next.js (AI SDK) and Vite (SSE) chat apps that install the published package; `npm run check:examples` builds them against the local package.
+- `tests/unit` and `tests/e2e` own regression coverage.
+- `spec/genui.agent.md` (shipped as a package export) is guidance for models authoring DIL, not repository instructions. The docs language pages are the reference for people.
 
-Use Node 24 and npm workspaces. Run `npm ci`, then `npm run build`. Before handing off, run `npm run check`, `npm run test:e2e`, and `npm run check:package`. Time costly checks; use focused tests while iterating.
+Use Node 24 and npm workspaces. Run `npm ci`, then `npm run build`; `npm run dev` serves the site. Before handing off, run `npm run check`, `npm run test:e2e`, and `npm run check:package`; after docs changes also `npm run check:links`, and after package API changes `npm run check:examples`. Time costly checks; use focused tests while iterating.
 
-For build-system changes, also run `npm run check:rebuild` to verify that live Vite imports remain available during output publication.
+For build-system changes, also run `npm run check:rebuild` to verify that the site's dev server keeps serving while the package output republishes.
 
-Keep the default opaque-origin frame and bounded QuickJS execution intact. Host and Shadow DOM customization are explicitly opt-in; Shadow DOM is a styling boundary, not iframe containment. Validate channel data and custom-component input at their boundaries. Do not evaluate document expressions in browser JavaScript. The demo tokenizer belongs to its own worker and must not become a renderer dependency.
+Keep the default opaque-origin frame and bounded QuickJS execution intact. Host and Shadow DOM customization are explicitly opt-in; Shadow DOM is a styling boundary, not iframe containment. Validate channel data and custom-component input at their boundaries. Do not evaluate document expressions in browser JavaScript. The site's tokenizer belongs to its own worker and must not become a renderer dependency.
 
 Import other workspaces through package exports. Keep React peer dependencies external. Update consumers, types, tests, and existing docs together. Use apply_patch for semantic changes; format each coherent batch and inspect its diff.
 

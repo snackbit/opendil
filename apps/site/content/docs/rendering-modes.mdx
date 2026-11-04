@@ -1,0 +1,414 @@
+---
+title: Rendering modes and deployment
+description: "Choose between the sandboxed iframe, Shadow DOM, and host rendering, and configure headers and Content Security Policy for each."
+---
+
+`DilRenderer` can draw an answer in three places. Every mode runs the answer's expressions in a sandboxed JavaScript engine (QuickJS) inside a Web Worker. The mode decides where the components and styles live, and what they can reach. This page helps you pick a mode and ship it: runtime files, response headers, base paths, and Content Security Policy (CSP).
+
+## Choose a mode
+
+| Mode                 | Where it renders                        | Use it when                                         | Custom components | Setup                                 |
+| -------------------- | --------------------------------------- | --------------------------------------------------- | ----------------- | ------------------------------------- |
+| `isolated` (default) | A sandboxed iframe with no origin       | Answers come from a model and built-in tags suffice | No                | Runtime files and one response header |
+| `shadow`             | A shadow root in your page              | You need your own components, without page CSS      | Yes               | Two CSP directives, if you send a CSP |
+| `host`               | Your page's DOM, in a `.dil-scope` root | You need your own components and your page's CSS    | Yes               | Two CSP directives, if you send a CSP |
+
+Start with the default. It is the only mode in which the browser keeps the answer away from your page, and it is the only mode that needs files copied into your app. Switch to Shadow DOM or host mode when you need [custom components](/docs/custom-components/) or classes on built-in ones.
+
+<Callout type="warn" title="Shadow DOM is a styling boundary, not a security boundary">
+  In Shadow DOM and host modes the components render in your page's origin,
+  and your custom components run with your page's privileges. Use these modes
+  only where you accept that. [Security](/docs/security/) explains what each
+  mode protects.
+</Callout>
+
+Some props work only in some modes:
+
+| Props                                                               | Modes                          |
+| ------------------------------------------------------------------- | ------------------------------ |
+| `appearance`, `tokens`, and all streaming props                     | All                            |
+| `components`, `componentConfig`, `classNames`, `slots`, `className` | Host, Shadow                   |
+| `shadowStyles`                                                      | Shadow                         |
+| `runtimeBaseUrl`                                                    | iframe (other modes ignore it) |
+
+TypeScript rejects a host or Shadow DOM prop in iframe mode. A JavaScript caller gets an error such as `OpenDIL customization (components) requires mode="host" or mode="shadow".` The [renderer reference](/docs/renderer/) lists every prop.
+
+This answer renders in the default iframe mode. Switch the mode in its settings to compare:
+
+<LiveExample id="pricing" mode="isolated" />
+
+## Use the iframe mode (default)
+
+The default mode needs no `mode` prop:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      text={text}
+      isStreaming={isStreaming}
+      runtimeBaseUrl="/opendil/"
+    />
+  );
+}
+```
+
+`runtimeBaseUrl` is the URL of the folder that serves `frame.html` and `frame.js`, the runtime files. It defaults to `/opendil/`; the trailing slash is optional.
+
+Each answer gets its own `<iframe sandbox="allow-scripts">` without `allow-same-origin`, so the frame has no origin of its own. It cannot read your page, its cookies, or its storage, and it refuses to start if someone embeds it with a real origin. The policy inside `frame.html` blocks network connections, form submissions, plugins, and base URL changes. Your page and the frame talk over a private message channel, and both sides validate every message. An answer can write to the clipboard only after a reader clicks one of its buttons; see [Clipboard](/docs/security/#clipboard).
+
+The frame is as tall as its content. It starts at 0 px, grows as the answer streams, and grows further while a popover or tooltip is open so it is not clipped.
+
+### Known limitation: content that grows above the reader [#content-growing-above-the-reader]
+
+When part of an answer above the visible area gets taller, everything below it in the same answer moves down, and so does the text the reader is looking at. A value that gets longer after a click, an expanded section, or a chart that finishes loading can all do this. Browsers keep the reader in place with scroll anchoring, but they cannot anchor to content inside an iframe: from your page, only the frame's height changes. Shadow DOM and host modes render into your page, so scroll anchoring works there. If readers often scroll back up through long answers that change, consider Shadow DOM mode.
+
+### Copy and serve the runtime files
+
+Copy the runtime into a folder your app serves as static files, as shown in [Quickstart](/docs/getting-started/#copy-the-runtime-files):
+
+```sh
+npx opendil copy-assets --out public/opendil
+```
+
+Next.js and Vite both serve `public/` at the root of your app, so the files end up at `/opendil/frame.html` and `/opendil/frame.js`. [`opendil copy-assets`](/docs/package/#opendil-copy-assets) describes what the command writes and removes.
+
+### Keep the runtime in step with the package
+
+Copy the runtime again after every upgrade. When the copied files and the installed package differ, the renderer logs a warning that starts with "OpenDIL: the runtime frame at …". A `postinstall` script does this for you; see [Copy the runtime on every install](/docs/package/#copy-the-runtime-on-every-install).
+
+### Send the frame header
+
+Serve `frame.html` with this response header:
+
+```http
+Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'
+```
+
+`sandbox allow-scripts` makes the browser apply the sandbox even when someone opens `frame.html` directly. `frame-ancestors 'self'` stops other sites from embedding your copy. If the runtime files live on another origin, such as a CDN, list your app's origin instead of `'self'`, point `runtimeBaseUrl` at the full URL, and allow that origin in your page's `frame-src`.
+
+Send only this header to the runtime files. Your app's own CSP header must not reach them; see [Set a Content Security Policy](#set-a-content-security-policy).
+
+<Tabs groupId="framework" items={["Next.js","Vite"]} persist>
+<Tab value="Next.js">
+
+```ts title="next.config.ts"
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/opendil/frame.html",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "sandbox allow-scripts; frame-ancestors 'self'",
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+Next.js applies the rule in development and production, and adds your `basePath` to `source` for you. `headers()` does not run for a static export (`output: "export"`); set the header on your [hosting provider](#set-the-header-on-your-hosting-provider) instead.
+
+</Tab>
+<Tab value="Vite">
+
+Vite has no per-file header option. This plugin sets the header in `vite` and `vite preview`:
+
+```ts title="vite.config.ts"
+import react from "@vitejs/plugin-react";
+import { defineConfig, type Connect, type Plugin } from "vite";
+
+const frameHeader: Connect.NextHandleFunction = (request, response, next) => {
+  if (request.url?.split("?")[0]?.endsWith("/opendil/frame.html"))
+    response.setHeader(
+      "Content-Security-Policy",
+      "sandbox allow-scripts; frame-ancestors 'self'",
+    );
+  next();
+};
+
+// Sends the frame header from `vite` and `vite preview`.
+function opendilFrameHeader(): Plugin {
+  return {
+    name: "opendil-frame-header",
+    configureServer: (server) => void server.middlewares.use(frameHeader),
+    configurePreviewServer: (server) =>
+      void server.middlewares.use(frameHeader),
+  };
+}
+
+export default defineConfig({
+  plugins: [react(), opendilFrameHeader()],
+});
+```
+
+`vite build` writes static files, so in production your [hosting provider](#set-the-header-on-your-hosting-provider) sends the header.
+
+</Tab>
+</Tabs>
+
+### Set the header on your hosting provider
+
+A static build, such as a Vite build or a Next.js static export, gets its headers from the web server or hosting provider that serves it. Set the frame header there for `/opendil/frame.html`, with your base path in front if you use one.
+
+<Tabs groupId="hosting" items={["nginx","Netlify","Vercel"]} persist>
+<Tab value="nginx">
+
+```nginx title="nginx.conf"
+location = /opendil/frame.html {
+  add_header Content-Security-Policy "sandbox allow-scripts; frame-ancestors 'self'" always;
+}
+```
+
+Put this block in the `server` block that serves your build. A location with its own `add_header` does not inherit the `add_header` lines of the `server` block, so your app's policy stays off `frame.html`. Repeat any other headers you need on this file inside the block.
+
+</Tab>
+<Tab value="Netlify">
+
+```txt title="public/_headers"
+/opendil/frame.html
+  Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'
+```
+
+Netlify reads `_headers` from the folder it deploys. Vite copies `public/_headers` into `dist/`. You can write the same rule in `netlify.toml` as a `[[headers]]` entry with `for = "/opendil/frame.html"`. See Netlify's [custom headers](https://docs.netlify.com/manage/routing/headers/) docs.
+
+</Tab>
+<Tab value="Vercel">
+
+```json title="vercel.json"
+{
+  "headers": [
+    {
+      "source": "/opendil/frame.html",
+      "headers": [
+        {
+          "key": "Content-Security-Policy",
+          "value": "sandbox allow-scripts; frame-ancestors 'self'"
+        }
+      ]
+    }
+  ]
+}
+```
+
+With `"cleanUrls": true`, Vercel redirects `/opendil/frame.html` to `/opendil/frame`, and the frame loads from that path. Use `"source": "/opendil/frame"` instead. See Vercel's [`headers`](https://vercel.com/docs/project-configuration/vercel-json#headers) docs. A Next.js app on Vercel needs only its `next.config.ts` rule.
+
+</Tab>
+</Tabs>
+
+Any rewrite that serves `frame.html` under another path, such as a pretty-URL rule that drops `.html`, needs the header on that path too. [Check the header](#check-your-setup) on the deployed URL with `curl -I`.
+
+### Serve the runtime under a base path
+
+When your app runs under a path such as `/chat/`, the runtime files move with it, and `runtimeBaseUrl` must include that path. Next.js does not add `basePath` to plain strings such as `runtimeBaseUrl`, and Vite exposes its `base` option as `import.meta.env.BASE_URL`. [Set the runtime path for a base path or subfolder](/docs/getting-started/#set-the-runtime-path-for-a-base-path-or-subfolder) in the Quickstart shows both.
+
+The frame header must reach the new path too. Next.js adds `basePath` to `headers()` `source` paths itself; on a [hosting provider](#set-the-header-on-your-hosting-provider), put the base path in front of `/opendil/frame.html` yourself.
+
+### Fix a frame that does not start
+
+If the frame cannot start, the renderer replaces it with a message and logs one console error per URL:
+
+```text
+OpenDIL's runtime frame did not start from <url>. Copy the runtime with
+"npx opendil copy-assets --out public/opendil" and set runtimeBaseUrl to the
+URL that serves it, including your app's base path.
+```
+
+The usual causes are a skipped `copy-assets`, a `runtimeBaseUrl` without your base path, or a URL that returns your app's 404 or index page. The renderer reports this at once when `frame.js` fails to load, and after a timeout when a page loaded in the frame without starting the runtime or the frame sends nothing; [Limits](/docs/limits/#iframe-startup-and-theme) lists the timeouts. A slow download is not an error: `frame.html` keeps telling the renderer it is loading. `onError` receives the same problem as a `"runtime"` error. [Troubleshooting](/docs/troubleshooting/) lists more symptoms.
+
+## Use Shadow DOM mode
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="shadow"
+      text={text}
+      isStreaming={isStreaming}
+      appearance="dark"
+    />
+  );
+}
+```
+
+The renderer attaches an open shadow root and installs the built-in styles inside it before any content appears, so you do not import a stylesheet. Your page's CSS does not reach inside. Popovers and tooltips render inside the same root, so they keep their styles. The browser must support constructable stylesheets (`adoptedStyleSheets`).
+
+- Pass the CSS for your own classes and components with `shadowStyles`; see [Style inside a shadow root](/docs/theming/#shadow-dom-css).
+- A third-party component that portals to `document.body` leaves the shadow root and loses its styles. Render its overlay into a container inside the root, or use host mode.
+
+<LiveExample id="charts" mode="shadow" />
+
+## Use host mode
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer, preloadHostRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+// Start loading the host and Shadow DOM code before the first answer.
+// A failed load is retried when an answer first renders in these modes.
+preloadHostRenderer().catch(() => {});
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+}
+
+export function Answer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="host"
+      text={text}
+      isStreaming={isStreaming}
+      className="chat-answer"
+    />
+  );
+}
+```
+
+To render your own components for DIL tags, pass a `components` registry; see [Register components](/docs/custom-components/#register-components). Host mode renders into a `<section class="dil-scope">` in your page.
+
+- Import `@snackbit/opendil/styles.css`, or `@snackbit/opendil/tailwind.css` if you build with Tailwind CSS 4; see [Use Tailwind CSS](/docs/theming/#tailwind-v4). The styles are scoped to `.dil-scope` and include no global reset.
+- Your page's CSS reaches the answer. A page-wide rule such as `button { … }` also styles the answer's buttons, so scope your rules.
+- The `.dil-scope` root is `position: relative`, so absolutely positioned parts stay inside a scrolling message list. It paints above app chrome that overlaps the list without its own stacking order: give a sticky header a `z-index`.
+
+### Preload host and Shadow DOM code
+
+The code for host and Shadow DOM modes, including the parser and the expression engine, is a separate chunk. It loads the first time a page renders `mode="host"` or `mode="shadow"`, so pages that only use the iframe mode never download it.
+
+Until that chunk has loaded, the first host or Shadow DOM answer renders nothing: its `ref` stays `null`, and `renderToString` leaves it out. Streaming server rendering waits for it. Call `preloadHostRenderer()` early, for example at module scope as above. Once its promise resolves, these modes render in the first commit.
+
+If the chunk fails to load, the error reaches your nearest error boundary, and the next render tries again. Both modes render inside a `Suspense` boundary with an empty fallback. A custom component that suspends hides its whole answer until it resolves; wrap it in your own `Suspense` to show a fallback.
+
+## Set a Content Security Policy
+
+If your app sends a `Content-Security-Policy` header, each mode needs a few directives in it:
+
+| Mode       | Your page's policy needs                                                      | The runtime files need                          |
+| ---------- | ----------------------------------------------------------------------------- | ----------------------------------------------- |
+| `isolated` | `frame-src` that allows the runtime origin, or a `default-src` that covers it | Only the [frame header](#send-the-frame-header) |
+| `shadow`   | `worker-src blob:` and `script-src 'wasm-unsafe-eval'`                        | Not used                                        |
+| `host`     | `worker-src blob:` and `script-src 'wasm-unsafe-eval'`                        | Not used                                        |
+
+In iframe mode the parser and the expression engine run inside the frame, under the frame's own policy. Do not apply your app's CSP header to `frame.html` or `frame.js`. A second policy can block the frame's scripts, so the frame does not start, or its workers, so the frame shows a message telling you to remove the app's header.
+
+In host and Shadow DOM modes the parser and the expression engine run as `blob:` workers in your page. When your policy blocks them, readers see one of these messages instead of the answer, and the console names the missing directives once per page:
+
+- "This content can't be displayed because this page's security policy blocks it." when workers are blocked.
+- "Interactive parts of this content can't run because this page's security policy blocks them." when WebAssembly is blocked. This appears only for answers that use state, expressions, or actions, so test your policy with an interactive answer.
+
+If your page enforces Trusted Types and its `trusted-types` directive lists policy names, add `opendil`. OpenDIL creates its worker URLs through a policy with that name.
+
+<Tabs groupId="framework" items={["Next.js","Vite"]} persist>
+<Tab value="Next.js">
+
+Put the frame header after your app's policy. When two entries match the same path and set the same header, the later one wins, so `frame.html` gets only the frame header:
+
+```ts title="next.config.ts"
+import type { NextConfig } from "next";
+
+// React needs 'unsafe-eval' for its debugging features in `next dev` only.
+const devEval = process.env.NODE_ENV === "development" ? " 'unsafe-eval'" : "";
+
+// Your app's policy. 'wasm-unsafe-eval' and blob: workers are for
+// mode="host" and mode="shadow"; the iframe mode needs only frame-src.
+const appPolicy = [
+  "default-src 'self'",
+  `script-src 'self' 'unsafe-inline' 'wasm-unsafe-eval'${devEval}`,
+  "worker-src 'self' blob:",
+  "style-src 'self' 'unsafe-inline'",
+  "img-src 'self' data:",
+  "font-src 'self' data:",
+  "frame-src 'self'",
+  "frame-ancestors 'self'",
+].join("; ");
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/:path*",
+        headers: [{ key: "Content-Security-Policy", value: appPolicy }],
+      },
+      // Last, so it replaces the app policy for the runtime frame.
+      {
+        source: "/opendil/frame.html",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "sandbox allow-scripts; frame-ancestors 'self'",
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+This policy suits an app that renders in all three modes. Next.js's [CSP guide](https://nextjs.org/docs/app/guides/content-security-policy) explains why development needs `'unsafe-eval'`; production does not. Keep the rest of your existing policy; the OpenDIL parts are `worker-src blob:`, `'wasm-unsafe-eval'`, and `frame-src`.
+
+</Tab>
+<Tab value="Vite">
+
+Vite sends no CSP header itself. Add the directives from the table to the policy your web server or hosting provider sends, and make sure it sends only the [frame header](#set-the-header-on-your-hosting-provider) for `/opendil/frame.html`. If your app sets its policy in a `<meta http-equiv="Content-Security-Policy">` tag in `index.html` instead, it does not reach the frame, because `frame.html` is a separate document.
+
+</Tab>
+</Tabs>
+
+## Check your setup
+
+Before you ship, check:
+
+- **The frame loads.** An iframe-mode answer renders, and the page shows no "OpenDIL's runtime frame did not start" message.
+- **The header is present.** `curl -I` on `frame.html` shows the frame header and no other `Content-Security-Policy`:
+
+  ```sh
+  curl -I http://localhost:3000/opendil/frame.html
+  ```
+
+- **The console is clean.** No CSP violations and no "OpenDIL:" warnings about the runtime version or ignored theme tokens.
+- **Dark mode matches.** Switch your app to dark and confirm that answers follow; see [Switch to dark appearance](/docs/theming/#switch-to-dark-appearance).
+
+This site sends the frame header from its own `next.config.ts`, the same way.
+
+## Recap
+
+- The default iframe mode keeps the answer in a sandboxed frame with no origin. It needs `copy-assets`, the frame header, and a `runtimeBaseUrl` that includes your base path.
+- Shadow DOM and host modes accept custom components and classes, and run in your page's origin. They need `worker-src blob:` and `script-src 'wasm-unsafe-eval'`.
+- Never apply your app's CSP header to the runtime files, and copy the runtime again after every upgrade.
+- `preloadHostRenderer()` loads the host and Shadow DOM code before the first answer needs it.
+
+## Next steps
+
+<Cards>
+  <Card title="Security" href="/docs/security/" description="What each mode protects and what you must configure." />
+  <Card title="Theming" href="/docs/theming/" description="Dark appearance, colors, classes, and Shadow DOM styles." />
+  <Card title="Custom components" href="/docs/custom-components/" description="Register your own components in host and Shadow DOM modes." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/" description="Fix a frame that does not start or a blocked policy." />
+</Cards>

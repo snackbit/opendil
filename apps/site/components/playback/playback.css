@@ -1,0 +1,202 @@
+/*
+ * Playback controls, demo settings and menus shared by the playground, the landing demo and live examples.
+ * Colors come from the DESIGN.md --od-* tokens; ShellScope maps them onto the package UI tokens.
+ */
+.od-controls {
+  line-height: 1.5;
+  min-width: 0;
+}
+/* ShellScope maps tokens to the site theme instead of passing `appearance`, so
+   native controls and scrollbars follow the site's color-scheme. The scope paints no
+   background of its own: controls sit on whatever toolbar or page holds them. */
+.od-controls.dil-scope {
+  color-scheme: inherit;
+  background: transparent;
+}
+.od-controls button[data-slot="button"] {
+  border-radius: 8px;
+  box-shadow: none;
+  transition:
+    color 140ms,
+    background-color 140ms,
+    border-color 140ms;
+}
+.od-controls [data-slot="input"] {
+  border-radius: 8px;
+  box-shadow: none;
+}
+/* <SegmentedControl>: the stock tabs look. Options on a gray track, the selected one a raised pill. */
+.od-segmented {
+  --od-segment-track: var(--od-surface-muted);
+  --od-segment-pill: var(--od-surface);
+}
+:root.dark .od-segmented {
+  --od-segment-track: var(--od-canvas);
+  --od-segment-pill: var(--od-surface-muted);
+}
+.od-controls .od-segmented[data-slot="toggle-group"] {
+  gap: 2px;
+  padding: 3px;
+  border-radius: 10px;
+  background: var(--od-segment-track);
+}
+:root.dark .od-controls .od-segmented[data-slot="toggle-group"] {
+  box-shadow: inset 0 0 0 1px var(--od-border);
+}
+.od-segmented > [data-slot="toggle-group-item"] {
+  height: 28px;
+  padding-inline: 10px;
+  border-radius: 7px;
+  color: var(--od-text-secondary);
+  font-size: 13px;
+  transition:
+    color 140ms,
+    background-color 140ms,
+    box-shadow 140ms;
+}
+.od-segmented > [data-slot="toggle-group-item"]:hover {
+  background: transparent;
+  color: var(--od-text);
+}
+.od-segmented > [data-slot="toggle-group-item"][data-state="on"] {
+  background: var(--od-segment-pill);
+  color: var(--od-text);
+  box-shadow: var(--od-shadow-raised);
+}
+/* The pill shadow replaces the package focus ring, so focus uses an outline. */
+.od-segmented > [data-slot="toggle-group-item"]:focus-visible {
+  outline: 2px solid var(--od-focus);
+  outline-offset: 2px;
+}
+.od-demo-settings {
+  width: 300px;
+  max-height: min(
+    calc(100dvh - 2rem),
+    var(--radix-popover-content-available-height)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.od-controls .od-demo-settings {
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.od-demo-settings > .grid {
+  gap: 12px;
+}
+.od-controls .od-demo-settings .text-sm {
+  font-size: 12px;
+}
+.od-controls .od-demo-settings [data-slot="input"] {
+  height: 28px;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.od-controls .od-demo-settings [data-slot="toggle-group-item"] {
+  height: 26px;
+  min-width: 0;
+  padding-inline: 7px;
+  font-size: 11px;
+}
+.od-controls .od-demo-settings [data-slot="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+.od-controls .od-demo-settings [data-slot="button"] {
+  height: 24px;
+  font-size: 11px;
+}
+.od-menu {
+  box-sizing: border-box;
+  background: var(--od-surface);
+  color: var(--od-text);
+  border: 1px solid var(--od-border);
+  padding: 6px;
+  border-radius: 8px;
+  box-shadow: var(--od-shadow-overlay);
+  z-index: 100;
+  font: 400 14px var(--od-font-body);
+  min-width: 160px;
+}
+.od-menu * {
+  box-sizing: border-box;
+}
+.od-menu :is(a, button):focus-visible {
+  outline: 2px solid var(--od-focus);
+  outline-offset: 3px;
+}
+.od-menu-group {
+  font: 500 11px var(--od-font-code);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--od-text-secondary);
+  padding: 12px 12px 6px;
+}
+.od-menu-item {
+  position: relative;
+  padding: 9px 12px 9px 32px;
+  border-radius: 4px;
+  outline: none;
+  cursor: pointer;
+}
+.od-menu-check {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  display: flex;
+  transform: translateY(-50%);
+}
+.od-menu-item[data-highlighted] {
+  background: var(--od-accent-soft);
+  color: var(--od-text);
+}
+.od-demo-rate,
+.od-demo-speed-label {
+  color: var(--od-text-secondary);
+  font: 11px var(--od-font-code);
+  white-space: nowrap;
+  margin-right: 8px;
+}
+.od-demo-rate-control {
+  display: grid;
+  grid-template-columns: auto 64px 84px;
+  align-items: center;
+  gap: 8px;
+  margin-right: 8px;
+}
+.od-demo-rate-control [data-slot="slider"] {
+  min-width: 0;
+}
+.od-demo-rate-control [data-slot="slider-track"] {
+  background: var(--od-surface);
+}
+.od-stream-progress {
+  height: 3px;
+  background: var(--od-accent-soft);
+}
+.od-stream-progress > span {
+  display: block;
+  height: 100%;
+  width: 100%;
+  background: var(--od-accent);
+  transform-origin: left;
+  transition: transform 180ms linear;
+}
+.od-replay-error {
+  color: var(--od-danger);
+  padding: 16px;
+}
+@media (max-width: 767px) {
+  .od-demo-rate-control {
+    width: 100%;
+    grid-template-columns: auto 64px minmax(0, 1fr);
+    margin: 0;
+  }
+  .od-demo-rate,
+  .od-demo-speed-label {
+    font-size: 10px;
+    margin-right: 0;
+  }
+}

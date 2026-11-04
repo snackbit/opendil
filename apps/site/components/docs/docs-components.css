@@ -1,0 +1,119 @@
+/* Live examples and the customization playground in docs pages. Workbench internals are styled by components/workbench. */
+.od-live-example {
+  container-type: inline-size;
+  margin-block: 24px;
+}
+.od-live-example .od-example-toolbar {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+  font: 12px var(--od-font-code);
+}
+.od-live-placeholder {
+  min-height: 180px;
+  color: var(--od-text-secondary);
+  display: grid;
+  place-items: center;
+  background: var(--od-surface-subtle);
+  border-radius: 8px;
+}
+.od-doc-workbench {
+  border: 1px solid var(--od-border);
+  border-radius: 12px;
+}
+.od-doc-workbench .od-hero-demo-toolbar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  height: auto;
+}
+/*
+ * Source and preview side by side only when the source pane fits the examples' longest lines
+ * (about 100 characters, 760px) and the preview keeps at least 480px. The block's container width
+ * (not the viewport) decides, because the article width depends on the sidebar and outline.
+ * Selectors outrank the playground's .od-stream-demo rules in workbench.css, whatever the CSS order.
+ */
+.od-live-example .od-doc-workbench .od-hero-demo {
+  display: grid;
+  grid-template-columns: minmax(0, 760px) minmax(480px, 1fr);
+  grid-template-rows: none;
+  height: 640px;
+}
+.od-doc-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.od-doc-editor-actions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.od-doc-editor-actions span {
+  margin-left: auto;
+}
+.od-doc-pane-tabs {
+  display: none;
+}
+/* Too narrow for both panes (760px + 480px): source above preview, each at full width. */
+@container (max-width: 1239px) {
+  .od-live-example .od-doc-workbench .od-hero-demo {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 320px 520px;
+    height: auto;
+  }
+  .od-live-example .od-hero-code {
+    border-right: 0;
+    border-bottom: 1px solid var(--od-border);
+    border-bottom-left-radius: 0;
+  }
+  .od-live-example .od-hero-preview {
+    border-bottom-left-radius: 11px;
+  }
+}
+/* Phone widths: one pane at a time, switched by the Source/Preview tabs. */
+@container (max-width: 640px) {
+  .od-doc-pane-tabs {
+    display: block;
+    padding: 8px;
+  }
+  .od-live-example .od-doc-workbench .od-hero-demo {
+    display: block;
+    height: 480px;
+  }
+  .od-live-example .od-hero-code,
+  .od-live-example .od-hero-preview {
+    height: 100%;
+    border-bottom: 0;
+    border-radius: 0 0 11px 11px;
+  }
+  .od-doc-workbench[data-active-pane="preview"] .od-hero-code,
+  .od-doc-workbench[data-active-pane="source"] .od-hero-preview {
+    display: none;
+  }
+}
+.od-customization-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px solid var(--od-border);
+}
+.od-customization-field {
+  display: grid;
+  gap: 6px;
+  font-size: 12px;
+}
+.od-customization-note {
+  color: var(--od-text-muted);
+  margin: 16px 0 0;
+  font-size: 12px;
+}
+.od-source-disclosure {
+  margin-block: 8px 16px;
+}

@@ -1,0 +1,302 @@
+---
+title: Troubleshooting
+description: "Fix common OpenDIL problems by symptom: empty iframes, CSP errors, unfinished answers, code instead of UI, and scrolling."
+---
+
+Find your symptom below. Error messages appear in the answer, in the browser console, or both. To receive syntax problems with their position in the text, unfinished answers, and errors that stop an answer, pass an `onError` callback; see [`DilRenderer`](/docs/renderer/). Messages shown in place of one part, such as "Unsupported DIL component" or "Cannot evaluate this value.", appear only in the answer.
+
+## Setup
+
+### The answer stays empty, then shows "OpenDIL's runtime frame did not start from …"
+
+**Cause:** In the default iframe mode, the renderer loads `frame.html` and `frame.js` from `runtimeBaseUrl`, which defaults to `/opendil/`. The URL in the message did not answer with the OpenDIL runtime. Common reasons:
+
+- the runtime files were never copied, or were copied into a folder your app does not serve;
+- your app runs under a base path, such as `/my-app/`, and `runtimeBaseUrl` leaves it out;
+- your server answers the URL with its 404 page or with your app's index page;
+- your app's Content Security Policy header also applies to `frame.html` and blocks its inline loader script.
+
+Until the frame starts, the answer has no height, so it looks empty. [Limits](/docs/limits/#iframe-startup-and-theme) lists how long the renderer waits before it shows the message.
+
+**Fix:** Copy the runtime into the folder your app serves:
+
+```sh
+npx opendil copy-assets --out public/opendil
+```
+
+Then open the URL from the message in your browser, or check it with `curl -I`. It must answer with status 200 and `Content-Type: text/html`. If your app runs under a base path, include it in `runtimeBaseUrl`, for example `runtimeBaseUrl="/my-app/opendil/"`; see [Serve the runtime under a base path](/docs/rendering-modes/#serve-the-runtime-under-a-base-path). If your app sends a Content Security Policy, see [the iframe policy entry](#frame-policy).
+
+### The console warns "the runtime frame at … is an earlier version" or "is version X, but the renderer is version Y"
+
+**Cause:** The copied runtime files come from a different package version than the renderer, usually because you upgraded the package without copying again. Older frames still start, but they lack recent fixes, and some features, such as error reports to `onError`, do not work.
+
+**Fix:** Run `npx opendil copy-assets --out public/opendil` again. To copy after every install automatically, add a `postinstall` script; see [Keep the runtime in step with the package](/docs/rendering-modes/#keep-the-runtime-in-step-with-the-package).
+
+### `public/opendil/vm.js` is still there after an upgrade
+
+**Cause:** Copies made by OpenDIL 0.1.0 included `vm.js`, which later versions no longer ship. Each copy now writes `.opendil-manifest.json` and removes files that an earlier copy wrote and the new version no longer ships. Copies made by 0.1.0 have no manifest.
+
+**Fix:** Delete `public/opendil/vm.js` once by hand. Later copies clean up after themselves; see [`opendil copy-assets`](/docs/package/#opendil-copy-assets).
+
+### Answers in host mode have no styles
+
+**Cause:** Host mode renders into your page and uses the stylesheet your app imports. Without it, the components render unstyled.
+
+**Fix:** Import `@snackbit/opendil/styles.css` once, for example in your root layout. If you compile Tailwind CSS 4, import `@snackbit/opendil/tailwind.css` instead, not both. Shadow DOM and iframe modes install their own styles; your page's CSS does not reach inside them. To add your own CSS to a Shadow DOM answer, see [Style inside a shadow root](/docs/theming/#shadow-dom-css).
+
+### The first host or Shadow DOM answer renders nothing, or its `ref` is `null`
+
+**Cause:** Host and Shadow DOM modes load their code as a separate chunk the first time your page uses them. Until it has loaded, the answer renders nothing, its `ref` stays `null`, and `renderToString` leaves it out.
+
+**Fix:** Call `preloadHostRenderer()` early, for example at module scope next to your `DilRenderer` import. Once its promise resolves, these modes render in the first commit. In tests, `await preloadHostRenderer()` before you render. See [Preload host and Shadow DOM code](/docs/rendering-modes/#preload-host-and-shadow-dom-code).
+
+### "The document parser stopped. Remount the renderer to try again." or "Message execution worker failed."
+
+**Cause:** The answer's parser worker or expression engine worker crashed, or could not start. When a worker cannot start for a reason other than the page's security policy, the console shows `OpenDIL: could not start the … worker.` with the original error.
+
+**Fix:** Remount the renderer with a new `key`. If the message comes back, read the console error. If it names a security policy, see [the entries on Content Security Policy](#rendering-modes-and-content-security-policy).
+
+## Rendering modes and Content Security Policy
+
+### Host or Shadow DOM mode shows "This content can't be displayed because this page's security policy blocks it."
+
+**Cause:** Your page's Content Security Policy (CSP) blocks the `blob:` workers that run the parser and the expression engine. When the policy has no `worker-src`, browsers use `child-src`, then `script-src`, then `default-src`. The console says which worker was blocked and which directives to add, starting with `OpenDIL: this page's Content Security Policy blocked the document parser worker.` Pages that enforce Trusted Types see the same message when their `trusted-types` directive does not allow OpenDIL's policy, named `opendil`.
+
+**Fix:** Add `worker-src blob:` to your policy, and `'wasm-unsafe-eval'` to `script-src` for the expression engine. Merge them into the directives you already send:
+
+```http
+Content-Security-Policy: script-src 'self' 'wasm-unsafe-eval'; worker-src blob:
+```
+
+If your policy has a `trusted-types` directive, add `opendil` to its list of names, and add `'allow-duplicates'` if more than one copy of OpenDIL runs on the page. [Rendering modes](/docs/rendering-modes/#set-a-content-security-policy) lists the directives for each mode.
+
+### "Interactive parts of this content can't run because this page's security policy blocks them." [#webassembly-blocked]
+
+**Cause:** Your page's CSP blocks WebAssembly, which the expression engine needs. This message appears only when an answer needs the engine, so plain Markdown answers render fine with the same policy.
+
+**Fix:** Add `'wasm-unsafe-eval'` to `script-src`. Check your policy with an answer that has state or a button, not with plain Markdown.
+
+### Inside the iframe: "This content can't be displayed …" and the console says not to apply the application's header [#frame-policy]
+
+**Cause:** Your server sends your app's CSP header with `frame.html` too. The frame already declares its own policy, and the second policy blocks the frame's workers. The console says: `This happened inside OpenDIL's isolated frame, which declares its own policy in frame.html. Do not apply the application's Content-Security-Policy header to the OpenDIL runtime files.` A strict app policy can also block the frame's loader script, and you see the "did not start" message instead.
+
+**Fix:** Send only the frame's own header for the runtime files, and exclude them from your app-wide policy. In Next.js `headers()`, list the `frame.html` entry after your app-wide entry: when two entries set the same header for a path, the later one wins. [Set a Content Security Policy](/docs/rendering-modes/#set-a-content-security-policy) has the full `next.config.ts`.
+
+### `curl -I` shows no `Content-Security-Policy` header for `frame.html`
+
+**Cause:** Your server does not send the header for the runtime file. Answers still render, because the `<iframe>` element sandboxes the frame on its own. The header adds protection when the file is opened directly or embedded by another site. Common reasons: the header rule's path does not match the file, a static export ignores Next.js `headers()`, or the Vite dev server sets headers only for all files at once.
+
+**Fix:** Send `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'` for `frame.html` from your server or hosting provider. In Next.js, `headers()` adds your `basePath` to `source` for you. [Send the frame header](/docs/rendering-modes/#send-the-frame-header) has the setup for Next.js and Vite.
+
+### The console warns "the iframe renderer ignores theme token …"
+
+**Cause:** In iframe mode, the frame accepts only theme tokens that are CSS custom properties with plain values. It ignores values that could load a resource or end the declaration, such as `url(…)` or a value that contains `;`.
+
+**Fix:** Pass plain colors and lengths. [Limits](/docs/limits/#iframe-startup-and-theme) lists the accepted names and values.
+
+### Answers are light in a dark app, or have the wrong background
+
+**Cause:** `appearance` defaults to `"light"`. The renderer does not follow the operating system's color scheme or your app's `dark` class. In iframe mode, the frame paints its own background from the `--background` token.
+
+**Fix:** Pass `appearance={isDark ? "dark" : "light"}` from your app's theme. To show your page's background behind an answer, pass `tokens={{ "--background": "transparent" }}`; see [Show your page behind the answer](/docs/theming/#show-your-page-behind-the-answer). If you compile `@snackbit/opendil/tailwind.css`, style dark answers with the `dil-dark:` variant; your own `dark:` variant follows your app, not the renderer. See [Switch to dark appearance](/docs/theming/#switch-to-dark-appearance).
+
+## Streaming
+
+### "Start a new renderer instance before replacing or restarting the document." or "Start a new message instance before replacing its source." [#start-a-new-renderer-instance]
+
+The second message appears in iframe mode when the text gets shorter.
+
+**Cause:** The `text` prop must be append-only: each update keeps all the text received so far and adds to its end. This error appears when the text gets shorter, or changes after `isStreaming` became `false`. Common reasons:
+
+- a regenerated or edited answer reuses the previous answer's `key`;
+- your code removes characters it already passed, for example a code fence it strips only once the fence is complete;
+- more text arrives after you set `isStreaming` to `false`, for example when you continue a response in the same renderer.
+
+**Fix:** Give every answer, and every text part of a message, its own `key`. Only append to the text. To continue a finished answer, render a new renderer with a new `key`.
+
+### The end of the answer never appears, or the status stays "Receiving document" [#answer-never-finishes]
+
+**Cause:** `isStreaming` never became `false`. The renderer keeps waiting for the rest of an open tag, so the last component stays hidden. With the AI SDK, a text part's `state` stays `"streaming"` after `stop()` or a stream error.
+
+**Fix:** Set `isStreaming` to `false` when the stream ends, is stopped, or fails. With the AI SDK's `useChat`, `part.state === "streaming"` is not enough: also require `status === "streaming"` and that the part belongs to the newest message. [Finish each answer at the right time](/docs/chat-integration/#finish-each-answer-at-the-right-time) shows the mapping for each SDK.
+
+### The answer ends with "This response ended before it was finished."
+
+**Cause:** The answer finished while a tag, expression, or block was still open. This happens when the reader presses Stop, the model reaches its output token limit, or the stream fails. The renderer keeps everything that was complete and leaves out the unfinished part. The status label reads "Incomplete" (unless you pass `showStatus={false}`). `onError` receives a `kind: "incomplete"` error, and the console lists each unfinished construct and its position, such as `Unfinished: <grid> at character 8`.
+
+An answer cut off in the middle of plain prose still reads "Complete", because the text alone does not show that it was interrupted.
+
+**Fix:** If you did not stop the answer, raise the model's maximum output tokens or ask for shorter answers. To show your own notice or a Retry button, read `incomplete` from `onCommit`, or check the provider's finish reason; see [Handle stop, truncation, errors, and retry](/docs/chat-integration/#handle-stop-truncation-errors-and-retry) and [When an answer stops early](/docs/streaming/#when-an-answer-stops-early).
+
+### Auto-scroll does not follow, or scrolls the wrong element
+
+**Cause:** One of these:
+
+- `autoScroll` is not set on the answer that is streaming;
+- the reader scrolled, which pauses following until you resume it;
+- the renderer detected the wrong scroller. It uses the nearest ancestor with `overflow-y: auto`, `scroll`, or `overlay` that has more content than fits, and the window when there is none.
+
+**Fix:** Pass `autoScroll` to the latest answer. To resume following, show a button that calls `resumeAutoScroll()` on the renderer's `ref` when `onFollowChange` reports `false`; see [Show a Jump to latest button](/docs/renderer/#show-a-jump-to-latest-button). If the wrong element scrolls, pass `scrollContainer` with a ref to your message list, or `"window"` when the page itself scrolls; see [Follow inside a scrolling message list](/docs/streaming/#follow-inside-a-scrolling-message-list).
+
+### A sticky header or other app chrome appears behind an answer
+
+**Cause:** The renderer's root element is positioned (`position: relative`). App chrome that overlaps the message list without its own `z-index`, such as a sticky header, can then paint behind answers that come after it in the page.
+
+**Fix:** Give the header a `z-index`, for example `z-index: 10`.
+
+## Model output
+
+### The answer shows DIL source in a code block instead of an interface
+
+**Cause:** The model wrapped its answer in a code fence such as ` ```dil `. A fence displays its contents as code. Models also write fences, or plain HTML, when the agent spec is missing from the system prompt.
+
+**Fix:** Check that the agent spec is in the system prompt; see [Agent Spec](/docs/agent-spec/). If the model still adds a fence, remove one outer fence before you pass the text on; see [Strip a code fence the model added](/docs/chat-integration/#strip-a-code-fence-the-model-added).
+
+### "Unsupported DIL component: Name"
+
+**Cause:** The answer uses a capitalized tag that is neither built in nor registered. Either the model invented it, or it is one of your custom components and this renderer does not register it.
+
+**Fix:** Check that the agent spec is in the system prompt. If the tag is yours, register it with `components` in host or Shadow DOM mode, and describe it to the model after the spec. See [Custom components](/docs/custom-components/) and [Describe your custom components](/docs/prompting/#describe-your-custom-components).
+
+### "This part of the response couldn't be shown."
+
+**Cause:** The answer contains malformed DIL, such as an attribute without a value or a closing tag that does not match. Readers see this short message. The console shows the details, for example `OpenDIL: Expected quoted value or expression for max (at character 124 of the message source)`, and `onError` receives a `kind: "syntax"` error with the `offset`.
+
+**Fix:** Look at the text at that offset to see what the model got wrong. Add the matching component block or example from the full spec to your prompt; see [Common mistakes and fixes](/docs/prompting/#common-mistakes-and-fixes).
+
+### "Cannot evaluate this value." inside a sentence
+
+**Cause:** Braces in prose start an expression. When the model writes literal braces outside code, such as `{leading: false}`, the expression fails. A failing expression, such as one that reads a name the answer never declared, shows the same message.
+
+**Fix:** Braces inside inline code spans and fenced code display as written, so ask the model to put code in backticks. For a single literal brace in prose, the agent spec tells models to write `{"{"}`.
+
+### "Could not update this view."
+
+**Cause:** The condition of an `{#if}` block failed to evaluate, for example because it reads a name the answer never declared.
+
+**Fix:** Regenerate the answer. If it happens often, add the matching example from the full spec to your prompt; see [Common mistakes and fixes](/docs/prompting/#common-mistakes-and-fixes).
+
+### "Execution stopped: this action exceeded its time limit."
+
+**Cause:** An expression or action in the answer did too much work, usually an endless loop. The limit counts work, not time, so the same answer stops on every device. The message "Execution stopped: the action exceeded its time limit." means the engine did not reply in time.
+
+**Fix:** Regenerate the answer, and ask for small calculations in your prompt. The text and components already on screen stay readable, but the answer's controls stop responding. [Limits](/docs/limits/#expressions) lists the values.
+
+### "Execution stopped: …" with another reason
+
+**Cause:** An action or a state declaration threw an error, and the answer stopped. Common reasons are code that reads DOM events, such as `event.target.value`, two declarations in one `{@body}`, or `GenUI.copy` called outside a button click ("Clipboard requires a user gesture").
+
+**Fix:** Regenerate the answer. If it happens often, add the matching examples to your prompt; see [Common mistakes and fixes](/docs/prompting/#common-mistakes-and-fixes).
+
+### "Rendering stopped: this message exceeds the display limit."
+
+**Cause:** The answer tries to mount more interface than its display budget allows, for example a long list written out item by item, or a chart with a very large data set. The message "Rendering stopped: this message has more parts than the renderer supports." means the answer reached the parsed node limit.
+
+**Fix:** Ask the model for summaries, top-N lists, or pagination instead of full data sets. Lists built with `{#each}` virtualize above 100 items and count only their visible items. [Limits](/docs/limits/#display) explains what counts.
+
+### A Mermaid diagram shows "Diagram is incomplete or invalid" or "Unsupported or oversized Mermaid source"
+
+**Cause:** "Diagram is incomplete or invalid" means the source has a syntax error or more than 100 edges. "Unsupported or oversized Mermaid source" means the source is longer than 8,192 characters, or uses a feature OpenDIL does not allow: a `%%{` directive, `click`, `classDef`, `style` or `linkStyle`, HTML, or front matter (`---`).
+
+**Fix:** Ask for smaller diagrams. See [Diagrams](/docs/components/diagrams/) and the limits under [Components](/docs/limits/#components).
+
+## Interaction
+
+### Controls do not respond
+
+**Cause:** One of these:
+
+- the answer's expression engine stopped; an "Execution stopped" or "Rendering stopped" message appears in the answer;
+- the page's CSP blocks WebAssembly; see [the WebAssembly entry](#webassembly-blocked);
+- the control's tag is not complete yet. A control stays disabled until its own tag closes.
+
+**Fix:** Follow the entry for the message you see. If no message appears and the answer has finished, check that `isStreaming` became `false`; see [the entry above](#answer-never-finishes).
+
+### A copy button shows "Copy failed"
+
+**Cause:** The clipboard write did not succeed. Common reasons: the reader or the browser denied the clipboard permission, or a code block holds more text than its copy button allows (see [Limits](/docs/limits/#components)). In iframe mode, your page performs the write, and the browser must still treat the reader's click as active at that moment.
+
+**Fix:** Check the site's clipboard permission in the browser. Browsers offer the clipboard only to secure pages, so serve your app over HTTPS or from `localhost`. [Security](/docs/security/#clipboard) describes when an answer may copy.
+
+### Long content stays blank while scrolling
+
+**Cause:** Virtualized items mount as their scroller moves. If the renderer watches a different element than the one that scrolls, items never mount. Versions before scroll container support also left virtualized content blank inside scrolling message lists.
+
+**Fix:** Upgrade, and copy the runtime again. If the problem stays, pass `scrollContainer` with a ref to your message list; see [Name the scroll container](/docs/performance/#name-the-scroll-container).
+
+### Popovers and tooltips are cut off in short answers
+
+**Cause:** In iframe mode, the frame is as tall as its content. Runtime files from earlier versions do not grow the frame for open popovers and tooltips.
+
+**Fix:** Upgrade the package and copy the runtime again. The frame then grows while a popover or tooltip is open.
+
+### The text I'm reading moves down when something above it changes
+
+**Cause:** In iframe mode, the browser cannot use scroll anchoring for content inside the frame. When part of the answer above the visible area gets taller, the content below it moves down. See [Content that grows above the reader](/docs/rendering-modes/#content-growing-above-the-reader).
+
+**Fix:** None in iframe mode yet. Shadow DOM and host modes keep the reader in place.
+
+## Custom components
+
+### Error: `OpenDIL customization (components) requires mode="host" or mode="shadow".`
+
+TypeScript reports the same problem as `Property 'mode' is missing in type '…' but required in type 'DilShadowRendererProps'.`
+
+**Cause:** You passed `components`, `componentConfig`, `classNames`, `slots`, `className`, or `shadowStyles` to a renderer in the default iframe mode. The sandboxed frame cannot run your React components. TypeScript reports this as a type error; JavaScript callers get this error at runtime.
+
+**Fix:** Pass `mode="shadow"` or `mode="host"`. See [Iframe restrictions](/docs/custom-components/#iframe-restrictions).
+
+### A custom component loses its state
+
+**Cause:** React state inside your component lives only while it is mounted. It resets when:
+
+- you define the `components` object or the component inside a render function, so React sees a new component type each time;
+- virtualization unmounts the component after it scrolls away;
+- a conditional block hides it;
+- the renderer remounts with a new `key`.
+
+**Fix:** Define components and the registry at module scope:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer, type DilComponentProps } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+function Rating({ attributes }: DilComponentProps) {
+  return <span>{String(attributes.value ?? "")} / 5</span>;
+}
+
+// Module scope: the same object on every render.
+const components = { Rating };
+
+export function Answer({ text }: { text: string }) {
+  return <DilRenderer mode="shadow" text={text} components={components} />;
+}
+```
+
+Keep values that must last in the answer's state with `DIL.useState`, and update them through `invoke`. See [State, errors, and styling](/docs/custom-components/#state-errors-and-styling).
+
+### An answer stays empty while a custom component loads data
+
+**Cause:** Host and Shadow DOM renderers render inside a `Suspense` boundary with an empty fallback. A custom component that suspends hides the whole answer until it resolves.
+
+**Fix:** Wrap the suspending part of your component in your own `Suspense` with a fallback.
+
+## Performance
+
+### The chat slows down as the conversation grows
+
+**Cause:** Every mounted answer keeps its iframe or its components, and an answer whose `isStreaming` never became `false` keeps its parser running. Message components that render again on every update make each new chunk of text slower.
+
+**Fix:** Give each answer a stable `key`, set `isStreaming` to `false` when each answer ends, wrap your message component in `memo`, and on slow devices pass `updateInterval`. See [Keep long chats fast](/docs/performance/#keep-long-chats-fast).
+
+## Report a problem
+
+If your symptom is not here, [open an issue on GitHub](https://github.com/snackbit/opendil/issues). Include:
+
+- the DIL text of the answer, or a shortened version that shows the problem;
+- the rendering mode;
+- your browser and the `@snackbit/opendil` version;
+- the console messages and the errors `onError` received.
+
+Report security problems privately instead; see [Report a vulnerability](/docs/security/#report-a-vulnerability).

@@ -1,0 +1,110 @@
+/* DESIGN.md section 11: shell and documentation tokens. Generated interfaces keep their own theme. */
+:root {
+  color-scheme: light;
+  --od-font-display: "Space Grotesk Variable", "Inter Variable", sans-serif;
+  --od-font-body: "Inter Variable", system-ui, sans-serif;
+  --od-font-code: "IBM Plex Mono", ui-monospace, monospace;
+  --od-canvas: #fff;
+  --od-surface: #fff;
+  --od-surface-subtle: #f6f7f9;
+  --od-surface-muted: #eef0f4;
+  --od-text: #252838;
+  --od-text-secondary: #565e70;
+  --od-text-muted: #70798a;
+  --od-border: #e1e5ec;
+  --od-border-strong: #c8ced9;
+  --od-accent: #5e4cff;
+  --od-accent-hover: #4935e8;
+  --od-accent-pressed: #3725bb;
+  --od-accent-soft: #f0eeff;
+  --od-accent-border: #cdc7ff;
+  --od-link: #4935d0;
+  --od-terminal: #1b1d29;
+  --od-terminal-text: #e2e5f0;
+  --od-focus: #5e4cff;
+  --od-on-accent: #fff;
+  --od-success: #16794b;
+  --od-warning: #9a5b00;
+  --od-danger: #c02d3a;
+  --od-info: #235eb5;
+  --od-radius-xs: 4px;
+  --od-radius-sm: 6px;
+  --od-radius-md: 8px;
+  --od-radius-lg: 12px;
+  --od-radius-full: 999px;
+  --od-page-max: 1200px;
+  --od-docs-max: 1920px;
+  --od-page-gutter: 24px;
+  --od-header-height: 64px;
+  --od-shadow-raised:
+    0 1px 2px rgb(27 29 41 / 12%), 0 0 0 0.5px rgb(27 29 41 / 6%);
+  --od-shadow-overlay: 0 8px 24px rgb(27 29 41 / 10%);
+  --od-shadow-showcase: 0 24px 60px rgb(27 29 41 / 12%);
+}
+
+/* next-themes sets both the class (Fumadocs) and data-theme (site components and Monaco). */
+:root.dark,
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --od-canvas: #12141c;
+  --od-surface: #1b1e29;
+  --od-surface-subtle: #232735;
+  --od-surface-muted: #2d3242;
+  --od-text: #f1f2f8;
+  --od-text-secondary: #b8bece;
+  --od-text-muted: #979fb3;
+  --od-border: #34394a;
+  --od-border-strong: #4d5469;
+  --od-accent: #a79cff;
+  --od-accent-hover: #bdb5ff;
+  --od-accent-pressed: #d0caff;
+  --od-accent-soft: #302a55;
+  --od-accent-border: #6559ad;
+  --od-link: #b2a9ff;
+  --od-terminal: #10121a;
+  --od-focus: #b2a9ff;
+  --od-on-accent: #12141c;
+  --od-success: #8bd4ae;
+  --od-warning: #efbc78;
+  --od-danger: #ff9ba5;
+  --od-info: #97bdf4;
+  --od-shadow-raised:
+    0 1px 2px rgb(0 0 0 / 40%), inset 0 1px 0 rgb(255 255 255 / 6%);
+  --od-shadow-overlay: 0 8px 24px rgb(0 0 0 / 28%);
+  --od-shadow-showcase: 0 24px 60px rgb(0 0 0 / 32%);
+}
+
+@media (max-width: 639px) {
+  :root {
+    --od-page-gutter: 16px;
+  }
+}
+
+/* Fumadocs reads these variables; mapping them keeps its components on the DESIGN.md palette. */
+:root,
+:root.dark {
+  --color-fd-background: var(--od-canvas);
+  --color-fd-foreground: var(--od-text);
+  --color-fd-muted: var(--od-surface-subtle);
+  --color-fd-muted-foreground: var(--od-text-secondary);
+  --color-fd-popover: var(--od-surface);
+  --color-fd-popover-foreground: var(--od-text);
+  --color-fd-card: var(--od-surface);
+  --color-fd-card-foreground: var(--od-text);
+  --color-fd-border: var(--od-border);
+  --color-fd-primary: var(--od-accent);
+  --color-fd-primary-foreground: var(--od-on-accent);
+  --color-fd-secondary: var(--od-surface-muted);
+  --color-fd-secondary-foreground: var(--od-text);
+  --color-fd-accent: var(--od-surface-muted);
+  --color-fd-accent-foreground: var(--od-text);
+  --color-fd-ring: var(--od-focus);
+  --color-fd-overlay: rgb(18 20 28 / 24%);
+  --color-fd-info: var(--od-info);
+  --color-fd-warning: var(--od-warning);
+  --color-fd-error: var(--od-danger);
+  --color-fd-success: var(--od-success);
+  --color-fd-idea: var(--od-accent);
+  /* The site header sits above the docs grid; Fumadocs offsets its sticky columns by this. */
+  --fd-banner-height: var(--od-header-height);
+}
