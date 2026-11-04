@@ -11,6 +11,12 @@ import {
   type ExecutionJob,
   type ExecutionReply,
 } from "./execution-queue";
+import {
+  explainRuntimeStartFailure,
+  RUNTIME_START_FAILURE,
+  startInlineWorker,
+  type InlineWorker,
+} from "./inline-worker";
 export type { Scope } from "./evaluation-cache";
 export interface BindingState {
   values: Record<string, unknown>;
@@ -28,7 +34,7 @@ export class ExpressionEngine {
     versions: {},
     catalog: 0,
   }));
-  private worker: Worker;
+  private readonly runtime: InlineWorker;
   private readonly cache = new EvaluationCache();
   private readonly queue: ExecutionQueue;
   private intent = 0;
@@ -56,19 +62,19 @@ export class ExpressionEngine {
     readonly events = new EventTarget(),
     private readonly updates = new PresentationScheduler(),
   ) {
-    const url = URL.createObjectURL(
-      new Blob([__DIL_VM_WORKER__], { type: "text/javascript" }),
-    );
-    this.worker = new Worker(url);
-    URL.revokeObjectURL(url);
+    this.runtime = startInlineWorker(__DIL_VM_WORKER__, {
+      role: "expression runtime",
+      crashMessage: "Message execution worker failed.",
+      onMessage: (data: unknown) => this.queue.reply(data),
+      onStop: (message) => this.halt(message),
+    });
+    const worker = this.runtime.worker;
     this.queue = new ExecutionQueue(
-      (message) => this.worker.postMessage(message),
+      // Without a worker, the startup report halts the engine before jobs time out.
+      (message) => worker?.postMessage(message),
       (job, reply) => this.receive(job, reply),
       (message) => this.halt(message),
     );
-    this.worker.onmessage = (event: MessageEvent<unknown>) =>
-      this.queue.reply(event.data);
-    this.worker.onerror = () => this.halt("Message execution worker failed.");
   }
   private reference(handle: number, delta: number) {
     const count = (this.handleRefs.get(handle) ?? 0) + delta;
@@ -145,7 +151,11 @@ export class ExpressionEngine {
     if (job.type === "call" && typeof job.payload.handle === "number")
       this.reference(job.payload.handle, -1);
     if (reply.fatal) {
-      this.halt("Execution stopped: " + reply.fatal);
+      this.halt(
+        (reply.fatal === RUNTIME_START_FAILURE &&
+          explainRuntimeStartFailure()) ||
+          "Execution stopped: " + reply.fatal,
+      );
       return;
     }
     if (reply.error === "interrupted") {
@@ -219,7 +229,7 @@ export class ExpressionEngine {
     this.updates.cancel("bindings");
     this.pendingChanges.clear();
     this.urgentKeys.clear();
-    this.worker.terminate();
+    this.runtime.dispose();
     this.store.setState((state) => ({ catalog: state.catalog + 1 }));
     if (report)
       this.events.dispatchEvent(

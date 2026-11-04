@@ -35,7 +35,7 @@ it("keeps SVG paint and marker references inside the document", () => {
     expect(svgAttributes({ fill: value, markerEnd: value })).toEqual({});
 });
 
-it("writes only plain chart series keys and colors into the stylesheet", () => {
+it("passes only plain chart series keys and colors to inline custom properties", () => {
   const markup = renderToStaticMarkup(
     createElement(ChartContainer, {
       id: "test",
@@ -47,15 +47,17 @@ it("writes only plain chart series keys and colors into the stylesheet", () => {
         },
         cost: { label: "Injected color", color: "red} *{color:red" },
         leak: { label: "URL color", color: "url(evil)" },
+        themed: { theme: { light: "#111111", dark: "rgb(1, 2, 3)" } },
+        split: { theme: { light: "blue", dark: "url(evil)" } },
       },
+      style: { minHeight: 10 },
       children: createElement("svg"),
     }),
   );
-  const style = /<style>([\s\S]*?)<\/style>/.exec(markup)?.[1] ?? "";
-  expect(style).toContain("--color-revenue: var(--chart-1);");
-  expect(style).not.toContain("evil");
-  expect(style).not.toContain("*{");
-  expect(style).not.toContain("--color-cost");
-  expect(style).not.toContain("--color-leak");
-  expect(style.match(/[{}]/g)).toEqual(["{", "}", "{", "}"]);
+  // A <style> element would need style-src 'unsafe-inline' under a strict policy.
+  expect(markup).not.toContain("<style");
+  const style = /data-slot="chart"[^>]*style="([^"]*)"/.exec(markup)?.[1];
+  expect(style).toBe(
+    "--color-revenue:var(--chart-1);--color-themed:light-dark(#111111, rgb(1, 2, 3));min-height:10px",
+  );
 });

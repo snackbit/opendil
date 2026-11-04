@@ -123,6 +123,11 @@ html body[data-scroll-locked] {
   line-height: 1.5;
   min-width: 0;
 }
+/* ShellScope maps tokens to the site theme instead of passing `appearance`, so
+   native controls and scrollbars follow the site's color-scheme. */
+.od-controls.dil-scope {
+  color-scheme: inherit;
+}
 .od-demo-settings {
   width: 300px;
   max-height: min(

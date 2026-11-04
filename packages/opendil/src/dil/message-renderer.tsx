@@ -11,6 +11,7 @@ import type { DilRendererHandle } from "./renderer-handle";
 import { useStore } from "zustand";
 import type { TreeBatch } from "./parser/types";
 import { DilDocument } from "./runtime/document";
+import { startInlineWorker } from "./runtime/inline-worker";
 import { NodeView } from "./view/node-view";
 import { RenderBoundary } from "./view/render-boundary";
 import { useRendererEnvironment } from "./renderer-environment";
@@ -108,12 +109,6 @@ export function MessageRenderer({
   }, [environment]);
   useEffect(() => {
     const document = new DilDocument();
-    const url = URL.createObjectURL(
-      new Blob([__DIL_PARSER_WORKER__], { type: "text/javascript" }),
-    );
-    const instance = new Worker(url);
-    URL.revokeObjectURL(url);
-    worker.current = instance;
     previousLength.current = 0;
     finalized.current = false;
     let frame = 0;
@@ -168,22 +163,24 @@ export function MessageRenderer({
       );
     };
     document.engine.events.addEventListener("dil:copy", copy);
-    instance.onmessage = (event: MessageEvent<TreeBatch>) => {
-      queued.push(event.data);
-      if (!frame)
-        frame = requestAnimationFrame(() => {
-          frame = 0;
-          document.updates.enqueue("source", publish);
-        });
-    };
-    instance.onerror = () =>
-      document.status.setState({
-        error:
-          "The document parser stopped. Remount the renderer to try again.",
-      });
+    const parser = startInlineWorker(__DIL_PARSER_WORKER__, {
+      role: "document parser",
+      crashMessage:
+        "The document parser stopped. Remount the renderer to try again.",
+      onMessage: (batch: TreeBatch) => {
+        queued.push(batch);
+        if (!frame)
+          frame = requestAnimationFrame(() => {
+            frame = 0;
+            document.updates.enqueue("source", publish);
+          });
+      },
+      onStop: (error) => document.status.setState({ error }),
+    });
+    worker.current = parser.worker;
     setDocument(document);
     return () => {
-      instance.terminate();
+      parser.dispose();
       document.engine.events.removeEventListener("dil:copy", copy);
       document.engine.dispose();
       worker.current = null;

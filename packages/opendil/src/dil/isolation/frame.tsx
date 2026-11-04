@@ -12,11 +12,23 @@ import {
   RendererEnvironmentContext,
   type FrameViewport,
 } from "../renderer-environment";
+import { readFrameTheme, type FrameTheme } from "./frame-theme";
+import { RUNTIME_VERSION } from "./frame-startup";
 // Embedded without sandbox="allow-scripts", this page would render untrusted
 // documents with the authority of the site that serves it.
 if (self.origin !== "null")
   throw new Error("OpenDIL frame requires an opaque-origin sandbox");
 let port: MessagePort | null = null;
+let theme: FrameTheme = { appearance: "light", tokens: {} };
+let message:
+  | {
+      source: string;
+      updateInterval: UpdateInterval;
+      isStreaming: boolean;
+      showStatus: boolean;
+      progressiveReveal: ReturnType<typeof readReveal>;
+    }
+  | undefined;
 const element = document.getElementById("root");
 if (!element) throw new Error("Missing OpenDIL frame root");
 const root = createRoot(element);
@@ -59,6 +71,26 @@ const environment = {
       port?.postMessage({ type: "copy", text });
     }),
 };
+function render() {
+  if (!message) return;
+  root.render(
+    <RendererEnvironmentContext.Provider value={environment}>
+      <UiScope
+        boundary={boundary}
+        appearance={theme.appearance}
+        tokens={theme.tokens}
+      >
+        <MessageRenderer
+          updateInterval={message.updateInterval}
+          text={message.source}
+          isStreaming={message.isStreaming}
+          showStatus={message.showStatus}
+          progressiveReveal={message.progressiveReveal}
+        />
+      </UiScope>
+    </RendererEnvironmentContext.Provider>,
+  );
+}
 window.addEventListener("message", (event: MessageEvent<unknown>) => {
   const data = event.data;
   if (
@@ -101,21 +133,25 @@ window.addEventListener("message", (event: MessageEvent<unknown>) => {
         return;
       }
       source += data.suffix;
-      root.render(
-        <RendererEnvironmentContext.Provider value={environment}>
-          <UiScope boundary={boundary}>
-            <MessageRenderer
-              updateInterval={updateInterval}
-              text={source}
-              isStreaming={"isStreaming" in data && data.isStreaming === true}
-              showStatus={!("showStatus" in data) || data.showStatus === true}
-              progressiveReveal={readReveal(
-                "progressiveReveal" in data ? data.progressiveReveal : false,
-              )}
-            />
-          </UiScope>
-        </RendererEnvironmentContext.Provider>,
-      );
+      message = {
+        source,
+        updateInterval,
+        isStreaming: "isStreaming" in data && data.isStreaming === true,
+        showStatus: !("showStatus" in data) || data.showStatus === true,
+        progressiveReveal: readReveal(
+          "progressiveReveal" in data ? data.progressiveReveal : false,
+        ),
+      };
+      render();
+    }
+    if (data.type === "theme") {
+      const next = readFrameTheme(data);
+      if (next) {
+        theme = next;
+        // Matches the host's iframe element so the browser keeps the frame transparent.
+        document.documentElement.style.colorScheme = next.appearance;
+        render();
+      }
     }
     if (
       data.type === "viewport" &&
@@ -157,8 +193,8 @@ for (const name of ["pointerdown", "keydown"])
     },
     { capture: true },
   );
-parent.postMessage({ type: "dil-ready" }, "*");
-const readyTimer = setInterval(
-  () => parent.postMessage({ type: "dil-ready" }, "*"),
-  500,
-);
+// The version lets the host warn when copied runtime assets are stale.
+const announce = () =>
+  parent.postMessage({ type: "dil-ready", version: RUNTIME_VERSION }, "*");
+announce();
+const readyTimer = setInterval(announce, 500);

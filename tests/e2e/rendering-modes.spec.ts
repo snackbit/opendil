@@ -41,7 +41,21 @@ for (const name of ["Shadow DOM", "Host DOM"] as const) {
         ),
       ).toBe(true);
     await page.keyboard.press("Escape");
-    await ui.getByRole("button", { name: "Word wrap", exact: true }).click();
+    // The scope contains absolutely positioned parts so chat scroll containers keep them.
+    expect(
+      await ui
+        .locator('.dil-document > div > span.sr-only[role="status"]')
+        .evaluate((element) =>
+          (element as HTMLElement).offsetParent?.classList.contains(
+            "dil-scope",
+          ),
+        ),
+    ).toBe(true);
+    const wrap = ui.getByRole("button", { name: "Word wrap", exact: true });
+    // Ghost buttons use the renderer foreground, not the user-agent ButtonText color.
+    await expect(wrap).toHaveCSS("color", "rgb(13, 13, 13)");
+    await expect(wrap).toHaveCSS("background-color", "rgba(0, 0, 0, 0)");
+    await wrap.click();
     await expect(
       ui.getByRole("textbox", { name: "Code editor", exact: true }),
     ).toHaveAttribute("wrap", "soft");

@@ -1,23 +1,20 @@
 "use client";
-import { lazy, Suspense, useMemo, type Ref } from "react";
+import { lazy, Suspense, type Ref } from "react";
 import type { DilRendererHandle } from "./renderer-handle";
-import { CustomizationContext, type DilCustomization } from "./customization";
-import { MessageRenderer } from "./message-renderer";
+import type { DilCustomization } from "./customization";
 import { IsolatedRenderer } from "./isolation/isolated-renderer";
-import {
-  RendererEnvironmentContext,
-  type RendererMetrics,
-} from "./renderer-environment";
-import { UiScope } from "../components/ui/overlays/ui-scope";
+import type { RendererMetrics } from "./renderer-environment";
 import type { ProgressiveReveal } from "./view/reveal-options";
 import type { AutoScroll } from "./view/scroll-options";
 import {
   parseUpdateInterval,
   type UpdateInterval,
 } from "./runtime/presentation-scheduler";
-const ShadowRenderer = lazy(() =>
-  import("./isolation/shadow-renderer").then((module) => ({
-    default: module.ShadowRenderer,
+// The iframe mode needs only the frame bridge. Host and Shadow DOM modes embed
+// the parser and QuickJS workers, so pages that never use them never load them.
+const StyledRenderer = lazy(() =>
+  import("./styled-renderer").then((module) => ({
+    default: module.StyledRenderer,
   })),
 );
 
@@ -33,27 +30,32 @@ interface DilCommonProps {
   autoScroll?: AutoScroll;
   /** Maximum streaming presentation frequency; user interaction remains immediate. */
   updateInterval?: UpdateInterval;
+  /** Color scheme of the stock components. Defaults to "light". */
+  appearance?: "light" | "dark" | undefined;
+  /**
+   * CSS custom properties applied to the renderer root, such as `--primary` or
+   * `--background`. The iframe mode accepts only values that cannot load
+   * resources and ignores the rest with a console warning.
+   */
+  tokens?: Readonly<Record<`--${string}`, string>> | undefined;
   onFollowChange?: (following: boolean) => void;
   onInput?: (detail: { length: number }) => void;
   onCommit?: (detail: RendererMetrics) => void;
 }
 export interface DilIsolatedRendererProps extends DilCommonProps {
-  mode?: "isolated";
-  runtimeBaseUrl?: string;
+  mode?: "isolated" | undefined;
+  /** URL of the directory that serves frame.html. Defaults to "/opendil/". */
+  runtimeBaseUrl?: string | undefined;
   components?: never;
   componentConfig?: never;
   classNames?: never;
   slots?: never;
-  tokens?: never;
   className?: never;
-  appearance?: never;
   shadowStyles?: never;
 }
 interface DilStyledRendererProps extends DilCommonProps, DilCustomization {
   runtimeBaseUrl?: never;
-  className?: string;
-  tokens?: Readonly<Record<`--${string}`, string>>;
-  appearance?: "light" | "dark";
+  className?: string | undefined;
 }
 export interface DilHostRendererProps extends DilStyledRendererProps {
   mode: "host";
@@ -62,79 +64,52 @@ export interface DilHostRendererProps extends DilStyledRendererProps {
 export interface DilShadowRendererProps extends DilStyledRendererProps {
   mode: "shadow";
   /** Trusted application CSS installed inside this renderer's ShadowRoot. */
-  shadowStyles?: string;
+  shadowStyles?: string | undefined;
 }
 export type DilRendererProps =
   DilIsolatedRendererProps | DilHostRendererProps | DilShadowRendererProps;
+const styledOnly = [
+  "components",
+  "componentConfig",
+  "classNames",
+  "slots",
+  "className",
+  "shadowStyles",
+] as const;
 export function DilRenderer(props: DilRendererProps) {
   const updateInterval = parseUpdateInterval(props.updateInterval);
-  const environment = useMemo(
-    () => ({
-      ...(props.onInput ? { onInput: props.onInput } : {}),
-      ...(props.onCommit ? { onCommit: props.onCommit } : {}),
-    }),
-    [props.onInput, props.onCommit],
-  );
-  const customization = useMemo(
-    () => ({
-      ...(props.components ? { components: props.components } : {}),
-      ...(props.componentConfig
-        ? { componentConfig: props.componentConfig }
-        : {}),
-      ...(props.classNames ? { classNames: props.classNames } : {}),
-      ...(props.slots ? { slots: props.slots } : {}),
-    }),
-    [props.components, props.componentConfig, props.classNames, props.slots],
-  );
   if (props.mode !== "host" && props.mode !== "shadow") {
-    if (
-      [
-        "components",
-        "componentConfig",
-        "classNames",
-        "slots",
-        "tokens",
-        "className",
-        "appearance",
-        "shadowStyles",
-      ].some((key) => key in props)
-    )
+    // Untyped callers can still pass these; undefined means "not set".
+    const unsupported = styledOnly.filter((key) => props[key] !== undefined);
+    if (unsupported.length)
       throw new Error(
-        'OpenDIL customization requires mode="host" or mode="shadow".',
+        `OpenDIL customization (${unsupported.join(", ")}) requires mode="host" or mode="shadow".`,
       );
     return <IsolatedRenderer {...props} updateInterval={updateInterval} />;
   }
-  const content = (
-    <UiScope
-      {...(props.className ? { className: props.className } : {})}
-      appearance={props.appearance ?? "light"}
-      {...(props.tokens ? { tokens: props.tokens } : {})}
-    >
-      <MessageRenderer
-        updateInterval={updateInterval}
+  return (
+    <Suspense fallback={null}>
+      <StyledRenderer
+        mode={props.mode}
+        rendererRef={props.ref}
         text={props.text}
         isStreaming={props.isStreaming ?? false}
         showStatus={props.showStatus ?? true}
         progressiveReveal={props.progressiveReveal ?? false}
         autoScroll={props.autoScroll ?? false}
+        updateInterval={updateInterval}
         onFollowChange={props.onFollowChange}
-        rendererRef={props.ref}
+        onInput={props.onInput}
+        onCommit={props.onCommit}
+        components={props.components}
+        componentConfig={props.componentConfig}
+        classNames={props.classNames}
+        slots={props.slots}
+        className={props.className}
+        appearance={props.appearance ?? "light"}
+        tokens={props.tokens}
+        shadowStyles={props.mode === "shadow" ? props.shadowStyles : undefined}
       />
-    </UiScope>
-  );
-  return (
-    <RendererEnvironmentContext.Provider value={environment}>
-      <CustomizationContext.Provider value={customization}>
-        {props.mode === "shadow" ? (
-          <Suspense fallback={null}>
-            <ShadowRenderer shadowStyles={props.shadowStyles}>
-              {content}
-            </ShadowRenderer>
-          </Suspense>
-        ) : (
-          <div data-dil-mode="host">{content}</div>
-        )}
-      </CustomizationContext.Provider>
-    </RendererEnvironmentContext.Provider>
+    </Suspense>
   );
 }

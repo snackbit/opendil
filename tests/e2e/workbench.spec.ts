@@ -121,6 +121,7 @@ test("appearance is optional compact popover content", async ({ page }) => {
     "data-theme",
     "dark",
   );
+  await expect(output.locator(".dil-scope")).toHaveCSS("color-scheme", "dark");
   await expect(
     output.getByRole("radio", { name: "US East", exact: true }),
   ).toHaveCSS("color", "rgb(250, 250, 250)");
