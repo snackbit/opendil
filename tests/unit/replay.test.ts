@@ -1,13 +1,13 @@
 import { expect, it } from "vitest";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
-import { tokenOffsets } from "../../apps/demo/src/playback/token-index";
+import { tokenOffsets } from "../../apps/site/components/playback/token-index";
 import {
   ReplayClock,
   ratePosition,
   positionRate,
   validRate,
   stressChunk,
-} from "../../apps/demo/src/playback/replay-delivery";
+} from "../../apps/site/components/playback/replay-delivery";
 it.each([
   "",
   "A streamed document\n<box>hello</box>",

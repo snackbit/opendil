@@ -19,6 +19,7 @@ function mount() {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   const status = createStore<DocumentStatus>(() => ({
     complete: true,
+    incomplete: false,
     revision: 0,
     scanned: 0,
     error: "",

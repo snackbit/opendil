@@ -399,3 +399,48 @@ it("shares anchoring ownership and stops abandoned or disabled targets", () => {
       ),
   ).toThrow("browser document");
 });
+it("stops following a finished message when the app scrolls elsewhere, but not for scroll corrections", async () => {
+  bottom = 1500;
+  await act(() =>
+    reactRoot.render(createElement(Probe, { enabled: { padding: 0 } })),
+  );
+  resizes[0]?.();
+  paint();
+  expect(viewportY).toBe(600);
+  // While streaming, a programmatic scroll does not release following.
+  viewportY = 100;
+  resizes[0]?.();
+  paint();
+  expect(viewportY).toBe(600);
+  await act(() =>
+    reactRoot.render(
+      createElement(Probe, { enabled: { padding: 0 }, streaming: false }),
+    ),
+  );
+  paint();
+  expect(changed).toHaveBeenLastCalledWith(true);
+  // A virtualizer correction moves the offset with the content, keeping the end in place.
+  bottom += 50;
+  viewportY += 50;
+  resizes[0]?.();
+  paint();
+  expect(viewportY).toBe(650);
+  expect(changed).toHaveBeenLastCalledWith(true);
+  // Late layout below the view is still followed.
+  bottom += 40;
+  resizes[0]?.();
+  paint();
+  expect(viewportY).toBe(690);
+  // The app scrolls to an earlier row; re-measured content must not pull it back.
+  viewportY = 200;
+  bottom += 10;
+  resizes[0]?.();
+  paint();
+  expect(viewportY).toBe(200);
+  expect(changed).toHaveBeenLastCalledWith(false);
+  expect(document.documentElement.style.overflowAnchor).not.toBe("none");
+  bottom += 100;
+  resizes[0]?.();
+  paint();
+  expect(viewportY).toBe(200);
+});

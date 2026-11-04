@@ -3,9 +3,7 @@ import { useCallback, useState, useMemo, type FocusEvent } from "react";
 import {
   BarChart,
   CartesianGrid,
-  Cell,
   LineChart,
-  Pie,
   PieChart,
   ScatterChart,
   XAxis,
@@ -19,8 +17,10 @@ import {
 } from "../../../components/ui/display/chart";
 import { record, text } from "../primitives/attribute-values";
 import { ChartLegend } from "./chart-legend";
+import { ChartPie } from "./chart-pie";
 import { ChartSeries } from "./chart-series";
-import { SnapCursor, type ChartHit } from "./snap-cursor";
+import { SnapCursor } from "./snap-cursor";
+import { useFrameHover, type ChartHit } from "./chart-hover";
 import { SnapTooltip } from "./snap-tooltip";
 import {
   selectChartItem,
@@ -82,16 +82,34 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
   const [hit, setHit] = useState<ChartHit | null>(null);
   const onHover = useCallback((next: ChartHit | null) => {
     setHit(next);
-    setHovered(next?.point.item.id ?? null);
+    setHovered(next?.target.item.id ?? null);
   }, []);
+  const hover = useFrameHover(onHover);
+  // Pointer hover belongs to the snap tooltip. The stock Recharts tooltip, its
+  // cursor, and active dots are off unless the chart surface has keyboard focus,
+  // where they serve arrow-key navigation. Recharts tracks pointer moves on its
+  // own (bar charts let them through), so off has to be the default.
+  const [keyboard, setKeyboard] = useState(false);
+  const focusIn = useCallback((event: FocusEvent<HTMLElement>) => {
+    const target = event.target;
+    setKeyboard(
+      target.classList.contains("recharts-surface") &&
+        target.matches(":focus-visible"),
+    );
+  }, []);
+  const focusOut = useCallback(() => setKeyboard(false), []);
+  const stockActive = keyboard && hit === null;
   const visibleItems = useMemo(
     () => items.filter((item) => !selection.hidden.has(item.id)),
     [items, selection.hidden],
   );
-  const active =
-    hovered !== null && ids.includes(hovered) && !selection.hidden.has(hovered)
-      ? hovered
-      : null;
+  // Legend hover is separate from chart hover: only legend hover re-renders pie
+  // slices, while slice hover and focus emphasis stay in CSS (see ChartPie).
+  const [legendHovered, setLegendHovered] = useState<string | null>(null);
+  const shown = (id: string | null) =>
+    id !== null && ids.includes(id) && !selection.hidden.has(id) ? id : null;
+  const emphasized = shown(legendHovered);
+  const active = emphasized ?? shown(hovered);
   const select = useCallback(
     (id: string, toggle: boolean) => {
       const ids: string[] = JSON.parse(identity);
@@ -103,19 +121,15 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
     [identity],
   );
   const highlight = useCallback((id: string | null) => setHovered(id), []);
-  const clear = useCallback(() => {
-    setHovered(null);
-    setHit(null);
-  }, []);
-  const sliceEnter = useCallback((event: FocusEvent<SVGElement>) => {
-    setHovered(event.currentTarget.getAttribute("data-series-id"));
-  }, []);
-  const pieEnter = useCallback(
-    (_entry: unknown, index: number) => {
-      const ids: string[] = JSON.parse(identity);
-      setHovered(ids.filter((id) => !selection.hidden.has(id))[index] ?? null);
-    },
-    [identity, selection.hidden],
+  const slices = useMemo(
+    () =>
+      rows.flatMap((row, index) => {
+        const item = items[index];
+        return item && !selection.hidden.has(item.id)
+          ? [{ index, row, item }]
+          : [];
+      }),
+    [rows, items, selection.hidden],
   );
   const config: ChartConfig = Object.fromEntries(
     series.map((item, index) => [
@@ -133,8 +147,17 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
       muted={active !== null && active !== item.id}
       rows={rows}
       highlight={highlight}
+      hover={hover}
+      markers={stockActive}
     />
   ));
+  const stockTooltip = (
+    <ChartTooltip
+      content={<ChartTooltipContent />}
+      isAnimationActive={false}
+      {...(stockActive ? {} : { active: false, cursor: false })}
+    />
+  );
   const axes = (
     <>
       <CartesianGrid vertical={false} />
@@ -152,10 +175,7 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
         axisLine={false}
         width={45}
       />
-      <ChartTooltip
-        content={<ChartTooltipContent />}
-        {...(hit ? { active: false, cursor: false } : {})}
-      />
+      {stockTooltip}
     </>
   );
   const cursor = (
@@ -169,45 +189,25 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
     />
   );
   let chart;
-  if (type === "pie") {
-    const visible = rows.flatMap((row, index) => {
-      const item = items[index];
-      return item && !selection.hidden.has(item.id) ? [{ row, item }] : [];
-    });
+  if (type === "pie")
     chart = (
       <PieChart>
-        <ChartTooltip content={<ChartTooltipContent />} />
-        <Pie
-          data={visible.map((entry) => entry.row)}
-          dataKey={text(data.valueKey)}
+        {stockTooltip}
+        <ChartPie
+          slices={slices}
+          valueKey={text(data.valueKey)}
           nameKey={text(data.nameKey)}
-          innerRadius="48%"
-          outerRadius="78%"
-          isAnimationActive={false}
-          onMouseEnter={pieEnter}
-          onMouseLeave={clear}
-        >
-          {visible.map(({ item }) => (
-            <Cell
-              key={item.id}
-              fill={item.color}
-              opacity={active !== null && active !== item.id ? 0.625 : 1}
-              className="dil-chart-series"
-              data-series-id={item.id}
-              tabIndex={0}
-              onFocus={sliceEnter}
-              onBlur={clear}
-            />
-          ))}
-        </Pie>
+          emphasized={emphasized}
+          hover={hover}
+          highlight={highlight}
+        />
       </PieChart>
     );
-  } else if (type === "bar")
+  else if (type === "bar")
     chart = (
       <BarChart data={rows}>
         {axes}
         {marks}
-        {cursor}
       </BarChart>
     );
   else if (type === "scatter")
@@ -233,19 +233,26 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
       aria-label={type + " chart"}
       data-chart-type={type}
       data-points={rows.length}
+      onFocus={focusIn}
+      onBlur={focusOut}
     >
       <ChartContainer
         config={config}
         overlay={
-          type !== "pie" ? (
-            <SnapTooltip
-              hit={hit}
-              items={visibleItems}
-              xKey={text(data.xKey)}
-              scatter={type === "scatter"}
-              onHover={onHover}
-            />
-          ) : null
+          <SnapTooltip
+            hit={hit}
+            items={visibleItems}
+            kind={
+              type === "pie"
+                ? "slice"
+                : type === "scatter"
+                  ? "scatter"
+                  : "category"
+            }
+            xKey={text(data.xKey)}
+            valueKey={text(data.valueKey)}
+            onHover={onHover}
+          />
         }
         className="h-[248px] w-full"
         initialDimension={{ width: 640, height: 248 }}
@@ -257,7 +264,7 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
         hidden={selection.hidden}
         hovered={active}
         select={select}
-        highlight={highlight}
+        highlight={setLegendHovered}
         interactive={
           (type === "bar" || type === "line" || type === "") && items.length > 1
         }

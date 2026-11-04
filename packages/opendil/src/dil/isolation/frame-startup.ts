@@ -8,8 +8,12 @@ export const RUNTIME_VERSION =
  * loaded without announcing itself is not the OpenDIL runtime.
  */
 export const READY_AFTER_LOAD_MS = 3000;
-/** Upper bound for when the load event was missed, e.g. before hydration. */
-export const READY_TIMEOUT_MS = 20000;
+/**
+ * frame.html pings the host every second while frame.js downloads, so this
+ * limit applies only to a frame that has sent nothing at all, such as an app
+ * page whose load event fired before the renderer hydrated.
+ */
+export const SILENT_FRAME_MS = 20000;
 
 const reported = new Set<string>();
 function reportOnce(key: string, report: () => void) {

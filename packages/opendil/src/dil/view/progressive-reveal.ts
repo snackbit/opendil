@@ -1,7 +1,7 @@
 import { useLayoutEffect, useMemo, type RefObject } from "react";
 import type { DilDocument } from "../runtime/document";
 import { PresentationHistory } from "../runtime/presentation-history";
-import { useRendererEnvironment } from "../renderer-environment";
+import type { RendererViewport } from "../renderer-environment";
 import { revealTiming, type ProgressiveReveal } from "./reveal-options";
 import { RevealController } from "./reveal/controller";
 export function revealDelay(index: number, staggerMs = 50) {
@@ -11,8 +11,8 @@ export function useProgressiveReveal(
   root: RefObject<HTMLElement | null>,
   options: ProgressiveReveal,
   document: DilDocument | null,
+  viewport?: RendererViewport,
 ) {
-  const { viewport } = useRendererEnvironment();
   const timing = revealTiming(options);
   const stagger = timing?.staggerMs,
     duration = timing?.durationMs;
@@ -20,13 +20,12 @@ export function useProgressiveReveal(
     () =>
       new RevealController(
         document?.presentation ?? new PresentationHistory(),
-        () =>
-          viewport
-            ? {
-                top: viewport.offset,
-                bottom: viewport.offset + viewport.height,
-              }
-            : { top: 0, bottom: window.innerHeight },
+        () => {
+          if (!viewport) return { top: 0, bottom: window.innerHeight };
+          // The visible area in client coordinates, which reveal targets use.
+          const top = viewport.origin() + viewport.offset;
+          return { top, bottom: top + viewport.height };
+        },
       ),
     [document, viewport],
   );

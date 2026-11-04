@@ -1,22 +1,14 @@
+import { useCallback, useEffect, useMemo, type MouseEvent } from "react";
 import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  type MouseEvent,
-} from "react";
-import { usePlotArea, useXAxisScale, useYAxisScale } from "recharts";
-import {
-  projectChartPoints,
-  nearestChartPoint,
-  type ChartPoint,
-} from "./chart-snapping";
+  DefaultZIndexes,
+  ZIndexLayer,
+  usePlotArea,
+  useXAxisScale,
+  useYAxisScale,
+} from "recharts";
+import { projectChartPoints, nearestChartPoint } from "./chart-snapping";
+import { useFrameHover, type ChartHit } from "./chart-hover";
 import type { ChartItem } from "./chart-selection";
-export interface ChartHit {
-  point: ChartPoint;
-  clientX: number;
-  clientY: number;
-}
 export interface SnapCursorProps {
   rows: Record<string, unknown>[];
   items: readonly ChartItem[];
@@ -25,6 +17,7 @@ export interface SnapCursorProps {
   hit: ChartHit | null;
   onHover: (hit: ChartHit | null) => void;
 }
+/** Line and scatter hover: snap from anywhere in the plot to the nearest datum. */
 export function SnapCursor({
   rows,
   items,
@@ -36,8 +29,7 @@ export function SnapCursor({
   const area = usePlotArea(),
     xScale = useXAxisScale(),
     yScale = useYAxisScale();
-  const frame = useRef(0);
-  const latest = useRef<ChartHit | null>(null);
+  const hover = useFrameHover(onHover);
   const points = useMemo(
     () =>
       xScale && yScale
@@ -54,74 +46,74 @@ export function SnapCursor({
         matrix.inverse(),
       );
       const point = nearestChartPoint(points, cursor.x, cursor.y, scatter);
-      latest.current = point
-        ? { point, clientX: event.clientX, clientY: event.clientY }
-        : null;
-      if (!frame.current)
-        frame.current = requestAnimationFrame(() => {
-          frame.current = 0;
-          onHover(latest.current);
-        });
+      hover(
+        point
+          ? { target: point, clientX: event.clientX, clientY: event.clientY }
+          : null,
+      );
     },
-    [points, scatter, onHover],
+    [points, scatter, hover],
   );
-  const leave = useCallback(() => {
-    cancelAnimationFrame(frame.current);
-    frame.current = 0;
-    latest.current = null;
-    onHover(null);
-  }, [onHover]);
-  useEffect(() => () => cancelAnimationFrame(frame.current), []);
+  const leave = useCallback(() => hover(null), [hover]);
+  const snapped = hit
+    ? points.find(
+        (point) =>
+          point.index === hit.target.index &&
+          point.item.id === hit.target.item.id,
+      )
+    : undefined;
+  // Follow streamed or filtered data: refresh the hovered datum or drop it.
   useEffect(() => {
     if (!hit) return;
-    const next = points.find(
-      (point) =>
-        point.index === hit.point.index && point.item.id === hit.point.item.id,
-    );
-    if (!next) onHover(null);
-    else if (next !== hit.point) onHover({ ...hit, point: next });
-  }, [points, hit, onHover]);
+    if (!snapped) onHover(null);
+    else if (snapped !== hit.target) onHover({ ...hit, target: snapped });
+  }, [hit, snapped, onHover]);
   if (!area) return null;
+  // Recharts paints lines and scatter points in higher z-index layers than custom
+  // children. Without this layer the marks would cover the hit area and hand
+  // hovering over to the stock Recharts tooltip.
   return (
-    <g aria-hidden="true">
-      <rect
-        data-chart-hit-area=""
-        x={area.x}
-        y={area.y}
-        width={area.width}
-        height={area.height}
-        fill="transparent"
-        onMouseMove={move}
-        onMouseLeave={leave}
-      />
-      {hit && (
-        <g pointerEvents="none" data-chart-snapped-index={hit.point.index}>
-          <line
-            x1={hit.point.x}
-            x2={hit.point.x}
-            y1={area.y}
-            y2={area.y + area.height}
-            stroke="var(--border)"
-          />
-          {scatter && (
+    <ZIndexLayer zIndex={DefaultZIndexes.activeDot + 1}>
+      <g aria-hidden="true">
+        <rect
+          data-chart-hit-area=""
+          x={area.x}
+          y={area.y}
+          width={area.width}
+          height={area.height}
+          fill="transparent"
+          onMouseMove={move}
+          onMouseLeave={leave}
+        />
+        {snapped && (
+          <g pointerEvents="none" data-chart-snapped-index={snapped.index}>
             <line
-              x1={area.x}
-              x2={area.x + area.width}
-              y1={hit.point.y}
-              y2={hit.point.y}
+              x1={snapped.x}
+              x2={snapped.x}
+              y1={area.y}
+              y2={area.y + area.height}
               stroke="var(--border)"
             />
-          )}
-          <circle
-            cx={hit.point.x}
-            cy={hit.point.y}
-            r={5}
-            fill={hit.point.item.color}
-            stroke="var(--background)"
-            strokeWidth={2}
-          />
-        </g>
-      )}
-    </g>
+            {scatter && (
+              <line
+                x1={area.x}
+                x2={area.x + area.width}
+                y1={snapped.y}
+                y2={snapped.y}
+                stroke="var(--border)"
+              />
+            )}
+            <circle
+              cx={snapped.x}
+              cy={snapped.y}
+              r={5}
+              fill={snapped.item.color}
+              stroke="var(--background)"
+              strokeWidth={2}
+            />
+          </g>
+        )}
+      </g>
+    </ZIndexLayer>
   );
 }

@@ -1,8 +1,6 @@
 import type { ChartItem } from "./chart-selection";
-export interface ChartPoint {
-  index: number;
-  item: ChartItem;
-  row: Record<string, unknown>;
+import type { ChartTarget } from "./chart-hover";
+export interface ChartPoint extends ChartTarget {
   x: number;
   y: number;
   value: number;

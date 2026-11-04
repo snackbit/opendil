@@ -92,6 +92,49 @@ describe("agent spec entry", () => {
   });
 });
 
+describe("renderer entry", () => {
+  const dist = "packages/opendil/dist/";
+  /** The entry and every chunk it imports statically, which bundlers always ship. */
+  function staticGraph(file: string, seen = new Set<string>()): Set<string> {
+    if (seen.has(file)) return seen;
+    seen.add(file);
+    const code = readFileSync(dist + file, "utf8");
+    for (const [, chunk] of code.matchAll(/\bfrom\s*"\.\/([^"]+)"/g))
+      if (chunk) staticGraph(chunk, seen);
+    return seen;
+  }
+  it("keeps the parser and QuickJS workers out of iframe-only bundles", () => {
+    const files = [...staticGraph("index.js")];
+    const bytes = files.reduce(
+      (total, file) => total + readFileSync(dist + file).length,
+      0,
+    );
+    expect(bytes).toBeLessThan(40_000);
+    const entry = readFileSync(dist + "index.js", "utf8");
+    const lazy = /import\("\.\/(styled-renderer-[^"]+)"\)/.exec(entry)?.[1];
+    expect(lazy).toBeDefined();
+    // Host and Shadow DOM rendering embed both workers in the lazy chunk.
+    expect(readFileSync(dist + lazy, "utf8").length).toBeGreaterThan(800_000);
+  });
+  it("embeds the QuickJS WebAssembly once in each bundle that needs it", () => {
+    const entry = readFileSync(dist + "index.js", "utf8");
+    const lazy = /import\("\.\/(styled-renderer-[^"]+)"\)/.exec(entry)?.[1];
+    for (const file of [lazy, "runtime/frame.js", "test/vm.js"]) {
+      const code = readFileSync(dist + file, "utf8");
+      // The base64 module is about 670,000 characters; nothing else comes close.
+      expect(code.match(/[A-Za-z0-9+/]{100000,}/g), file).toHaveLength(1);
+    }
+  });
+  it("compiles the package version into the renderer and the frame runtime", () => {
+    const { version } = JSON.parse(
+      readFileSync("packages/opendil/package.json", "utf8"),
+    ) as { version: string };
+    const announced = JSON.stringify(version);
+    expect(readFileSync(dist + "index.js", "utf8")).toContain(announced);
+    expect(readFileSync(runtime + "/frame.js", "utf8")).toContain(announced);
+  });
+});
+
 describe("opendil CLI", () => {
   it("prints usage for help flags and exits successfully", () => {
     for (const args of [["--help"], ["-h"], ["copy-assets", "--help"]]) {

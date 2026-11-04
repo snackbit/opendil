@@ -2,8 +2,8 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { useReplay } from "../../../apps/demo/src/playback/use-replay";
-import { tokenOffsets } from "../../../apps/demo/src/playback/token-index";
+import { useReplay } from "../../../apps/site/components/playback/use-replay";
+import { tokenOffsets } from "../../../apps/site/components/playback/token-index";
 const workers: Transport[] = [],
   frames = new Map<number, FrameRequestCallback>();
 let now = 0,

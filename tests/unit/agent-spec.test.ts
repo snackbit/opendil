@@ -199,9 +199,10 @@ it("rejects invalid composition and malformed syntax", () => {
   expect(compositionErrors(parser.snapshot(), batch.links, primary)).toEqual([
     "table cannot contain text",
   ]);
-  const invalid = new DilParser();
-  invalid.append("<box value={", true);
-  expect(invalid.snapshot().some((n) => n.status === "error")).toBe(true);
+  const unfinished = new DilParser().append("<box value={", true);
+  expect(unfinished.issues.map((issue) => issue.kind)).toEqual(["incomplete"]);
+  const malformed = new DilParser().append("<box value=wrong/>", true);
+  expect(malformed.issues.map((issue) => issue.kind)).toEqual(["syntax"]);
 });
 it.each([
   ["<input>Unexpected child</input>", ["input accepts no children"]],
@@ -311,7 +312,8 @@ for (const example of examples)
   it("validates " + example.name, async () => {
     const parser = new DilParser();
     const batch = parser.append(example.source, true);
-    expect(parser.snapshot().filter((n) => n.status === "error")).toEqual([]);
+    // Syntax errors and unfinished structure, with their source offsets.
+    expect(batch.issues).toEqual([]);
     expect(compositionErrors(parser.snapshot(), batch.links, primary)).toEqual(
       [],
     );

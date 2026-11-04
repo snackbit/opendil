@@ -122,6 +122,7 @@ function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
+  emphasizedKey,
 }: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
   React.ComponentProps<"div"> & {
     hideLabel?: boolean;
@@ -129,6 +130,8 @@ function ChartTooltipContent({
     indicator?: "line" | "dot" | "dashed";
     nameKey?: string;
     labelKey?: string;
+    /** Marks the row whose dataKey matches with `data-emphasized="true"` for styling. */
+    emphasizedKey?: string | undefined;
   } & Omit<
     RechartsPrimitive.DefaultTooltipContentProps<
       TooltipValueType,
@@ -199,6 +202,11 @@ function ChartTooltipContent({
             return (
               <div
                 key={index}
+                data-emphasized={
+                  emphasizedKey !== undefined && item.dataKey === emphasizedKey
+                    ? "true"
+                    : undefined
+                }
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center",

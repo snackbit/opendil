@@ -49,9 +49,14 @@ export interface ExecutionJob {
   key?: string;
   setter?: string;
 }
+const DEADLINE = 1000;
+// Jobs sent before the runtime first answers also wait for it to start, which
+// includes creating the worker and instantiating QuickJS.
+const STARTUP_DEADLINE = 5000;
 /** Bounded transport window; waiting evaluations never consume execution deadlines. */
 export class ExecutionQueue {
   private next = 0;
+  private answered = false;
   private pending = new Map<
     number,
     { job: ExecutionJob; timer: ReturnType<typeof setTimeout> }
@@ -68,7 +73,10 @@ export class ExecutionQueue {
       job: ExecutionJob,
       reply: ExecutionReply,
     ) => void,
-    private readonly failure: (message: string) => void,
+    private readonly failure: (
+      message: string,
+      kind: "runtime" | "limit",
+    ) => void,
   ) {}
   get stats() {
     return {
@@ -103,7 +111,10 @@ export class ExecutionQueue {
         job.type === "call" &&
         this.mutations.filter((entry) => entry.type === "call").length >= 256
       ) {
-        this.failure("Execution stopped: too many actions were requested.");
+        this.failure(
+          "Execution stopped: too many actions were requested.",
+          "limit",
+        );
         return;
       }
       if (!job.setter) this.setters.clear();
@@ -118,6 +129,7 @@ export class ExecutionQueue {
     if (!reply) return;
     const pending = this.pending.get(reply.id);
     if (!pending) return;
+    this.answered = true;
     clearTimeout(pending.timer);
     this.pending.delete(reply.id);
     if (pending.job.key) this.activeKeys.delete(pending.job.key);
@@ -135,14 +147,15 @@ export class ExecutionQueue {
         () =>
           this.failure(
             "Execution stopped: the action exceeded its time limit.",
+            "limit",
           ),
-        1000,
+        this.answered ? DEADLINE : STARTUP_DEADLINE,
       ),
     });
     try {
       this.post({ id, type: job.type, ...job.payload });
     } catch {
-      this.failure("Message execution worker failed.");
+      this.failure("Message execution worker failed.", "runtime");
     }
   }
   private drain() {

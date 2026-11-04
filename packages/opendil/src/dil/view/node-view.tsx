@@ -7,7 +7,8 @@ import { MarkdownNode } from "./markdown-node";
 import { NodeChildren } from "./node-children";
 import { Primitive } from "../widgets/primitives/primitive";
 import { RepeatedNodes } from "./repeated-nodes";
-import { RenderBoundary } from "./render-boundary";
+import { RenderBoundary, useReportProblem } from "./render-boundary";
+import { UNSHOWN_PART_MESSAGE } from "../render-error";
 import { TableScope } from "./table-context";
 import { LoadingBlock } from "./loading-block";
 import { RenderLimit } from "./render-limit";
@@ -100,14 +101,40 @@ const NodeContent = memo(function NodeContent({
   }, [document, presentationKey, evaluated, node.kind]);
   const attributes =
     evaluated.error && previous ? previous : evaluated.attributes;
+  // A halted runtime has reported its own reason.
+  const failed =
+    !!evaluated.error &&
+    !previous &&
+    !evaluated.error.startsWith("Waiting for isolated") &&
+    !document.engine.stopped;
+  useReportProblem(
+    document,
+    failed
+      ? {
+          kind: "runtime",
+          message: `Cannot evaluate the attributes of <${node.name}>: ${evaluated.error}`,
+          offset: node.offset,
+        }
+      : undefined,
+  );
+  const reportRenderError = useCallback(
+    (message: string) =>
+      document.report({
+        kind: "runtime",
+        message: `Cannot render <${node.name}>: ${message}`,
+        offset: node.offset,
+      }),
+    [document, node.name, node.offset],
+  );
 
+  // The host receives the parser's reason through onError and the console.
   if (node.status === "error")
     return (
       <LoadingBlock
         name={node.name}
         table={table}
         svg={svg}
-        error={node.error}
+        error={UNSHOWN_PART_MESSAGE}
       />
     );
   if (evaluated.error && !previous)
@@ -116,13 +143,7 @@ const NodeContent = memo(function NodeContent({
         name={node.name}
         table={table}
         svg={svg}
-        error={
-          complete &&
-          !evaluated.error.startsWith("Waiting for isolated") &&
-          !document.engine.stopped
-            ? evaluated.error
-            : undefined
-        }
+        error={complete && failed ? UNSHOWN_PART_MESSAGE : undefined}
       />
     );
   if (node.kind === "pending")
@@ -132,6 +153,7 @@ const NodeContent = memo(function NodeContent({
       <RenderBoundary
         revision={`${node.text.length}:${version}`}
         streaming={!complete}
+        onError={reportRenderError}
       >
         <MarkdownNode
           node={node}
@@ -194,6 +216,7 @@ const NodeContent = memo(function NodeContent({
     <RenderBoundary
       revision={`${node.status}:${version}`}
       streaming={!complete}
+      onError={reportRenderError}
     >
       <ControlRevisionContext.Provider
         value={document.engine.evaluationRevision(

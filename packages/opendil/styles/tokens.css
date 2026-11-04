@@ -14,6 +14,9 @@
   --dil-item-radius: 8px;
   --dil-success: #22825e;
   --dil-warning: #ad751a;
+  --dil-success-surface: #e5f5ee;
+  --dil-warning-surface: #fff2d9;
+  --dil-danger-surface: #fee8e8;
   --dil-tertiary: #8f8f8f;
   --dil-node-selected: #343d75;
   --dil-node-surface: #2a303b;

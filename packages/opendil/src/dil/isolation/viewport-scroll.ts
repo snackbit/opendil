@@ -1,7 +1,6 @@
-import type { FrameViewport } from "../renderer-environment";
 /** Coalesce measurement corrections after layout; discard them if the reader moved meanwhile. */
 export function viewportScroller(
-  viewport: FrameViewport,
+  viewport: { readonly revision: number },
   send: (offset: number, revision: number) => void,
 ) {
   let frame = 0;

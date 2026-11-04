@@ -7,6 +7,6 @@
   "access": "public",
   "baseBranch": "main",
   "updateInternalDependencies": "patch",
-  "ignore": ["@opendil/demo", "@opendil/eslint-config", "@opendil/tsconfig"],
+  "ignore": ["@opendil/site", "@opendil/eslint-config", "@opendil/tsconfig"],
   "privatePackages": { "version": false, "tag": false }
 }

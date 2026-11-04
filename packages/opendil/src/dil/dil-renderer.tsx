@@ -1,33 +1,77 @@
 "use client";
-import { lazy, Suspense, type Ref } from "react";
+import { Suspense, use, type Ref } from "react";
 import type { DilRendererHandle } from "./renderer-handle";
 import type { DilCustomization } from "./customization";
 import { IsolatedRenderer } from "./isolation/isolated-renderer";
 import type { RendererMetrics } from "./renderer-environment";
+import type { DilRenderError } from "./render-error";
 import type { ProgressiveReveal } from "./view/reveal-options";
-import type { AutoScroll } from "./view/scroll-options";
+import type { AutoScroll, ScrollContainer } from "./view/scroll-options";
 import {
   parseUpdateInterval,
   type UpdateInterval,
 } from "./runtime/presentation-scheduler";
+import type * as StyledRendererModule from "./styled-renderer";
+
 // The iframe mode needs only the frame bridge. Host and Shadow DOM modes embed
 // the parser and QuickJS workers, so pages that never use them never load them.
-const StyledRenderer = lazy(() =>
-  import("./styled-renderer").then((module) => ({
-    default: module.StyledRenderer,
-  })),
-);
+type StyledModule = typeof StyledRendererModule;
+// React's use() returns the value of a promise marked as fulfilled without
+// suspending, so a loaded module renders synchronously on every later render.
+let styledLoad: Promise<StyledModule> | undefined;
+function loadStyledRenderer() {
+  if (!styledLoad) {
+    const load: Promise<StyledModule> = import("./styled-renderer").then(
+      (module) => {
+        Object.assign(load, { status: "fulfilled", value: module });
+        return module;
+      },
+      (error: unknown) => {
+        // A later render retries a chunk that failed to load.
+        styledLoad = undefined;
+        throw error;
+      },
+    );
+    styledLoad = load;
+  }
+  return styledLoad;
+}
+/**
+ * Starts loading the code that `mode="host"` and `mode="shadow"` share. Once
+ * it resolves, those modes render synchronously: their `ref` is set in the
+ * first commit and `renderToString` includes them.
+ */
+export async function preloadHostRenderer(): Promise<void> {
+  await loadStyledRenderer();
+}
+/** Suspends only while the shared host and Shadow DOM code loads. */
+function StyledRenderer(props: StyledRendererModule.StyledRendererProps) {
+  // Call use() on every render: React rejects a component that stops calling
+  // use() after it suspended on it.
+  const module = use(loadStyledRenderer());
+  return <module.StyledRenderer {...props} />;
+}
 
 interface DilCommonProps {
   ref?: Ref<DilRendererHandle> | undefined;
   /** Append-only source prefix. Remount with a new key to replace it. */
   text: string;
   isStreaming?: boolean;
-  /** Show the receiving/completion label without affecting errors. */
+  /**
+   * Show the "Receiving document", "Incomplete" or "Complete" label. Errors
+   * and the note that a response ended early stay visible when false.
+   */
   showStatus?: boolean;
   /** Stagger newly shown blocks; disabled by default and under reduced motion. */
   progressiveReveal?: ProgressiveReveal;
   autoScroll?: AutoScroll;
+  /**
+   * What scrolls around the renderer, for `autoScroll` and for virtualized
+   * long content. Defaults to `"auto"`: the nearest ancestor that scrolls
+   * vertically, crossing Shadow DOM boundaries, or the window when none does.
+   * Pass `"window"`, an element, or a ref to an element to choose one.
+   */
+  scrollContainer?: ScrollContainer | undefined;
   /** Maximum streaming presentation frequency; user interaction remains immediate. */
   updateInterval?: UpdateInterval;
   /** Color scheme of the stock components. Defaults to "light". */
@@ -38,28 +82,41 @@ interface DilCommonProps {
    * resources and ignores the rest with a console warning.
    */
   tokens?: Readonly<Record<`--${string}`, string>> | undefined;
+  /**
+   * URL of the directory that serves frame.html. Defaults to "/opendil/". Only
+   * the iframe mode loads it; host and Shadow DOM modes ignore it, so a mode
+   * chosen at runtime can always pass the app's runtime location.
+   */
+  runtimeBaseUrl?: string | undefined;
   onFollowChange?: (following: boolean) => void;
   onInput?: (detail: { length: number }) => void;
   onCommit?: (detail: RendererMetrics) => void;
+  /**
+   * Receives each distinct problem once, with a developer-facing message and,
+   * for parse problems, the offset in `text`. Readers see short generic
+   * wording instead. Syntax problems and documents that ended with unfinished
+   * structure are also logged with `console.warn`. One message reports at most
+   * 20 problems, then one `limit` error; the `incomplete` report always
+   * arrives. An exception thrown here is rethrown asynchronously and does not
+   * interrupt rendering.
+   */
+  onError?: ((error: DilRenderError) => void) | undefined;
 }
 export interface DilIsolatedRendererProps extends DilCommonProps {
   mode?: "isolated" | undefined;
-  /** URL of the directory that serves frame.html. Defaults to "/opendil/". */
-  runtimeBaseUrl?: string | undefined;
-  components?: never;
-  componentConfig?: never;
-  classNames?: never;
-  slots?: never;
-  className?: never;
-  shadowStyles?: never;
+  components?: undefined;
+  componentConfig?: undefined;
+  classNames?: undefined;
+  slots?: undefined;
+  className?: undefined;
+  shadowStyles?: undefined;
 }
 interface DilStyledRendererProps extends DilCommonProps, DilCustomization {
-  runtimeBaseUrl?: never;
   className?: string | undefined;
 }
 export interface DilHostRendererProps extends DilStyledRendererProps {
   mode: "host";
-  shadowStyles?: never;
+  shadowStyles?: undefined;
 }
 export interface DilShadowRendererProps extends DilStyledRendererProps {
   mode: "shadow";
@@ -87,6 +144,9 @@ export function DilRenderer(props: DilRendererProps) {
       );
     return <IsolatedRenderer {...props} updateInterval={updateInterval} />;
   }
+  // The boundary stays in place after the code loads, so the tree keeps its
+  // shape and hydration matches the server. It also catches custom components
+  // that suspend; wrap those in your own Suspense to show a fallback.
   return (
     <Suspense fallback={null}>
       <StyledRenderer
@@ -97,10 +157,12 @@ export function DilRenderer(props: DilRendererProps) {
         showStatus={props.showStatus ?? true}
         progressiveReveal={props.progressiveReveal ?? false}
         autoScroll={props.autoScroll ?? false}
+        scrollContainer={props.scrollContainer}
         updateInterval={updateInterval}
         onFollowChange={props.onFollowChange}
         onInput={props.onInput}
         onCommit={props.onCommit}
+        onError={props.onError}
         components={props.components}
         componentConfig={props.componentConfig}
         classNames={props.classNames}

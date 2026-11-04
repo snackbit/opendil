@@ -34,7 +34,8 @@ export class ExpressionEngine {
     versions: {},
     catalog: 0,
   }));
-  private readonly runtime: InlineWorker;
+  /** Started by the first job, so documents without expressions or state never load QuickJS. */
+  private runtime: InlineWorker | null = null;
   private readonly cache = new EvaluationCache();
   private readonly queue: ExecutionQueue;
   private intent = 0;
@@ -62,19 +63,21 @@ export class ExpressionEngine {
     readonly events = new EventTarget(),
     private readonly updates = new PresentationScheduler(),
   ) {
-    this.runtime = startInlineWorker(__DIL_VM_WORKER__, {
+    this.queue = new ExecutionQueue(
+      // Without a worker, the startup report halts the engine before jobs time out.
+      (message) => this.start().worker?.postMessage(message),
+      (job, reply) => this.receive(job, reply),
+      (message, kind) => this.halt(message, kind),
+    );
+  }
+  private start(): InlineWorker {
+    this.runtime ??= startInlineWorker(__DIL_VM_WORKER__, {
       role: "expression runtime",
       crashMessage: "Message execution worker failed.",
       onMessage: (data: unknown) => this.queue.reply(data),
       onStop: (message) => this.halt(message),
     });
-    const worker = this.runtime.worker;
-    this.queue = new ExecutionQueue(
-      // Without a worker, the startup report halts the engine before jobs time out.
-      (message) => worker?.postMessage(message),
-      (job, reply) => this.receive(job, reply),
-      (message) => this.halt(message),
-    );
+    return this.runtime;
   }
   private reference(handle: number, delta: number) {
     const count = (this.handleRefs.get(handle) ?? 0) + delta;
@@ -159,7 +162,10 @@ export class ExpressionEngine {
       return;
     }
     if (reply.error === "interrupted") {
-      this.halt("Execution stopped: this action exceeded its time limit.");
+      this.halt(
+        "Execution stopped: this action exceeded its time limit.",
+        "limit",
+      );
       return;
     }
     if (reply.error && !job.key) {
@@ -222,22 +228,23 @@ export class ExpressionEngine {
     }
     this.fill();
   }
-  halt(reason: string, report = true) {
+  /** Stops the runtime; a reported halt reaches the document as a dil:error event. */
+  halt(reason: string, kind: "runtime" | "limit" = "runtime", report = true) {
     if (this.failed) return;
     this.failed = reason;
     this.queue.stop();
     this.updates.cancel("bindings");
     this.pendingChanges.clear();
     this.urgentKeys.clear();
-    this.runtime.dispose();
+    this.runtime?.dispose();
     this.store.setState((state) => ({ catalog: state.catalog + 1 }));
     if (report)
       this.events.dispatchEvent(
-        new CustomEvent("dil:error", { detail: reason }),
+        new CustomEvent("dil:error", { detail: { message: reason, kind } }),
       );
   }
   dispose() {
-    this.halt("Message disposed", false);
+    this.halt("Message disposed", "runtime", false);
     this.failed = "Message disposed";
     this.cache.entries.clear();
     this.handleRefs.clear();

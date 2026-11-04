@@ -67,6 +67,10 @@ try {
   const define = {
     __DIL_VM_WORKER__: JSON.stringify(vm.outputFiles[0].text),
     __DIL_PARSER_WORKER__: JSON.stringify(parser.outputFiles[0].text),
+    // The frame announces this version so renderers can detect stale copied assets.
+    __DIL_VERSION__: JSON.stringify(
+      JSON.parse(await readFile("package.json", "utf8")).version,
+    ),
   };
   // Unit tests run the standalone worker; renderers embed it, so it is not a runtime asset.
   await writeFile(staging + "/test/vm.js", vm.outputFiles[0].text);
@@ -103,8 +107,11 @@ try {
   const css = scoped.toString();
   define.__DIL_STYLES__ = JSON.stringify(css);
   await writeFile(staging + "/styles.css", css);
+  // Until frame.js runs, the loader pings the renderer every second so a slow
+  // download is not reported as a missing runtime, and reports a frame.js that
+  // failed to load. Its hash below must cover the exact text.
   const loader =
-    'const script=document.createElement("script");script.src=new URL("./frame.js",location.href).href;document.head.append(script);';
+    '{let status="dil-loading";const ping=()=>parent.postMessage({type:status},"*");ping();const timer=setInterval(ping,1000);const script=document.createElement("script");script.src=new URL("./frame.js",location.href).href;script.onload=()=>clearInterval(timer);script.onerror=()=>{status="dil-failed";ping()};document.head.append(script)}';
   const hash = createHash("sha256").update(loader).digest("base64");
   const csp = `default-src 'none'; script-src 'sha256-${hash}' 'strict-dynamic' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; worker-src blob:; child-src blob:; connect-src 'none'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; object-src 'none'`;
   await writeFile(

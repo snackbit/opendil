@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useRef, useMemo, type RefObject } from "react";
 import { scrollSettings, type AutoScroll } from "./scroll-options";
 import { ScrollFollower } from "./scroll/controller";
+import type { ScrollRootTracker } from "./scroll/root-tracker";
+import { ScrollRoot } from "./scroll/scroll-root";
 
 function editingTarget(target: EventTarget | null) {
   return (
@@ -10,16 +12,35 @@ function editingTarget(target: EventTarget | null) {
     )
   );
 }
-export function listenForScrollAway(view: Window, pause: () => void) {
+/**
+ * Pauses on reading gestures inside the scroller that `scope` returns. With a
+ * scroll container, gestures elsewhere on the page, such as wheeling a
+ * sidebar, leave following alone.
+ */
+export function listenForScrollAway(
+  view: Window,
+  pause: () => void,
+  scope?: () => ScrollRoot,
+) {
+  const page = new ScrollRoot(view, null);
+  const current = scope ?? (() => page);
   let touchY: number | undefined;
   let touchX: number | undefined;
-  const wheel = () => {
-    pause();
+  let touching = false;
+  const wheel = (event: WheelEvent) => {
+    if (current().contains(event)) pause();
   };
   const key = (event: KeyboardEvent) => {
     const target = event.composedPath()[0] ?? event.target;
+    // Unfocused pages scroll the scroller the reader last used.
+    const unfocused =
+      target === view.document.body ||
+      target === view.document.documentElement ||
+      target === view.document ||
+      target === view;
     if (
       !event.defaultPrevented &&
+      (unfocused || current().contains(event)) &&
       !editingTarget(target) &&
       ([
         "PageUp",
@@ -40,10 +61,12 @@ export function listenForScrollAway(view: Window, pause: () => void) {
       pause();
   };
   const start = (event: TouchEvent) => {
+    touching = current().contains(event);
     touchY = event.touches[0]?.clientY;
     touchX = event.touches[0]?.clientX;
   };
   const move = (event: TouchEvent) => {
+    if (!touching) return;
     const next = event.touches[0]?.clientY;
     const nextX = event.touches[0]?.clientX;
     if (nextX !== undefined && touchX !== undefined && nextX !== touchX)
@@ -54,10 +77,12 @@ export function listenForScrollAway(view: Window, pause: () => void) {
   };
   const pointer = (event: PointerEvent) => {
     const target = event.composedPath()[0] ?? event.target;
+    const root = current();
     if (
-      event.button === 1 ||
-      event.clientX >= view.document.documentElement.clientWidth ||
-      (target instanceof Element && target.closest("a[href]"))
+      root.scrollbar(event) ||
+      (root.contains(event) &&
+        (event.button === 1 ||
+          (target instanceof Element && target.closest("a[href]"))))
     )
       pause();
   };
@@ -80,6 +105,7 @@ export function useStreamFollow(
   options: AutoScroll,
   streaming: boolean,
   onChange?: ((following: boolean) => void) | undefined,
+  scroller?: ScrollRootTracker,
 ) {
   const settings = scrollSettings(options);
   const enabled = settings !== null;
@@ -111,13 +137,14 @@ export function useStreamFollow(
       () => settingsRef.current,
       (value) => callback.current?.(value),
       listenForScrollAway,
+      scroller,
     );
     follower.current = controller;
     return () => {
       controller.dispose();
       follower.current = null;
     };
-  }, [root, enabled]);
+  }, [root, enabled, scroller]);
   useEffect(() => {
     if (streaming) follower.current?.start();
     else follower.current?.end();

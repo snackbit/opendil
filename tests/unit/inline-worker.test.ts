@@ -261,7 +261,7 @@ function fatalEngine() {
   const engine = new ExpressionEngine();
   const halted: string[] = [];
   engine.events.addEventListener("dil:error", (event) => {
-    if (event instanceof CustomEvent) halted.push(String(event.detail));
+    if (event instanceof CustomEvent) halted.push(event.detail.message);
   });
   engine.declare("const [count] = DIL.useState(0)");
   const worker = workers.at(-1);

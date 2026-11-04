@@ -1,4 +1,4 @@
-// Resumable lexical state for JavaScript inside braces and tag attributes.
+// Resumable lexical state for JavaScript inside braces, tag names and attributes.
 // A final character is deferred until lookahead is available, unless finalizing.
 import type { Attribute } from "./types";
 export class LexicalState {
@@ -83,18 +83,36 @@ export class LexicalState {
   }
 }
 
-export function fenceMarker(
+export interface TagStart {
+  name: string;
+  closing: boolean;
+  /** Offset just past the name. */
+  end: number;
+}
+/**
+ * Reads the tag name after "<" or "</" at cursor. Returns undefined while a
+ * streamed name may still grow, and null when the source is not tag-shaped,
+ * such as an autolink, an email address, or a comparison.
+ */
+export function tagStart(
   source: string,
   cursor: number,
-  current: string,
-): string | undefined {
-  const char = source.charAt(cursor);
-  if (char !== "`" && char !== "~") return undefined;
-  const marker = source.slice(cursor, cursor + 3);
-  if (marker !== "```" && marker !== "~~~") return undefined;
-  if (current && current !== marker) return undefined;
-  const prefix = source.slice(source.lastIndexOf("\n", cursor - 1) + 1, cursor);
-  return /^ {0,3}$/.test(prefix) ? marker : undefined;
+  complete: boolean,
+): TagStart | null | undefined {
+  const closing = source.charAt(cursor + 1) === "/";
+  const start = cursor + (closing ? 2 : 1);
+  const name = /^[A-Za-z][\w-]*/.exec(source.slice(start, start + 65))?.[0];
+  if (!name) return start >= source.length && !complete ? undefined : null;
+  if (name.length > 64) return null;
+  const end = start + name.length;
+  if (end >= source.length)
+    return complete ? { name, closing, end } : undefined;
+  const terminator = source.charAt(end);
+  return /\s/.test(terminator) ||
+    terminator === ">" ||
+    (!closing && terminator === "/")
+    ? { name, closing, end }
+    : null;
 }
 
 export function braceEnd(source: string, start: number): number {

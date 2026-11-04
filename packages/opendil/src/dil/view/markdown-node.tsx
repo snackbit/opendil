@@ -23,6 +23,7 @@ import ReactMarkdown, {
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import { RenderLimit } from "./render-limit";
+import { useReportProblem } from "./render-boundary";
 import { usePresentationTarget } from "./reveal/presentation";
 import { EvaluationPending, type Scope } from "../runtime/expressions";
 import {
@@ -41,6 +42,8 @@ const MermaidDiagram = lazy(() =>
 );
 interface MarkdownContextValue {
   nodeId: number;
+  /** Source position of the Markdown node, for problem reports. */
+  offset: number;
   expressions: readonly string[];
   document: DilDocument;
   scope: Scope;
@@ -55,7 +58,7 @@ function useMarkdown() {
   return value;
 }
 function ExpressionText({ index, token }: { index: number; token: string }) {
-  const { expressions, document, scope } = useMarkdown();
+  const { expressions, document, scope, offset } = useMarkdown();
   const source = expressions[index];
   const select = useCallback(
     (state: Parameters<typeof document.engine.signature>[2]) =>
@@ -67,30 +70,40 @@ function ExpressionText({ index, token }: { index: number; token: string }) {
     [document, source, scope],
   );
   useStore(document.engine.store, select);
+  let text: string | number | undefined;
+  let failure: string | undefined;
+  if (source !== undefined)
+    try {
+      const value = document.engine.read(source, scope);
+      text =
+        typeof value === "string" || typeof value === "number"
+          ? value
+          : value && typeof value === "object"
+            ? "[object Object]"
+            : String(value ?? "");
+    } catch (error) {
+      if (!(error instanceof EvaluationPending))
+        failure = error instanceof Error ? error.message : String(error);
+    }
+  useReportProblem(
+    document,
+    failure === undefined || source === undefined
+      ? undefined
+      : {
+          kind: "runtime",
+          message: `Cannot evaluate {${source.length > 200 ? source.slice(0, 200) + "…" : source}}: ${failure}`,
+          offset,
+        },
+  );
   if (source === undefined) return token;
-  try {
-    const value = document.engine.read(source, scope);
-    const text =
-      typeof value === "string" || typeof value === "number"
-        ? value
-        : value && typeof value === "object"
-          ? "[object Object]"
-          : String(value ?? "");
-    return (
-      <RenderLimit
-        document={document}
-        cost={Math.ceil(String(text).length / 64)}
-      >
-        <span>{text}</span>
-      </RenderLimit>
-    );
-  } catch (error) {
-    return error instanceof EvaluationPending ? (
-      <span aria-busy="true" />
-    ) : (
-      <span role="alert">Cannot evaluate this value.</span>
-    );
-  }
+  if (failure !== undefined)
+    return <span role="alert">Cannot evaluate this value.</span>;
+  if (text === undefined) return <span aria-busy="true" />;
+  return (
+    <RenderLimit document={document} cost={Math.ceil(String(text).length / 64)}>
+      <span>{text}</span>
+    </RenderLimit>
+  );
 }
 function expressionChildren(children: ReactNode): ReactNode {
   return Children.map(children, (child) => {
@@ -220,13 +233,14 @@ export function MarkdownNode({
   const context = useMemo(
     () => ({
       nodeId: node.id,
+      offset: node.offset,
       expressions: node.expressions,
       document,
       scope,
       inline,
       instance,
     }),
-    [node.id, node.expressions, document, scope, inline, instance],
+    [node.id, node.offset, node.expressions, document, scope, inline, instance],
   );
   if (!node.text.trim()) return null;
   if (node.text.length > 65536)
