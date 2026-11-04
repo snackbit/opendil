@@ -46,7 +46,11 @@ export function trackRequests(page: Page): void {
   if (openRequests.has(page)) return;
   const open = new Set<Request>();
   openRequests.set(page, open);
-  page.on("request", (request) => open.add(request));
+  // Only network traffic counts. OpenDIL starts workers from blob: URLs, and a
+  // worker terminated during navigation never reports its blob load as finished.
+  page.on("request", (request) => {
+    if (/^https?:/.test(request.url())) open.add(request);
+  });
   page.on("requestfinished", (request) => open.delete(request));
   page.on("requestfailed", (request) => open.delete(request));
   // Next.js leaves the body of a failed (404) prefetch open; the status is reported elsewhere.
