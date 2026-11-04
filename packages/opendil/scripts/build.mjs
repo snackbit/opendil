@@ -33,10 +33,16 @@ async function fixDeclarationImports(directory) {
     }
   }
 }
+const agentSpecFiles = {
+  PRIMARY: "genui.agent.md",
+  FULL: "genui.agent.full.md",
+  EXAMPLES: "genui.examples.md",
+};
 await mkdir(".tmp", { recursive: true });
 const staging = await mkdtemp(".tmp/build-");
 try {
-  await mkdir(staging + "/runtime", { recursive: true });
+  for (const directory of ["runtime", "spec", "test"])
+    await mkdir(staging + "/" + directory, { recursive: true });
   const options = {
     bundle: true,
     platform: "browser",
@@ -62,7 +68,8 @@ try {
     __DIL_VM_WORKER__: JSON.stringify(vm.outputFiles[0].text),
     __DIL_PARSER_WORKER__: JSON.stringify(parser.outputFiles[0].text),
   };
-  await writeFile(staging + "/runtime/vm.js", vm.outputFiles[0].text);
+  // Unit tests run the standalone worker; renderers embed it, so it is not a runtime asset.
+  await writeFile(staging + "/test/vm.js", vm.outputFiles[0].text);
   const frame = await build({
     ...options,
     format: "iife",
@@ -116,6 +123,28 @@ try {
     ).concat(["react", "react-dom", "react/jsx-runtime"]),
     define,
     banner: { js: '"use client";' },
+  });
+  // spec/ stays canonical; the package ships copies that version with the renderer.
+  const specs = {};
+  for (const [name, file] of Object.entries(agentSpecFiles)) {
+    specs[name] = await readFile("../../spec/" + file, "utf8");
+    await writeFile(staging + "/spec/" + file, specs[name]);
+  }
+  // A separate, dependency-free entry keeps the specs out of browser renderer bundles.
+  await build({
+    ...options,
+    write: true,
+    platform: "neutral",
+    format: "esm",
+    minify: false,
+    entryPoints: ["src/agent-spec.ts"],
+    outfile: staging + "/agent-spec.js",
+    define: Object.fromEntries(
+      Object.entries(specs).map(([name, text]) => [
+        "__DIL_AGENT_SPEC_" + name + "__",
+        JSON.stringify(text),
+      ]),
+    ),
   });
   await copyFile("../../LICENSE", "LICENSE");
   await copyFile("../../README.md", "README.md");

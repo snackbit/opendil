@@ -23,6 +23,8 @@
   },
   "files": [
     "dist",
+    "!dist/test",
+    "!dist/.opendil-manifest.json",
     "styles",
     "bin",
     "THIRD_PARTY_NOTICES.md"
@@ -41,7 +43,14 @@
     "./ui": {
       "types": "./dist/types/ui.d.ts",
       "import": "./dist/ui.js"
-    }
+    },
+    "./agent-spec": {
+      "types": "./dist/types/agent-spec.d.ts",
+      "default": "./dist/agent-spec.js"
+    },
+    "./spec/genui.agent.md": "./dist/spec/genui.agent.md",
+    "./spec/genui.agent.full.md": "./dist/spec/genui.agent.full.md",
+    "./spec/genui.examples.md": "./dist/spec/genui.examples.md"
   },
   "bin": {
     "opendil": "./bin/opendil.mjs"
@@ -51,6 +60,7 @@
   },
   "scripts": {
     "build": "node scripts/build.mjs",
+    "prepack": "node scripts/prune-dist.mjs",
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "peerDependencies": {

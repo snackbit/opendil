@@ -14,7 +14,7 @@ afterEach(async () => {
   await Promise.all(workers.splice(0).map((worker) => worker.terminate()));
 });
 function runtime() {
-  const source = readFileSync("packages/opendil/dist/runtime/vm.js", "utf8");
+  const source = readFileSync("packages/opendil/dist/test/vm.js", "utf8");
   const worker = new Worker(
     `const {parentPort}=require('node:worker_threads');globalThis.self=globalThis;self.postMessage=value=>parentPort.postMessage(value);${source};parentPort.on('message',data=>self.onmessage({data}));`,
     { eval: true },

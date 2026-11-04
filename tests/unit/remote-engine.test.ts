@@ -46,7 +46,7 @@ beforeEach(() => {
   vi.stubGlobal("Worker", BrowserWorker);
   vi.stubGlobal(
     "__DIL_VM_WORKER__",
-    readFileSync("packages/opendil/dist/runtime/vm.js", "utf8"),
+    readFileSync("packages/opendil/dist/test/vm.js", "utf8"),
   );
   vi.stubGlobal("window", new EventTarget());
 });

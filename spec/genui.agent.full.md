@@ -92,40 +92,6 @@ documented value type, all control branches close, and every displayed claim is
 supported by supplied data. Remove inert action buttons unless they intentionally
 demonstrate appearance. Do not add an implementation checklist to the generated UI.
 
-#### Specification validation
-
-Run `npm run build:package` before `npm run check:agent-spec`. The focused check
-reads the stock renderer dispatch and delegated widget owners through the
-TypeScript AST. It extracts consumed property names and compares the resulting
-inventory with both references. Shared layout/SVG props and icon/SVG allowlists
-are checked separately. Missing, invented, and duplicate component/property
-definitions fail the check. Component signatures are derived in memory from source;
-there is no separately maintained generated inventory to synchronize.
-
-Every executable dil fence in the three specification files is passed through
-the real parser. Declarations and expressions are compiled/evaluated by the built
-production QuickJS worker. Example names include their source file, opening-fence
-line, and nearest heading. The check compares whole-source parsing with incremental
-character-by-character parsing and verifies known composition contracts. It also
-requires searchable catalog coverage of all stock components, allowed SVG elements,
-and the representative generation tasks. Browser tests exercise the interactive
-recipes and the exact source-copy workflow.
-
-To check a model-generated raw response, set `GENUI_RESPONSE_FILE` to its local
-path when running the focused command. This adds the response to parser, component,
-property-name, composition, and expression-execution checks. It does not call a
-remote model, score visual quality, prove supplied facts, or automatically explore
-all possible interactions. Use the eight Task recipes as a small evaluation set;
-inspect both initial output and the next user interaction.
-
-The extractor follows explicit widget-owner mappings and shared attribute readers.
-When implementation moves property reads into another helper or uses indirect
-keys, update that mapping. AST property-name extraction is not a complete type
-schema inference engine: types, enums, defaults, nested content shapes, and CSS
-semantics still require source review and behavior tests. A passing example check
-does not prove every handler path safe or validate an arbitrary custom host
-contract. Keep those limitations visible when interpreting compliance results.
-
 ## 2. Syntax and parsing
 
 ### Markdown

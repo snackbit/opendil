@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { test, expect } from "@playwright/test";
 import { openShowcase, replaceSource } from "./dil-page";
 test("hostile message cannot reach the host and a loop does not stop another message", async ({
@@ -141,41 +142,41 @@ test("QuickJS bounds deep recursion in a browser worker and fails closed otherwi
   page,
 }) => {
   await openShowcase(page);
-  const src = await page.locator("iframe").first().getAttribute("src");
-  const replies = await page.evaluate(
-    async (vm) => {
-      type Reply = { error?: string; fatal?: string; value?: unknown };
-      const run = async (sources: string[]) => {
-        const worker = new Worker(vm);
-        const results: Reply[] = [];
-        for (const [index, source] of sources.entries())
-          results.push(
-            await new Promise<Reply>((resolve) => {
-              worker.onmessage = (event) => resolve(event.data);
-              worker.postMessage({ id: index + 1, type: "evaluate", source });
-            }),
-          );
-        worker.terminate();
-        return results;
-      };
-      const nested = "(()=>{let a=[];for(let i=0;i<3000;i++)a=[a];return a})()";
-      return {
-        bounded: await run([
-          ...[
-            "(function f(){return f()+1})()",
-            // 10,000 levels overflow the 64 KiB QuickJS stack long before the
-            // per-evaluation work budget interrupts the loop that builds them.
-            "(()=>{let a=[];for(let i=0;i<1e4;i++)a=[a];return String(a)})()",
-            "JSON.parse('['.repeat(1e5)+']'.repeat(1e5))",
-          ].flatMap((source) => [source, source, source]),
-          nested,
-          "1+1",
-        ]),
-        failed: await run([`JSON.stringify(${nested})`, "1+1"]),
-      };
-    },
-    new URL("vm.js", new URL(src ?? "", page.url())).href,
-  );
+  // The renderers embed this worker; the build emits it standalone for tests only.
+  const vm = readFileSync("packages/opendil/dist/test/vm.js", "utf8");
+  const replies = await page.evaluate(async (vm) => {
+    type Reply = { error?: string; fatal?: string; value?: unknown };
+    const run = async (sources: string[]) => {
+      const worker = new Worker(
+        URL.createObjectURL(new Blob([vm], { type: "text/javascript" })),
+      );
+      const results: Reply[] = [];
+      for (const [index, source] of sources.entries())
+        results.push(
+          await new Promise<Reply>((resolve) => {
+            worker.onmessage = (event) => resolve(event.data);
+            worker.postMessage({ id: index + 1, type: "evaluate", source });
+          }),
+        );
+      worker.terminate();
+      return results;
+    };
+    const nested = "(()=>{let a=[];for(let i=0;i<3000;i++)a=[a];return a})()";
+    return {
+      bounded: await run([
+        ...[
+          "(function f(){return f()+1})()",
+          // 10,000 levels overflow the 64 KiB QuickJS stack long before the
+          // per-evaluation work budget interrupts the loop that builds them.
+          "(()=>{let a=[];for(let i=0;i<1e4;i++)a=[a];return String(a)})()",
+          "JSON.parse('['.repeat(1e5)+']'.repeat(1e5))",
+        ].flatMap((source) => [source, source, source]),
+        nested,
+        "1+1",
+      ]),
+      failed: await run([`JSON.stringify(${nested})`, "1+1"]),
+    };
+  }, vm);
   for (const reply of replies.bounded.slice(0, 9)) {
     expect(reply.fatal).toBeUndefined();
     expect(reply.error).toContain("stack overflow");

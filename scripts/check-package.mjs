@@ -1,5 +1,12 @@
 import { execFileSync } from "node:child_process";
-import { mkdtemp, mkdir, readFile, writeFile, rm } from "node:fs/promises";
+import {
+  mkdtemp,
+  mkdir,
+  readFile,
+  readdir,
+  writeFile,
+  rm,
+} from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolve, join } from "node:path";
 import { createServer } from "node:http";
@@ -7,6 +14,13 @@ import { chromium, expect } from "@playwright/test";
 const lock = JSON.parse(await readFile("package-lock.json", "utf8"));
 const release = resolve(".tmp/release");
 await mkdir(release, { recursive: true });
+// --ignore-scripts skips prepack, so prune superseded development chunks here.
+execFileSync(process.execPath, ["packages/opendil/scripts/prune-dist.mjs"], {
+  stdio: "pipe",
+});
+const built = JSON.parse(
+  await readFile("packages/opendil/dist/.opendil-manifest.json", "utf8"),
+).files;
 const packed = JSON.parse(
   execFileSync(
     "npm",
@@ -27,17 +41,31 @@ for (const file of packed.files) {
   if (
     !/^(dist\/|styles\/|bin\/|package.json$|README.md$|LICENSE$|THIRD_PARTY_NOTICES.md$)/.test(
       file.path,
+    ) ||
+    /^dist\/(?:test\/|\.opendil-manifest\.json$|runtime\/(?!frame\.(?:html|js)$))/.test(
+      file.path,
     )
   )
     throw new Error("Unexpected package file: " + file.path);
+  // Every shipped build file comes from the last build, never an earlier one.
+  if (file.path.startsWith("dist/") && !(file.path.slice(5) in built))
+    throw new Error("Package file from an earlier build: " + file.path);
 }
+const specFiles = [
+  "genui.agent.md",
+  "genui.agent.full.md",
+  "genui.examples.md",
+];
 for (const expected of [
   "dist/index.js",
+  "dist/agent-spec.js",
   "dist/types/index.d.ts",
   "dist/types/ui.d.ts",
+  "dist/types/agent-spec.d.ts",
   "dist/styles.css",
   "dist/runtime/frame.html",
   "dist/runtime/frame.js",
+  ...specFiles.map((file) => "dist/spec/" + file),
   "bin/opendil.mjs",
 ])
   if (!packed.files.some((file) => file.path === expected))
@@ -46,8 +74,9 @@ const scratch = await mkdtemp(join(tmpdir(), "opendil-consumer-"));
 let server;
 let browser;
 function run(command, args) {
-  execFileSync(command, args, {
+  return execFileSync(command, args, {
     cwd: scratch,
+    encoding: "utf8",
     stdio: "pipe",
     env: process.env,
   });
@@ -83,6 +112,50 @@ try {
     "--no-fund",
     "--prefer-online",
   ]);
+  // Every shipped chunk is reachable from a JavaScript entry point.
+  const installed = join(scratch, "node_modules/@snackbit/opendil/dist");
+  const reachable = new Set();
+  const pending = ["index.js", "ui.js", "agent-spec.js"];
+  while (pending.length) {
+    const file = pending.pop();
+    if (reachable.has(file)) continue;
+    reachable.add(file);
+    const code = await readFile(join(installed, file), "utf8");
+    for (const match of code.matchAll(
+      /(?:\bfrom\s*|\bimport\s*\(?\s*)["']\.\/([\w.-]+\.js)["']/g,
+    ))
+      pending.push(match[1]);
+  }
+  const unreferenced = packed.files
+    .map((file) => file.path)
+    .filter((path) => /^dist\/[^/]+\.js$/.test(path))
+    .filter((path) => !reachable.has(path.slice(5)));
+  if (unreferenced.length)
+    throw new Error("Unreferenced package chunks: " + unreferenced.join(", "));
+  // Server code reads the specs of the installed version without fs or a bundler.
+  await writeFile(
+    join(scratch, "server.ts"),
+    'import { agentSpec, agentSpecFull, agentSpecExamples } from "@snackbit/opendil/agent-spec";\nexport const prompts: string[] = [agentSpec, agentSpecFull, agentSpecExamples];\n',
+  );
+  await writeFile(
+    join(scratch, "spec.mjs"),
+    `import { readFile } from "node:fs/promises";
+import { agentSpec, agentSpecFull, agentSpecExamples } from "@snackbit/opendil/agent-spec";
+const specs = { "genui.agent.md": agentSpec, "genui.agent.full.md": agentSpecFull, "genui.examples.md": agentSpecExamples };
+for (const [file, text] of Object.entries(specs))
+  if (text !== await readFile(new URL(import.meta.resolve("@snackbit/opendil/spec/" + file)), "utf8"))
+    throw new Error("Markdown export differs from agent-spec string: " + file);
+console.log(JSON.stringify(specs));`,
+  );
+  await writeFile(
+    join(scratch, "spec.cjs"),
+    'const { agentSpec } = require("@snackbit/opendil/agent-spec");\nif (typeof agentSpec !== "string") throw new Error("require() cannot load agent-spec");\n',
+  );
+  const shippedSpecs = JSON.parse(run(process.execPath, ["spec.mjs"]));
+  for (const file of specFiles)
+    if (shippedSpecs[file] !== (await readFile("spec/" + file, "utf8")))
+      throw new Error("Packed agent spec differs from spec/" + file);
+  run(process.execPath, ["spec.cjs"]);
   await writeFile(
     join(scratch, "index.html"),
     '<div id="root"></div><script type="module" src="/main.tsx"></script>',
@@ -133,7 +206,7 @@ createRoot(root).render(<>
         skipLibCheck: true,
         noEmit: true,
       },
-      include: ["*.tsx"],
+      include: ["*.tsx", "*.ts"],
     }),
   );
   run(process.execPath, ["node_modules/typescript/bin/tsc"]);
@@ -146,18 +219,36 @@ createRoot(root).render(<>
     "--skipLibCheck",
     "false",
   ]);
-  run(process.execPath, [
-    "node_modules/@snackbit/opendil/bin/opendil.mjs",
+  const cli = "node_modules/@snackbit/opendil/bin/opendil.mjs";
+  if (!run(process.execPath, [cli, "--help"]).includes("Usage: opendil"))
+    throw new Error("CLI help is missing usage");
+  run(process.execPath, [cli, "copy-assets", "--out", "public/opendil"]);
+  const copied = run(process.execPath, [
+    cli,
     "copy-assets",
-    "--out",
-    "public/opendil",
+    "--out=public/opendil",
   ]);
+  if (!/^Copied 2 files \([\d.]+ MB\) from @snackbit\/opendil@/.test(copied))
+    throw new Error("Unexpected copy-assets summary: " + copied);
+  const assets = (await readdir(join(scratch, "public/opendil"))).sort();
+  if (
+    assets.join() !==
+    [".opendil-manifest.json", "frame.html", "frame.js"].join()
+  )
+    throw new Error("Unexpected copied runtime assets: " + assets.join(", "));
   run(process.execPath, [
     "node_modules/vite/bin/vite.js",
     "build",
     "--base",
     "/consumer/",
   ]);
+  for (const asset of await readdir(join(scratch, "dist/assets")))
+    if (
+      (await readFile(join(scratch, "dist/assets", asset), "utf8")).includes(
+        "# GenUI Agent Specification",
+      )
+    )
+      throw new Error("The browser bundle contains the agent spec: " + asset);
   server = createServer(async (request, response) => {
     try {
       const pathname = decodeURIComponent(
@@ -307,7 +398,7 @@ createRoot(root).render(<>
     );
   if (errors.length) throw new Error(errors.join("\n"));
   console.log(
-    "Verified packed package, declarations, CLI, all rendering modes, scoped CSS, stable streaming layout, and /consumer/ runtime paths: " +
+    "Verified packed package contents, declarations, agent spec exports, CLI, all rendering modes, scoped CSS, stable streaming layout, and /consumer/ runtime paths: " +
       archive,
   );
 } catch (error) {

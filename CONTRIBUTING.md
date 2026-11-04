@@ -6,9 +6,21 @@ The demo uses package exports, so rebuild the package after library edits. `npm 
 
 Add a changeset with `npm run changeset` for public behavior or API changes. Describe what changes for a consumer. Keep refactoring, docs, and tests close to the behavior they explain.
 
-Package builds stage all JavaScript, CSS, runtime assets, and declarations before replacing complete output files. Existing exports remain available to an active Vite server throughout a rebuild. The asset-copy CLI uses the same atomic file replacement. Old hashed chunks remain available to pages that loaded the previous build.
+Package builds stage all JavaScript, CSS, runtime assets, and declarations before replacing complete output files. Existing exports remain available to an active Vite server throughout a rebuild. The asset-copy CLI uses the same atomic file replacement. Old hashed chunks remain available to pages that loaded the previous build. Packing is the exception: `prepack` and `npm run check:package` delete every `dist` file the last build did not write, so do not pack while a dev page still uses an older build. Unit tests load the QuickJS worker from `dist/test/vm.js`, which is never packed.
 
 Run `npm run check:rebuild` after build-system changes. It owns a temporary Astro development server on port 5179, rebuilds while a browser is open, checks export and runtime-asset availability, and shuts the server down. `npm run check:site` builds the production site under the `/opendil/` subpath and checks documentation search and live examples there, which catches root-relative links.
+
+## Agent specification checks
+
+The package ships `spec/*.md` verbatim as the `agent-spec` entry and Markdown exports, so keep maintainer notes out of those files. Run `npm run build:package` before `npm run check:agent-spec`.
+
+The check reads the stock renderer dispatch and delegated widget owners through the TypeScript AST, extracts consumed property names, and compares that inventory with both references. Shared layout/SVG props and icon/SVG allowlists are checked separately. Missing, invented, and duplicate component or property definitions fail. Signatures are derived from source in memory; there is no generated inventory to keep in sync. The extractor follows explicit widget-owner mappings and shared attribute readers, so update those mappings when property reads move into another helper or use indirect keys.
+
+Every executable `dil` fence in the three specification files goes through the real parser, and its declarations and expressions run in the built QuickJS worker. Example names include the source file, opening-fence line, and nearest heading. The check compares whole-source parsing with character-by-character incremental parsing, verifies known composition contracts, and requires searchable catalog coverage of all stock components, allowed SVG elements, and the representative generation tasks. Browser tests exercise the interactive recipes and the source-copy workflow.
+
+To check a model response, set `GENUI_RESPONSE_FILE` to its local path when running the command. The response then goes through the parser, component, property-name, composition, and expression checks. This does not call a model, score visual quality, prove supplied facts, or explore every interaction. The eight `Task:` recipes in the full reference make a small evaluation set; inspect the initial output and the next user interaction.
+
+A passing check is not a type schema: types, enums, defaults, nested content shapes, and CSS semantics still need source review and behavior tests, and it does not prove every handler path safe or validate a custom host contract.
 
 ## Release setup
 
