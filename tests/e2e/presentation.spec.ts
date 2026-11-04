@@ -296,6 +296,11 @@ test("stream following survives growth, pauses for reading, and resumes at the t
   await expect(
     ui.getByText("Categorical bar chart", { exact: true }),
   ).toBeAttached();
+  // "Jump to latest" exists only while the document is unfinished. Hold the
+  // replay so a fast or slow runner cannot finish it between steps.
+  const pause = page.getByRole("button", { name: "Pause", exact: true });
+  const resume = page.getByRole("button", { name: "Resume", exact: true });
+  await pause.click();
   // The preview pane is the renderer's scroll container.
   const frame = page.locator("iframe");
   await expect.poll(() => tailGap(frame)).toBeLessThan(100);
@@ -315,11 +320,19 @@ test("stream following survives growth, pauses for reading, and resumes at the t
   await expect(jump).toBeVisible();
   const scrollTop = () =>
     previewPane(page).evaluate((element) => element.scrollTop);
+  const frameHeight = () =>
+    frame.evaluate((element) => element.getBoundingClientRect().height);
   const top = await scrollTop();
-  await expect.poll(scrollTop).toBeLessThanOrEqual(top + 20);
+  // Let the document grow while the reader is paused; it must not pull them back.
+  const height = await frameHeight();
+  await resume.click();
+  await expect.poll(frameHeight).toBeGreaterThan(height);
+  await pause.click();
+  expect(await scrollTop()).toBeLessThanOrEqual(top + 20);
   await jump.click();
   await expect(jump).toHaveCount(0);
   await expect.poll(() => tailGap(frame)).toBeLessThan(100);
+  await resume.click();
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
   await expect.poll(() => tailGap(frame)).toBeLessThan(100);
 });

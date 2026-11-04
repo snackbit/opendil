@@ -9,7 +9,8 @@ export const dilPatterns = {
   fenceOpen: "^\\s*```.*$",
   fenceClose: "^\\s*```\\s*$",
   htmlCommentOpen: "<!--",
-  htmlCommentClose: "-->",
+  /** HTML also ends a comment at `--!>`. */
+  htmlCommentClose: "--!?>",
   /** Groups: the `<` or `</` delimiter, then the tag name. */
   tagOpen: "(</?)([A-Za-z][\\w-]*)",
   tagClose: "/?>",

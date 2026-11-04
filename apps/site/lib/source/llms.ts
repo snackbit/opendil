@@ -7,7 +7,7 @@ import { specFiles, specText } from "./spec-files";
 type DocsPage = ReturnType<typeof source.getPages>[number];
 
 function markdownLink(title: string, url: string): string {
-  return `[${title.replace(/([[\]])/g, "\\$1")}](${url})`;
+  return `[${title.replace(/([\\[\]])/g, "\\$1")}](${url})`;
 }
 
 function listItem(title: string, url: string, description = ""): string {

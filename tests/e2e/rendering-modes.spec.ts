@@ -195,6 +195,9 @@ test("scroll behavior and ahead padding update following without undoing a manua
   await expect(
     ui.getByText("Categorical bar chart", { exact: true }),
   ).toBeAttached();
+  // "Jump to latest" exists only while the document is unfinished. Hold the
+  // replay so a fast or slow runner cannot finish it between steps.
+  await page.getByRole("button", { name: "Pause", exact: true }).click();
   await page
     .getByRole("button", { name: "Demo settings", exact: true })
     .click();
@@ -218,6 +221,7 @@ test("scroll behavior and ahead padding update following without undoing a manua
   await expect(jump).toBeVisible();
   await jump.click();
   await expect(jump).toHaveCount(0);
+  await page.getByRole("button", { name: "Resume", exact: true }).click();
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
   await expect.poll(() => tailGap(page.locator("iframe"), 32)).toBeLessThan(3);
 });
