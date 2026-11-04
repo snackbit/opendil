@@ -18,14 +18,18 @@ export function Toolbar() {
 
 These are React primitives for your application and registered components. They are separate from the DIL tag vocabulary.
 
-| Export                                        | Purpose                                                                                             |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------------- |
-| `UiScope`                                     | Scoped styles and portal container; accepts `appearance`, CSS `tokens`, and a collision `boundary`. |
-| `Button`, `buttonVariants`                    | Button variants and sizes, including `asChild` composition.                                         |
-| `Input`, `Checkbox`, `Slider`                 | Native/Radix form foundations.                                                                      |
-| `ToggleGroup`, `ToggleGroupItem`              | Single or multiple selection controls.                                                              |
-| `Popover`, `PopoverTrigger`, `PopoverContent` | Scoped contextual overlays.                                                                         |
-| `Tooltip`                                     | A named trigger's supplementary label via `label` and `children`.                                   |
+`Collapsible`, `CollapsibleTrigger`, and `CollapsibleContent` provide expandable sections.
+
+| Export                                           | Purpose                                                                                             |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------- |
+| `UiScope`                                        | Scoped styles and portal container; accepts `appearance`, CSS `tokens`, and a collision `boundary`. |
+| `Button`, `buttonVariants`                       | Button variants and sizes, including `asChild` composition.                                         |
+| `Input`, `Checkbox`, `Slider`                    | Native/Radix form foundations.                                                                      |
+| `Select` and its subcomponents                   | Accessible selection menus with keyboard navigation.                                                |
+| `ToggleGroup`, `ToggleGroupItem`                 | Single or multiple selection controls; `segmented` adds a shared track.                             |
+| `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent` | Keyboard-accessible views with associated tab panels.                                               |
+| `Popover`, `PopoverTrigger`, `PopoverContent`    | Scoped contextual overlays.                                                                         |
+| `Tooltip`                                        | A named trigger's supplementary label via `label` and `children`.                                   |
 
 Wrap application controls in `UiScope` so the supplied utility styles and scoped portals apply. It does not provide expression isolation; `DilRenderer` owns that runtime.
 

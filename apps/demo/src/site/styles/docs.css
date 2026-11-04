@@ -3,6 +3,7 @@
 @import "./tokens.css";
 @import "./site.css";
 @import "./editor.css";
+@import "./hero-preview.css";
 :root {
   --sl-font: var(--od-font-body);
   --sl-font-system-mono: var(--od-font-code);
@@ -68,10 +69,7 @@ body {
   margin-block: 24px;
 }
 .od-live-example {
-  border: 1px solid var(--od-border);
-  border-radius: 12px;
-  padding: 20px;
-  background: var(--od-surface);
+  container-type: inline-size;
 }
 .od-live-example .od-example-toolbar {
   display: flex;
@@ -91,6 +89,55 @@ body {
   place-items: center;
   background: var(--od-surface-subtle);
   border-radius: 8px;
+}
+.od-doc-workbench {
+  border: 1px solid var(--od-border);
+  border-radius: 12px;
+}
+.od-doc-workbench .od-hero-demo-toolbar {
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  height: auto;
+}
+.od-doc-workbench .od-hero-demo {
+  height: 480px;
+}
+.od-doc-editor-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.od-doc-editor-actions label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.od-doc-editor-actions span {
+  margin-left: auto;
+}
+.od-doc-pane-tabs {
+  display: none;
+}
+@container (max-width: 640px) {
+  .od-doc-pane-tabs {
+    display: block;
+    padding: 8px;
+  }
+  .od-doc-workbench .od-hero-demo {
+    display: block;
+    height: 420px;
+  }
+  .od-doc-workbench .od-hero-code,
+  .od-doc-workbench .od-hero-preview {
+    height: 100%;
+    border-radius: 0 0 11px 11px;
+  }
+  .od-doc-workbench[data-active-pane="preview"] .od-hero-code,
+  .od-doc-workbench[data-active-pane="source"] .od-hero-preview {
+    display: none;
+  }
 }
 .od-customization-controls {
   display: flex;

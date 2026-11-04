@@ -8,12 +8,7 @@ test("streamed Markdown keeps already presented element identities", async ({
   page,
 }) => {
   await openShowcase(page);
-  await page
-    .getByRole("button", { name: "Progressive reveal", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Replay stream", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Replay", exact: true }).click();
   const ui = dilPage(page);
   const heading = ui.getByRole("heading", {
     name: "Interactive workspace",
@@ -54,10 +49,13 @@ test("fast viewport replacement does not exhaust execution or rendering resource
   await openShowcase(page);
   const ui = dilPage(page);
   for (const reveal of [false, true]) {
-    if (reveal)
-      await page
-        .getByRole("button", { name: "Progressive reveal", exact: true })
-        .click();
+    await page
+      .getByRole("button", { name: "Demo settings", exact: true })
+      .click();
+    await page
+      .getByRole("checkbox", { name: "Progressive reveal", exact: true })
+      .setChecked(reveal);
+    await page.keyboard.press("Escape");
     for (const fixture of ["Large document", "Long list", "Long table"]) {
       await page.getByRole("radio", { name: fixture, exact: true }).click();
       await expect(ui.locator('[data-complete="true"]')).toBeAttached();
@@ -100,12 +98,7 @@ test("a full reveal replay keeps completed content and settles without errors", 
     .getByRole("spinbutton", { name: "Tokens per second", exact: true })
     .fill("1000");
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Progressive reveal", exact: true })
-    .click();
-  await page
-    .getByRole("button", { name: "Replay stream", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Replay", exact: true }).click();
   const ui = dilPage(page);
   await expect(ui.locator('[data-complete="true"]')).toBeAttached({
     timeout: 30000,

@@ -1,8 +1,11 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Locator } from "@playwright/test";
+export async function replaceSource(page: Page, editor: Locator, text: string) {
+  await editor.focus();
+  await editor.press("ControlOrMeta+A");
+  await page.keyboard.insertText(text);
+}
 export async function openShowcase(page: Page, query = "") {
   await page.goto("/demo/showcase/" + query);
-  if ((page.viewportSize()?.width ?? 1280) < 768)
-    await page.getByRole("radio", { name: "Preview", exact: true }).click();
   // Core containment regressions deliberately exercise the package's iframe mode.
   await page
     .getByRole("button", { name: "Demo settings", exact: true })
@@ -26,10 +29,10 @@ export function dilPage(page: Page) {
       const host =
         typeof name === "string" &&
         [
-          "Replay stream",
+          "Replay",
           "Pause",
           "Resume",
-          "Complete",
+          "Finish",
           "Showcase",
           "Large document",
           "Long list",

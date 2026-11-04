@@ -1,4 +1,10 @@
-import { useCallback, useId, type ChangeEvent, type FocusEvent } from "react";
+import {
+  useCallback,
+  useId,
+  type ChangeEvent,
+  type FocusEvent,
+  type ReactNode,
+} from "react";
 import { Settings2 } from "lucide-react";
 import {
   Button,
@@ -16,6 +22,7 @@ import type { RenderMode } from "../demo-renderer";
 import { ReplayRate } from "./replay-rate";
 import type { UpdateInterval } from "@snackbit/opendil";
 export interface DemoSettingsProps {
+  children?: ReactNode;
   enabled: boolean;
   staggerMs: number;
   durationMs: number;
@@ -82,6 +89,7 @@ function TimingField({
   );
 }
 export function DemoSettings({
+  children,
   enabled,
   staggerMs,
   durationMs,
@@ -145,7 +153,7 @@ export function DemoSettings({
         <PopoverTrigger asChild>
           <Button
             type="button"
-            variant="outline"
+            variant="ghost"
             size="icon-sm"
             aria-label="Demo settings"
           >
@@ -155,7 +163,8 @@ export function DemoSettings({
       </Tooltip>
       <PopoverContent
         align="end"
-        className="w-80 max-w-[calc(100vw-2rem)] max-h-[calc(100dvh-6rem)] overflow-y-auto"
+        collisionPadding={16}
+        className="od-demo-settings max-w-[calc(100vw-2rem)]"
       >
         <div className="grid gap-4">
           <h2 className="text-sm font-semibold">Demo settings</h2>
@@ -163,7 +172,7 @@ export function DemoSettings({
             <Checkbox checked={enabled} onCheckedChange={reveal} />
             Progressive reveal
           </label>
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-2 items-end gap-3">
             <TimingField
               label="Reveal step delay (ms)"
               value={staggerMs}
@@ -180,6 +189,8 @@ export function DemoSettings({
               <>
                 <span>Character stress workload</span>
                 <ToggleGroup
+                  segmented
+                  size="sm"
                   type="single"
                   value={stressSpeed}
                   onValueChange={changeStress}
@@ -189,9 +200,6 @@ export function DemoSettings({
                   <ToggleGroupItem value="4">4×</ToggleGroupItem>
                   <ToggleGroupItem value="16">16×</ToggleGroupItem>
                 </ToggleGroup>
-                <p className="text-xs text-muted-foreground">
-                  Benchmark delivery uses fixed character chunks every 33 ms.
-                </p>
               </>
             ) : (
               <ReplayRate value={tokensPerSecond} onChange={onRate} />
@@ -200,13 +208,15 @@ export function DemoSettings({
           <div className="grid gap-2 text-sm">
             <span>Streaming updates</span>
             <ToggleGroup
+              segmented
+              size="sm"
               type="single"
               value={updateInterval === "instant" ? "instant" : "timed"}
               onValueChange={changeUpdates}
               aria-label="Streaming update cadence"
             >
-              <ToggleGroupItem value="instant">Instant updates</ToggleGroupItem>
-              <ToggleGroupItem value="timed">Timed updates</ToggleGroupItem>
+              <ToggleGroupItem value="instant">Instant</ToggleGroupItem>
+              <ToggleGroupItem value="timed">Timed</ToggleGroupItem>
             </ToggleGroup>
             {updateInterval !== "instant" && (
               <TimingField
@@ -219,6 +229,8 @@ export function DemoSettings({
           <div className="grid gap-2 text-sm">
             <span>Rendering</span>
             <ToggleGroup
+              segmented
+              size="sm"
               type="single"
               value={mode}
               onValueChange={changeMode}
@@ -230,16 +242,14 @@ export function DemoSettings({
               <ToggleGroupItem value="shadow">Shadow DOM</ToggleGroupItem>
               <ToggleGroupItem value="host">Host DOM</ToggleGroupItem>
             </ToggleGroup>
-            <p className="text-xs text-muted-foreground">
-              Switching resets document interactions. Shadow DOM isolates
-              styles; iframe also provides a security boundary.
-            </p>
           </div>
           <label className="flex items-center gap-2 text-sm">
             <Checkbox checked={autoScroll} onCheckedChange={follow} />
             Follow streaming content
           </label>
           <ToggleGroup
+            segmented
+            size="sm"
             type="single"
             value={scrollBehavior}
             onValueChange={changeScroll}
@@ -253,6 +263,7 @@ export function DemoSettings({
             value={scrollPadding}
             onChange={onScrollPadding}
           />
+          {children}
         </div>
       </PopoverContent>
     </Popover>

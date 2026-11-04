@@ -1,4 +1,75 @@
 import { expect, test } from "@playwright/test";
+import { replaceSource } from "./dil-page";
+test("documentation example tabs support editing in narrow containers", async ({
+  page,
+}) => {
+  await page.setViewportSize({ width: 375, height: 900 });
+  await page.goto("/docs/getting-started/");
+  const example = page.locator(".od-live-example");
+  await example.scrollIntoViewIfNeeded();
+  const source = example.getByRole("tab", { name: "Source", exact: true });
+  await source.click();
+  await replaceSource(
+    page,
+    example.getByRole("textbox", { name: "DIL source", exact: true }),
+    "<title>Narrow example</title>",
+  );
+  await source.press("ArrowRight");
+  await expect(
+    example.getByRole("tab", { name: "Preview", exact: true }),
+  ).toHaveAttribute("aria-selected", "true");
+  await expect(
+    example.getByRole("heading", { name: "Narrow example" }),
+  ).toBeVisible();
+  expect(
+    await page.evaluate(() => document.documentElement.scrollWidth),
+  ).toBeLessThanOrEqual(375);
+});
+test("documentation examples can be edited, replayed and reset independently", async ({
+  page,
+}) => {
+  await page.goto("/docs/components/diagrams/");
+  const examples = page.locator(".od-live-example");
+  const first = examples.nth(0),
+    second = examples.nth(1);
+  await first.scrollIntoViewIfNeeded();
+  const editor = first.getByRole("textbox", {
+    name: "DIL source",
+    exact: true,
+  });
+  await expect(editor).toBeVisible();
+  await first.getByRole("button", { name: "Demo settings" }).click();
+  await expect(
+    first.getByRole("checkbox", { name: "Progressive reveal" }),
+  ).toBeChecked();
+  await first.getByRole("radio", { name: "Host DOM", exact: true }).click();
+  await first.getByRole("radio", { name: "Shadow DOM", exact: true }).click();
+  await page.keyboard.press("Escape");
+  await replaceSource(page, editor, "<box><title>Edited example</title></box>");
+  await expect(
+    first.getByRole("heading", { name: "Edited example" }),
+  ).toBeVisible();
+  await first.getByRole("button", { name: "Replay", exact: true }).click();
+  await first.getByRole("button", { name: "Finish", exact: true }).click();
+  await expect(
+    first.getByRole("heading", { name: "Edited example" }),
+  ).toBeVisible();
+  await second.scrollIntoViewIfNeeded();
+  await expect(
+    second.getByRole("textbox", { name: "DIL source", exact: true }),
+  ).toBeVisible();
+  await expect(
+    first.getByRole("heading", { name: "Edited example" }),
+  ).toBeVisible();
+  await first.getByRole("button", { name: "Reset", exact: true }).click();
+  await expect(
+    first.getByRole("heading", { name: "Edited example" }),
+  ).toHaveCount(0);
+  await page.goto("/demo/graph/");
+  await expect(
+    page.getByRole("textbox", { name: "DIL source", exact: true }),
+  ).not.toContainText("Edited example");
+});
 test("landing links to a working editable example and searchable documentation", async ({
   page,
 }) => {
@@ -40,11 +111,11 @@ test("landing links to a working editable example and searchable documentation",
   await expect(
     page.getByRole("textbox", { name: "DIL source", exact: true }),
   ).toBeVisible();
-  await page
-    .getByRole("textbox", { name: "DIL source", exact: true })
-    .fill(
-      "<box border padding={4}><title>Hello from the workbench</title></box>",
-    );
+  await replaceSource(
+    page,
+    page.getByRole("textbox", { name: "DIL source", exact: true }),
+    "<box border padding={4}><title>Hello from the workbench</title></box>",
+  );
   await expect(
     page
       .locator('[data-dil-mode="shadow"]')
@@ -91,7 +162,7 @@ test("site pages fit narrow and wide layouts with independent output styling", a
         ).toBeVisible();
         expect(
           await page.locator(".od-hero-code").evaluate((element) => {
-            const editor = element.querySelector(".cm-scroller");
+            const editor = element.querySelector(".monaco-scrollable-element");
             return editor
               ? editor.getBoundingClientRect().height <= element.clientHeight
               : false;
@@ -102,8 +173,6 @@ test("site pages fit narrow and wide layouts with independent output styling", a
         await expect(
           page.getByRole("textbox", { name: "DIL source", exact: true }),
         ).toBeVisible();
-      if (route.includes("demo") && width < 768)
-        await page.getByRole("radio", { name: "Preview", exact: true }).click();
       if (route.includes("demo"))
         await expect(
           page

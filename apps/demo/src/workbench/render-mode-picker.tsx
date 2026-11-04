@@ -1,5 +1,15 @@
 import { useCallback } from "react";
-import { Select } from "radix-ui";
+import {
+  Select,
+  SelectTrigger,
+  SelectValue,
+  SelectPortal,
+  SelectContent,
+  SelectViewport,
+  SelectItem,
+  SelectItemIndicator,
+  SelectItemText,
+} from "@snackbit/opendil/ui";
 import { Check, ChevronDown } from "lucide-react";
 import type { RenderMode } from "../demo-renderer";
 
@@ -25,22 +35,22 @@ export function RenderModePicker({
     [onChange, customization],
   );
   return (
-    <Select.Root value={value} onValueChange={change}>
-      <Select.Trigger
+    <Select value={value} onValueChange={change}>
+      <SelectTrigger
         className="od-render-mode-picker"
         aria-label="Rendering mode"
       >
-        <Select.Value />
+        <SelectValue />
         <ChevronDown size={13} aria-hidden="true" />
-      </Select.Trigger>
-      <Select.Portal>
-        <Select.Content
+      </SelectTrigger>
+      <SelectPortal>
+        <SelectContent
           className="od-menu od-render-mode-menu"
           position="popper"
           sideOffset={6}
           align="end"
         >
-          <Select.Viewport>
+          <SelectViewport>
             {(
               [
                 { value: "isolated", label: "Iframe" },
@@ -48,19 +58,19 @@ export function RenderModePicker({
                 { value: "host", label: "Host DOM" },
               ] as const
             ).map((mode) => (
-              <Select.Item
+              <SelectItem
                 key={mode.value}
                 value={mode.value}
                 className="od-menu-item"
                 disabled={customization && mode.value === "isolated"}
               >
-                <Select.ItemIndicator className="od-menu-check">
+                <SelectItemIndicator className="od-menu-check">
                   <Check size={14} />
-                </Select.ItemIndicator>
-                <Select.ItemText>{mode.label}</Select.ItemText>
-              </Select.Item>
+                </SelectItemIndicator>
+                <SelectItemText>{mode.label}</SelectItemText>
+              </SelectItem>
             ))}
-          </Select.Viewport>
+          </SelectViewport>
           <p className="od-render-mode-note">
             Switching modes resets preview interactions.
           </p>
@@ -69,8 +79,8 @@ export function RenderModePicker({
               Custom components require Shadow DOM or host mode.
             </p>
           )}
-        </Select.Content>
-      </Select.Portal>
-    </Select.Root>
+        </SelectContent>
+      </SelectPortal>
+    </Select>
   );
 }

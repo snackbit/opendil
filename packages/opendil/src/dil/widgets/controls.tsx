@@ -249,10 +249,8 @@ export function SegmentedControl({
       value={text(attributes.value)}
       onValueChange={change}
       disabled={!ready}
-      className={cn(
-        "max-w-full flex-wrap rounded-lg bg-secondary p-1",
-        className,
-      )}
+      segmented
+      className={cn(className)}
       size="sm"
     >
       {options.map((option) => {

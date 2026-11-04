@@ -3,6 +3,7 @@ import Layout from "../../site/layouts/site-layout.astro";
 import { Workbench } from "../../workbench/workbench";
 import { examples, exampleById } from "../../examples/catalog";
 import "../../site/styles/workbench.css";
+import "../../site/styles/hero-preview.css";
 export function getStaticPaths() {
   return examples.map((example) => ({ params: { example: example.id } }));
 }

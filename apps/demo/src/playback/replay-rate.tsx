@@ -49,7 +49,7 @@ export function ReplayRate({ value, onChange }: ReplayRateProps) {
   return (
     <div className="grid gap-3 text-sm">
       <label className="flex items-center justify-between gap-3">
-        Tokens/sec
+        Speed (tok/s)
         <Input
           aria-label="Tokens per second"
           className="w-24"

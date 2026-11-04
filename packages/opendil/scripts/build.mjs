@@ -6,6 +6,7 @@ import {
   rm,
   copyFile,
   mkdtemp,
+  readdir,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { publishDirectory } from "../bin/publish-directory.mjs";
@@ -14,6 +15,24 @@ import { createHash } from "node:crypto";
 import postcss from "postcss";
 import tailwind from "@tailwindcss/postcss";
 const require = createRequire(import.meta.url);
+async function fixDeclarationImports(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = directory + "/" + entry.name;
+    if (entry.isDirectory()) {
+      await fixDeclarationImports(path);
+    } else if (entry.name.endsWith(".d.ts")) {
+      const source = await readFile(path, "utf8");
+      const updated = source.replace(
+        /((?:from\s+|import\s*\()\s*["'])(\.{1,2}\/[^"']+)(["'])/g,
+        (match, prefix, specifier, quote) =>
+          /\.(?:js|mjs|cjs|json)$/.test(specifier)
+            ? match
+            : prefix + specifier + ".js" + quote,
+      );
+      if (updated !== source) await writeFile(path, updated);
+    }
+  }
+}
 await mkdir(".tmp", { recursive: true });
 const staging = await mkdtemp(".tmp/build-");
 try {
@@ -112,6 +131,7 @@ try {
     ],
     { stdio: "inherit" },
   );
+  await fixDeclarationImports(staging + "/types");
   await publishDirectory(staging, "dist");
 } finally {
   await rm(staging, { recursive: true, force: true });

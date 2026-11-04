@@ -65,7 +65,7 @@ try {
     if (response.status() >= 400)
       errors.push(response.status() + " " + response.url());
   });
-  await page.goto(base);
+  await page.goto(base + "docs/language/");
   await page.getByRole("link", { name: "Agent Spec", exact: true }).click();
   await expect(page).toHaveURL(base + "agent-spec/");
   await page.reload();

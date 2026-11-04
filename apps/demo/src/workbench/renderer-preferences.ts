@@ -8,7 +8,7 @@ export interface RendererPreferences {
 export function rendererPreferences(): RendererPreferences {
   const defaults: RendererPreferences = {
     mode: DEMO_RENDER_MODE,
-    reveal: false,
+    reveal: true,
   };
   try {
     const value: unknown = JSON.parse(
@@ -23,7 +23,10 @@ export function rendererPreferences(): RendererPreferences {
           value.mode === "host")
           ? value.mode
           : defaults.mode,
-      reveal: "reveal" in value && value.reveal === true,
+      reveal:
+        "reveal" in value && typeof value.reveal === "boolean"
+          ? value.reveal
+          : defaults.reveal,
     };
   } catch {
     return defaults;

@@ -123,6 +123,60 @@ html body[data-scroll-locked] {
   line-height: 1.5;
   min-width: 0;
 }
+.od-demo-settings {
+  width: 300px;
+  max-height: min(
+    calc(100dvh - 2rem),
+    var(--radix-popover-content-available-height)
+  );
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.od-controls .od-demo-settings {
+  padding: 12px;
+  font-size: 12px;
+  line-height: 1.4;
+}
+.od-demo-settings > .grid {
+  gap: 12px;
+}
+.od-controls .od-demo-settings .text-sm {
+  font-size: 12px;
+}
+.od-controls .od-demo-settings [data-slot="input"] {
+  height: 28px;
+  min-height: 28px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+.od-controls .od-demo-settings [data-slot="toggle-group"] {
+  padding: 3px;
+}
+.od-controls .od-demo-settings [data-slot="toggle-group-item"] {
+  height: 26px;
+  min-width: 0;
+  padding-inline: 7px;
+  font-size: 11px;
+}
+.od-controls .od-demo-settings [data-slot="checkbox"] {
+  width: 14px;
+  height: 14px;
+}
+.od-controls .od-demo-settings [data-slot="button"] {
+  height: 24px;
+  font-size: 11px;
+}
+.od-controls .od-demo-settings .od-appearance fieldset {
+  padding: 8px 0 0;
+  gap: 10px;
+}
+.od-appearance-trigger {
+  width: 100%;
+  justify-content: flex-start;
+}
+.od-appearance-trigger[aria-expanded="true"] svg {
+  transform: rotate(90deg);
+}
 .od-controls button[data-slot="button"] {
   border-radius: 8px;
   box-shadow: none;
@@ -324,7 +378,6 @@ html body[data-scroll-locked] {
   font: inherit;
 }
 .od-preview-frame {
-  overflow: hidden;
   border: 1px solid var(--od-border);
   border-radius: 12px;
   box-shadow: var(--od-shadow-showcase);
@@ -585,12 +638,9 @@ html body[data-scroll-locked] {
   }
   .od-header {
     gap: 12px;
-    flex-wrap: wrap;
   }
   .od-primary-nav {
     gap: 16px;
-    order: 3;
-    width: 100%;
   }
   .od-hero-demo-fallback {
     grid-template-columns: minmax(0, 1fr);

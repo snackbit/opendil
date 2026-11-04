@@ -5,7 +5,6 @@ sidebar: { order: 4 }
 ---
 
 import { LiveExample } from "../../../../site/components/live-example";
-import ExampleSource from "../../../../site/components/example-source.astro";
 
 | Tag                 | Attributes                                                      | Behavior                                         |
 | ------------------- | --------------------------------------------------------------- | ------------------------------------------------ |
@@ -19,7 +18,6 @@ Button variants are default, `outline`, and `ghost`; sizes include default, `sm`
 
 Compose segmented selection with `{#if}` branches. There is no separate DIL `Tabs` tag.
 
-<ExampleSource id="tabs" />
 <LiveExample id="tabs" client:only="react" />
 
 Selection controls support keyboard operation. Name icon-only actions and keep visible button labels concrete. `GenUI.copy(text)` provides a bounded clipboard action from the `onClick` of a `button` or `pressable` the user activated; calls from other handlers are denied. The calling control briefly shows a "Copied" or "Copy failed" tooltip, and the renderer announces the same outcome to assistive technology.

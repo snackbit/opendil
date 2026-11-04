@@ -78,7 +78,7 @@ export const form = `{@body const [name, setName] = DIL.useState("Ada")}
     value={name}
     onChange={setName}
   />
-  <checkbox checked={notifications} onChange={setNotifications}>
+  <checkbox checked={notifications} onChange={setNotifications} lineThrough={false}>
     Send me release updates
   </checkbox>
   <box

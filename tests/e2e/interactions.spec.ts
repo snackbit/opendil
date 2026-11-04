@@ -181,6 +181,7 @@ test("host inputs preserve edits, selections, composition, and external resets",
   await openShowcase(page);
   await page.getByRole("radio", { name: "Customization", exact: true }).click();
   const input = page.getByRole("textbox", { name: "Host display name" });
+  await input.click();
   await input.fill("");
   await input.pressSequentially("abcdef", { delay: 1 });
   await input.press("ArrowLeft");
@@ -235,14 +236,18 @@ test("graph subtitles survive adaptation and connectors have room between nodes"
   });
 });
 
-test("progressive reveal is opt-in, preserves action feedback, and respects reduced motion", async ({
+test("progressive reveal preserves action feedback and respects reduced motion", async ({
   page,
 }) => {
   const ui = dilPage(page);
   await openShowcase(page);
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
   await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);
-  await page.getByRole("button", { name: "Progressive reveal" }).click();
+  await page.getByRole("button", { name: "Demo settings" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Progressive reveal" }),
+  ).toBeChecked();
+  await page.keyboard.press("Escape");
   await ui.getByRole("button", { name: "Primary", exact: true }).click();
   await expect
     .poll(() => ui.locator("[data-dil-revealing]").count())
@@ -275,7 +280,6 @@ test("virtualized content keeps edits and does not replay its reveal when return
 }) => {
   const ui = dilPage(page);
   await openShowcase(page);
-  await page.getByRole("button", { name: "Progressive reveal" }).click();
   await page
     .getByRole("radio", { name: "Large document", exact: true })
     .click();
@@ -287,7 +291,7 @@ test("virtualized content keeps edits and does not replay its reveal when return
   await note.fill("Preserved with reveal");
   await expect(note).toHaveValue("Preserved with reveal");
   await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);
-  await page.getByRole("button", { name: "Replay stream" }).focus();
+  await page.getByRole("button", { name: "Replay" }).focus();
   await page.evaluate(() => window.scrollTo(0, 100000));
   await expect(note).not.toBeAttached();
   await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);

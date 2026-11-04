@@ -34,6 +34,7 @@ for (const file of packed.files) {
 for (const expected of [
   "dist/index.js",
   "dist/types/index.d.ts",
+  "dist/types/ui.d.ts",
   "dist/styles.css",
   "dist/runtime/frame.html",
   "dist/runtime/frame.js",
@@ -92,6 +93,7 @@ try {
 import { createRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { DilRenderer, type DilComponentProps, type DilRendererHandle } from "@snackbit/opendil";
+import { Button, Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectTrigger, SelectValue } from "@snackbit/opendil/ui";
 import "@snackbit/opendil/styles.css";
 function Custom({children, className}: DilComponentProps) { return <aside className={className} aria-label="Consumer extension">{children}</aside>; }
 const components = { Custom };
@@ -106,6 +108,9 @@ function LayoutProbe({mode}: {mode: "host" | "shadow"}) {
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
 createRoot(root).render(<>
+<Button>Package UI</Button>
+<Select><SelectTrigger><SelectValue placeholder="Select" /></SelectTrigger></Select>
+<Tabs defaultValue="source"><TabsList><TabsTrigger value="source">Source</TabsTrigger></TabsList><TabsContent value="source">Content</TabsContent></Tabs>
 <p id="outside" className="consumer-extension">Host page</p>
 <button onClick={resume}>Resume following</button>
 <DilRenderer ref={renderer} text="# Isolated package consumer" runtimeBaseUrl="/consumer/opendil/" progressiveReveal={{ staggerMs: 0, durationMs: 0 }} autoScroll />
@@ -132,6 +137,15 @@ createRoot(root).render(<>
     }),
   );
   run(process.execPath, ["node_modules/typescript/bin/tsc"]);
+  run(process.execPath, [
+    "node_modules/typescript/bin/tsc",
+    "--module",
+    "NodeNext",
+    "--moduleResolution",
+    "NodeNext",
+    "--skipLibCheck",
+    "false",
+  ]);
   run(process.execPath, [
     "node_modules/@snackbit/opendil/bin/opendil.mjs",
     "copy-assets",

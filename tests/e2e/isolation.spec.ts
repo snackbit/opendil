@@ -1,5 +1,5 @@
 import { test, expect } from "@playwright/test";
-import { openShowcase } from "./dil-page";
+import { openShowcase, replaceSource } from "./dil-page";
 test("hostile message cannot reach the host and a loop does not stop another message", async ({
   page,
 }) => {
@@ -116,9 +116,10 @@ test("typing cannot write the clipboard; activating a document button can", asyn
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/demo/form/");
   const ui = page.locator('[data-dil-mode="shadow"]');
-  await page.getByRole("checkbox", { name: "Auto-run", exact: true }).click();
   const source = page.getByRole("textbox", { name: "DIL source", exact: true });
-  await source.fill(
+  await replaceSource(
+    page,
+    source,
     '<input placeholder="Pasted command" onChange={(value) => GenUI.copy("typed " + value)} />\n<button onClick={() => GenUI.copy("clicked")}>Copy command</button>',
   );
   await source.press("ControlOrMeta+Enter");

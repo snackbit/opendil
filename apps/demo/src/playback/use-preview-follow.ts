@@ -5,6 +5,9 @@ export function usePreviewFollow(
   root: RefObject<HTMLElement | null>,
   run: number,
   streaming: boolean,
+  enabled = true,
+  behavior: "instant" | "smooth" = "instant",
+  padding = 0,
 ) {
   const paused = useRef(false);
   const started = useRef(false);
@@ -14,14 +17,14 @@ export function usePreviewFollow(
   }, [run]);
   useEffect(() => {
     const element = root.current;
-    if (!element) return;
+    if (!element || !enabled) return;
     if (streaming) started.current = true;
     let frame = 0;
     const update = () => {
       if (frame || paused.current || !started.current) return;
       frame = requestAnimationFrame(() => {
         frame = 0;
-        element.scrollTop = element.scrollHeight;
+        element.scrollTo({ top: element.scrollHeight + padding, behavior });
       });
     };
     const pause = () => {
@@ -73,5 +76,5 @@ export function usePreviewFollow(
       element.removeEventListener("pointerdown", pointer);
       element.removeEventListener("keydown", key);
     };
-  }, [root, run, streaming]);
+  }, [root, run, streaming, enabled, behavior, padding]);
 }

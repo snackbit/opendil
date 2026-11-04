@@ -1,5 +1,14 @@
 import { useCallback, type ChangeEvent } from "react";
-import { Input, ToggleGroup, ToggleGroupItem } from "@snackbit/opendil/ui";
+import {
+  Button,
+  Collapsible,
+  CollapsibleTrigger,
+  CollapsibleContent,
+  Input,
+  ToggleGroup,
+  ToggleGroupItem,
+} from "@snackbit/opendil/ui";
+import { ChevronRight } from "lucide-react";
 export interface AppearanceSettingsProps {
   enabled: boolean;
   appearance: "light" | "dark";
@@ -48,60 +57,68 @@ export function AppearanceSettings({
     [onButtonClass],
   );
   return (
-    <details className="od-appearance">
-      <summary>
-        Output appearance{" "}
-        <span>{enabled ? "Editable" : "Shadow or host mode"}</span>
-      </summary>
-      <fieldset disabled={!enabled}>
-        <label>
-          Output theme
-          <ToggleGroup
-            type="single"
-            value={appearance}
-            onValueChange={theme}
-            aria-label="Output theme"
-          >
-            <ToggleGroupItem value="light">Light output</ToggleGroupItem>
-            <ToggleGroupItem value="dark">Dark output</ToggleGroupItem>
-          </ToggleGroup>
-        </label>
-        <div className="od-appearance-fields">
+    <Collapsible className="od-appearance">
+      <CollapsibleTrigger asChild>
+        <Button variant="ghost" size="xs" className="od-appearance-trigger">
+          <ChevronRight size={12} />
+          Output appearance
+        </Button>
+      </CollapsibleTrigger>
+      <CollapsibleContent>
+        <fieldset disabled={!enabled}>
           <label>
-            Primary color
-            <Input
-              type="color"
-              aria-label="Output primary color"
-              value={primary}
-              onChange={color}
-            />
+            Output theme
+            <ToggleGroup
+              segmented
+              size="sm"
+              type="single"
+              value={appearance}
+              onValueChange={theme}
+              aria-label="Output theme"
+            >
+              <ToggleGroupItem value="light">Light output</ToggleGroupItem>
+              <ToggleGroupItem value="dark">Dark output</ToggleGroupItem>
+            </ToggleGroup>
           </label>
+          <div className="od-appearance-fields">
+            <label>
+              Primary color
+              <Input
+                type="color"
+                aria-label="Output primary color"
+                value={primary}
+                onChange={color}
+              />
+            </label>
+            <label>
+              Control radius (px)
+              <Input
+                aria-label="Control radius (px)"
+                type="number"
+                min={0}
+                max={32}
+                value={radius}
+                onChange={shape}
+              />
+            </label>
+          </div>
           <label>
-            Control radius (px)
-            <Input
-              aria-label="Control radius (px)"
-              type="number"
-              min={0}
-              max={32}
-              value={radius}
-              onChange={shape}
-            />
+            Button class
+            <ToggleGroup
+              segmented
+              size="sm"
+              type="single"
+              value={buttonClass}
+              onValueChange={classes}
+              aria-label="Button class"
+            >
+              <ToggleGroupItem value="rounded-none">Square</ToggleGroupItem>
+              <ToggleGroupItem value="rounded-md">Default</ToggleGroupItem>
+              <ToggleGroupItem value="rounded-full">Pill</ToggleGroupItem>
+            </ToggleGroup>
           </label>
-        </div>
-        <label>
-          Button class
-          <ToggleGroup
-            type="single"
-            value={buttonClass}
-            onValueChange={classes}
-            aria-label="Button class"
-          >
-            <ToggleGroupItem value="rounded-none">Square</ToggleGroupItem>
-            <ToggleGroupItem value="rounded-md">Default</ToggleGroupItem>
-            <ToggleGroupItem value="rounded-full">Pill</ToggleGroupItem>
-          </ToggleGroup>
-        </label>
-      </fieldset>
-    </details>
+        </fieldset>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

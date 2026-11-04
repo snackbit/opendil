@@ -26,7 +26,7 @@ test("virtualizes thousands of blocks while preserving focus and offscreen state
   await note.fill("Keep this edit");
   await page.evaluate(() => window.scrollTo(0, 100000));
   await expect(note).toBeFocused();
-  await ui.getByRole("button", { name: "Replay stream" }).focus();
+  await ui.getByRole("button", { name: "Replay" }).focus();
   await expect(note).not.toBeAttached();
   await page.evaluate(() => window.scrollTo(0, 0));
   await expect(note).toHaveValue("Keep this edit");
@@ -52,7 +52,7 @@ test("virtualizes repeated templates and table rows without invalid HTML", async
       .getByRole("button", { name: "Inspect Entry 1", exact: true })
       .click();
     await expect(ui.getByText("Selected", { exact: true })).toBeVisible();
-    await ui.getByRole("button", { name: "Replay stream" }).focus();
+    await ui.getByRole("button", { name: "Replay" }).focus();
     await page.evaluate(() =>
       window.scrollTo(0, document.documentElement.scrollHeight),
     );
@@ -165,11 +165,12 @@ test("streams a large document with bounded DOM and responsive updates", async (
       value: { latencies, longTasks, longTaskContexts },
     });
   });
-  await ui.getByRole("button", { name: "Replay stream" }).click();
+  await ui.getByRole("button", { name: "Replay" }).click();
   await page.mouse.wheel(0, -5000);
   const note = ui.getByRole("textbox", {
     name: "A note that survives scrolling",
   });
+  await note.click();
   await note.fill("Edited during streaming");
   await expect(ui.locator('[data-complete="true"]')).toBeAttached({
     timeout: 45000,

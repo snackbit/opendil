@@ -222,11 +222,12 @@ test("keeps controls usable as later declarations and content arrive", async ({
   page.on("pageerror", (error) => errors.push(error.message));
   await openShowcase(page, "?benchmark=1");
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
-  await ui.getByRole("button", { name: "Replay stream" }).click();
+  await ui.getByRole("button", { name: "Replay" }).click();
   await expect(ui.locator('[data-complete="false"]')).toBeAttached();
   await expect(
     ui.getByRole("slider", { name: "Annual growth assumption" }),
   ).toBeEnabled();
+  await ui.getByRole("slider", { name: "Annual growth assumption" }).click();
   await ui.getByRole("slider", { name: "Annual growth assumption" }).focus();
   await page.keyboard.press("Home");
   await page.keyboard.press("ArrowRight");
@@ -237,7 +238,7 @@ test("keeps controls usable as later declarations and content arrive", async ({
   const before = await ui
     .locator("[data-scanned]")
     .getAttribute("data-scanned");
-  await ui.getByRole("button", { name: "Complete", exact: true }).click();
+  await ui.getByRole("button", { name: "Finish", exact: true }).click();
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
   await expect(
     ui.getByRole("slider", { name: "Annual growth assumption" }),

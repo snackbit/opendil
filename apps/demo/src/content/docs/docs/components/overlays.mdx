@@ -5,9 +5,7 @@ sidebar: { order: 9 }
 ---
 
 import { LiveExample } from "../../../../site/components/live-example";
-import ExampleSource from "../../../../site/components/example-source.astro";
 
-<ExampleSource id="overlays" />
 <LiveExample id="overlays" client:only="react" />
 
 Wrap the trigger button in `popover-trigger` and the content in `popover-content`, within one `popover`. Content supports `side="top"` or the default bottom, and `align="end"` or the default center.

@@ -118,9 +118,7 @@ test("token replay accepts precise rates, pauses, changes rate and completes", a
   await expect(input).toHaveValue("150");
   await input.fill("1");
   await page.keyboard.press("Escape");
-  await page
-    .getByRole("button", { name: "Replay stream", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Replay", exact: true }).click();
   const ui = page.frameLocator("iframe");
   await expect(ui.locator('[data-complete="false"]')).toBeAttached();
   await expect
@@ -171,9 +169,7 @@ test("scroll behavior and ahead padding update following without undoing a manua
   page,
 }) => {
   await openShowcase(page, "?benchmark=1");
-  await page
-    .getByRole("button", { name: "Replay stream", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Replay", exact: true }).click();
   const ui = page.frameLocator("iframe");
   await expect(
     ui.getByText("Categorical bar chart", { exact: true }),
@@ -235,9 +231,7 @@ test.describe("High-throughput playback", () => {
     await page
       .getByRole("spinbutton", { name: "Tokens per second", exact: true })
       .fill("500");
-    await page
-      .getByRole("radio", { name: "Timed updates", exact: true })
-      .click();
+    await page.getByRole("radio", { name: "Timed", exact: true }).click();
     await expect(
       page.getByRole("spinbutton", {
         name: "Update interval (ms)",
@@ -273,9 +267,7 @@ test.describe("High-throughput playback", () => {
         },
       });
     });
-    await page
-      .getByRole("button", { name: "Replay stream", exact: true })
-      .click();
+    await page.getByRole("button", { name: "Replay", exact: true }).click();
     const ui = page.locator('[data-dil-mode="shadow"]').first();
     await expect(ui.locator('[data-complete="false"]')).toBeAttached();
     await expect(ui.locator('[data-complete="true"]')).toBeAttached({

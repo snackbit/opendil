@@ -9,7 +9,6 @@ import ExampleSource from "../../../../site/components/example-source.astro";
 
 ## NodeGraph
 
-<ExampleSource id="graph" />
 <LiveExample id="graph" client:only="react" />
 
 `content.nodes` contains `{ id, label, sub?, x?, y? }` objects. `content.edges` contains `{ id?, source, target, label? }`. `selectedId` controls selection; `onSelect` receives the selected node's string ID.
@@ -18,7 +17,6 @@ The graph spaces nodes to keep labels and connectors usable. It includes an equi
 
 ## Mermaid
 
-<ExampleSource id="mermaid" />
 <LiveExample id="mermaid" client:only="react" />
 
 `Mermaid.source` is a string. Rendering uses strict security settings, text labels, and sanitized SVG. Source is bounded to 8,192 characters and 100 edges; interactive directives and unsafe styling/HTML are rejected.

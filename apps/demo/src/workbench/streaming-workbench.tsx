@@ -1,0 +1,62 @@
+import type { ReactNode, Ref } from "react";
+import { StreamProgress } from "../playback/stream-progress";
+import { ShellScope } from "../site/components/shell-scope";
+
+export interface StreamingWorkbenchProps {
+  selection: ReactNode;
+  actions: ReactNode;
+  source: ReactNode;
+  preview: ReactNode;
+  fraction: number;
+  run: number;
+  sourceFooter?: ReactNode;
+  outputRef?: Ref<HTMLDivElement>;
+  rootRef?: Ref<HTMLDivElement>;
+  scrollPadding?: number;
+}
+
+/** The homepage's bounded source/preview workbench, shared by editable demos. */
+export function StreamingWorkbench({
+  selection,
+  actions,
+  source,
+  preview,
+  fraction,
+  run,
+  sourceFooter,
+  outputRef,
+  rootRef,
+  scrollPadding = 0,
+}: StreamingWorkbenchProps) {
+  return (
+    <div className="od-stream-demo" ref={rootRef}>
+      <div className="od-hero-demo-toolbar">
+        <div className="od-demo-caption">
+          <i />
+          <i />
+          <i />
+          {selection}
+        </div>
+        <ShellScope className="od-demo-actions">{actions}</ShellScope>
+      </div>
+      <StreamProgress fraction={fraction} run={run} />
+      <div className="od-hero-demo">
+        <div className="od-hero-code">
+          {source}
+          {sourceFooter}
+        </div>
+        <div className="od-hero-preview">
+          <div
+            className="od-hero-output"
+            ref={outputRef}
+            tabIndex={0}
+            aria-label="Streaming preview"
+            style={{ paddingBottom: 16 + scrollPadding }}
+          >
+            {preview}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

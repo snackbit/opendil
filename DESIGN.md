@@ -318,17 +318,18 @@ The centerpiece of the site and developer experience.
 
 **Desktop:** split two-pane layout: **DIL source on the left, live rendered output on the right**. Optional collapsible inspector panel shows component tree, props, state, events, and validation feedback.
 
-**Mobile:** Source / Preview / Inspector tabs, each full width.
+**Narrow containers:** Source and Preview views each occupy the full frame. The demo also exposes React usage.
 
 Visual rules:
 
 - Parent frame: 12px radius, 1px border, soft shadow only on high-level promotional showcase.
 - Toolbar: 44–48px, neutral with hairline bottom border.
-- Source panel: theme-matched code editor; mono typography; line numbers low contrast. The landing showcase displays upcoming source at 0.3 opacity and received source at full opacity.
+- Source panel: locally bundled Monaco with DIL syntax, site-matched colors, and muted line numbers. The landing showcase displays upcoming source at 0.3 opacity and received source at full opacity. Demo edits apply automatically; editor controls stay out of its footer.
 - Render panel: white, deliberately unbranded content canvas with optional dotted guide grid **outside** generated UI bounds.
 - Separator: 1px border or accessible draggable splitter.
 - Status bar: parse/render state, errors, and duration only when measured. Never fabricate latency or success claims.
-- Controls: `Copy source`, `Reset`, `Run`, `Open example` as supported by the actual product.
+- Playback controls share an animation speed, Pause/Resume, Replay, and Finish/Reset toolbar. Settings use compact segmented controls; editable examples also expose Run and auto-run.
+- Documentation examples use the same split source and preview pattern, with their label outside the frame and no extra surrounding card.
 - Animations between code and render should be restrained, fast, and disabled under reduced-motion preference.
 
 ### B. Component Tree / Inspector

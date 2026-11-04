@@ -28,12 +28,6 @@ const path = Astro.url.pathname;
     >
       Docs
     </a>
-    <a
-      href={sitePath("agent-spec/")}
-      aria-current={path.includes("/agent-spec/") ? "page" : undefined}
-    >
-      Agent Spec
-    </a>
   </nav>
   <div class="od-header-actions">
     <slot name="search" />

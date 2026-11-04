@@ -1,112 +1,133 @@
 import { expect, test } from "@playwright/test";
-test("draft editing, manual run, integration copy and reload preserve the intended state", async ({
+test("documentation source disclosures use Collapsible", async ({ page }) => {
+  await page.goto("/docs/customization/components/");
+  await expect(
+    page.locator(".sl-markdown-content details, .sl-markdown-content summary"),
+  ).toHaveCount(0);
+  const trigger = page.getByRole("button", { name: "DIL source", exact: true });
+  await trigger.click();
+  await expect(trigger).toHaveAttribute("aria-expanded", "true");
+  await expect(page.getByText("message.dil", { exact: true })).toBeVisible();
+});
+test("demo uses the homepage workbench with populated bounded panes", async ({
   page,
-  context,
+}, testInfo) => {
+  await page.goto("/demo/deployment/");
+  const frame = page.locator(".od-stream-demo");
+  await expect(
+    frame
+      .locator(".od-hero-demo-toolbar")
+      .getByRole("combobox", { name: "Open example" }),
+  ).toBeVisible();
+  await expect(
+    frame
+      .locator(".od-hero-code")
+      .getByRole("textbox", { name: "DIL source", exact: true }),
+  ).toBeVisible();
+  await expect(
+    frame
+      .locator(".od-hero-output")
+      .getByRole("heading", { name: "Ship something good.", exact: true }),
+  ).toBeVisible();
+  await expect(frame.locator(".od-hero-demo")).toHaveCSS("height", "700px");
+  await expect(
+    page.locator(".od-workbench-controls, .od-render-header"),
+  ).toHaveCount(0);
+  await testInfo.attach("shared-demo-workbench", {
+    body: await frame.screenshot({ path: "/tmp/opendil-shared-demo.png" }),
+    contentType: "image/png",
+  });
+});
+test("playback settings start with reveal enabled and compact aligned choices", async ({
+  page,
+}, testInfo) => {
+  await page.goto("/demo/deployment/");
+  await page.getByRole("button", { name: "Demo settings" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Progressive reveal" }),
+  ).toBeChecked();
+  const choices = ["Iframe", "Shadow DOM", "Host DOM"];
+  const boxes = await Promise.all(
+    choices.map((name) =>
+      page.getByRole("radio", { name, exact: true }).boundingBox(),
+    ),
+  );
+  expect(
+    boxes.every((box) => box && box.y === boxes[0]?.y && box.height <= 26),
+  ).toBe(true);
+  await testInfo.attach("compact-settings", {
+    body: await page.screenshot(),
+    contentType: "image/png",
+  });
+  await page.getByRole("checkbox", { name: "Progressive reveal" }).uncheck();
+  await page.keyboard.press("Escape");
+  await page.getByRole("combobox", { name: "Open example" }).click();
+  await page.getByRole("option", { name: "pricing.dil", exact: true }).click();
+  await page.getByRole("button", { name: "Demo settings" }).click();
+  await expect(
+    page.getByRole("checkbox", { name: "Progressive reveal" }),
+  ).not.toBeChecked();
+});
+test("Monaco edits DIL, persists drafts, and resets without an editor footer", async ({
+  page,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   await page.goto("/demo/form/");
-  const source = page.getByRole("textbox", { name: "DIL source", exact: true });
-  const ui = page.locator('[data-dil-mode="shadow"]');
+  await expect(page.locator(".monaco-editor")).toBeVisible();
   await expect(
-    ui.getByRole("heading", { name: "Make yourself at home.", exact: true }),
-  ).toBeVisible();
-  await page.getByRole("checkbox", { name: "Auto-run", exact: true }).click();
-  const draft = "<box padding={4}><title>A saved draft</title></box>";
-  await source.fill(draft);
-  await expect(page.getByText("Edited", { exact: true })).toBeVisible();
+    page.getByRole("checkbox", { name: "Auto-run", exact: true }),
+  ).toHaveCount(0);
   await expect(
-    ui.getByRole("heading", { name: "Make yourself at home.", exact: true }),
-  ).toBeVisible();
-  await source.press("ControlOrMeta+Enter");
+    page.getByRole("tab", { name: "React usage", exact: true }),
+  ).toHaveCount(0);
+  const source = page.getByRole("textbox", { name: /DIL source/ });
+  await page.locator(".od-source-editor").click({ position: { x: 90, y: 30 } });
+  await source.press("ControlOrMeta+A");
+  await page.keyboard.insertText("<box><title>A Monaco draft</title></box>");
   await expect(
-    ui.getByRole("heading", { name: "A saved draft", exact: true }),
+    page.getByRole("heading", { name: "A Monaco draft" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Copy DIL source", exact: true })
-    .click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toBe(draft);
-  await page.getByRole("radio", { name: "React usage", exact: true }).click();
-  await page
-    .getByRole("button", { name: "Copy React integration", exact: true })
-    .click();
-  await expect
-    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
-    .toContain('import { DilRenderer } from "@snackbit/opendil"');
   await page.reload();
   await expect(
-    ui.getByRole("heading", { name: "A saved draft", exact: true }),
+    page.getByRole("heading", { name: "A Monaco draft" }),
   ).toBeVisible();
-  await page
-    .getByRole("button", { name: "Reset example", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Reset", exact: true }).click();
   await expect(
-    ui.getByRole("heading", { name: "Make yourself at home.", exact: true }),
+    page.getByRole("heading", { name: "Make yourself at home.", exact: true }),
   ).toBeVisible();
 });
-test("custom appearance updates the live output and copied integration", async ({
-  page,
-}) => {
+test("appearance is optional compact popover content", async ({ page }) => {
   await page.goto("/demo/deployment/");
-  const modePicker = page.getByRole("combobox", {
-    name: "Rendering mode",
-    exact: true,
-  });
-  await expect(modePicker).toHaveText("Shadow DOM");
-  await modePicker.click();
-  await page.getByRole("option", { name: "Iframe", exact: true }).click();
+  await page.getByRole("button", { name: "Demo settings" }).click();
+  await page.getByRole("radio", { name: "Iframe", exact: true }).click();
   await expect(
     page
       .frameLocator("iframe")
       .getByRole("heading", { name: "Ship something good.", exact: true }),
   ).toBeVisible();
-  await expect(
-    page.frameLocator("iframe").getByText("Complete", { exact: true }),
-  ).toHaveCount(0);
-  await modePicker.click();
-  await page.getByRole("option", { name: "Host DOM", exact: true }).click();
+  await page.getByRole("radio", { name: "Host DOM", exact: true }).click();
   await expect(page.locator('[data-dil-mode="host"]')).toBeAttached();
-  await expect(
-    page
-      .locator('[data-dil-mode="host"]')
-      .getByText("Complete", { exact: true }),
-  ).toHaveCount(0);
-  await modePicker.click();
-  await page.getByRole("option", { name: "Shadow DOM", exact: true }).click();
-  await expect(page.locator('[data-dil-mode="shadow"]')).toBeAttached();
-  await expect(
-    page
-      .locator('[data-dil-mode="shadow"]')
-      .getByText("Complete", { exact: true }),
-  ).toHaveCount(0);
-  await page
-    .getByRole("button", { name: "Demo settings", exact: true })
-    .click();
+  await page.getByRole("radio", { name: "Shadow DOM", exact: true }).click();
   await expect(
     page.getByRole("radio", { name: "Shadow DOM", exact: true }),
   ).toHaveAttribute("data-state", "on");
-  await page.keyboard.press("Escape");
-  await page.getByText("Output appearance", { exact: false }).first().click();
+  await page
+    .getByRole("button", { name: "Output appearance", exact: true })
+    .click();
   await page.getByRole("radio", { name: "Dark output", exact: true }).click();
   await page.getByRole("radio", { name: "Pill", exact: true }).click();
+  await page.keyboard.press("Escape");
   const output = page.locator('[data-dil-mode="shadow"]').first();
   await expect(output.locator(".dil-scope")).toHaveAttribute(
     "data-theme",
     "dark",
   );
+  await expect(
+    output.getByRole("radio", { name: "US East", exact: true }),
+  ).toHaveCSS("color", "rgb(250, 250, 250)");
   await output
     .getByRole("button", { name: "Deploy application", exact: true })
     .click();
   await expect(
     output.getByRole("button", { name: "Deployment created", exact: true }),
   ).toBeVisible();
-  await page.getByRole("radio", { name: "React usage", exact: true }).click();
-  const snippet = page.getByRole("textbox", {
-    name: "React integration code",
-    exact: true,
-  });
-  await expect(snippet).toContainText('mode="shadow"');
-  await expect(snippet).toContainText('appearance="dark"');
-  await expect(snippet).toContainText("rounded-full");
 });

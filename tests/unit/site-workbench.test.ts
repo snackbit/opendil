@@ -1,10 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import ts from "typescript";
-import { EditorState, StateEffect } from "@codemirror/state";
-import {
-  generatedCode,
-  generatedThrough,
-} from "../../apps/demo/src/workbench/generated-code";
+import { upcomingRange } from "../../apps/demo/src/workbench/generated-code";
 import {
   savedDraft,
   storeDraft,
@@ -62,11 +58,13 @@ it("validates renderer preferences without trusting arbitrary stored JSON", () =
     "opendil:renderer-preferences",
     '{"mode":"isolated","reveal":true}',
   );
-  expect(rendererPreferences()).toEqual({ mode: "shadow", reveal: false });
+  expect(rendererPreferences()).toEqual({ mode: "shadow", reveal: true });
   for (const mode of ["isolated", "shadow", "host"] as const) {
     saveRendererPreferences({ mode, reveal: true });
     expect(rendererPreferences()).toEqual({ mode, reveal: true });
   }
+  saveRendererPreferences({ mode: "shadow", reveal: false });
+  expect(rendererPreferences()).toEqual({ mode: "shadow", reveal: false });
   for (const value of [
     "broken",
     "null",
@@ -75,7 +73,7 @@ it("validates renderer preferences without trusting arbitrary stored JSON", () =
     "{}",
   ]) {
     values.set("opendil:renderer-preferences:v2", value);
-    expect(rendererPreferences()).toEqual({ mode: "shadow", reveal: false });
+    expect(rendererPreferences()).toEqual({ mode: "shadow", reveal: true });
   }
   vi.stubGlobal("sessionStorage", {
     getItem() {
@@ -90,33 +88,14 @@ it("validates renderer preferences without trusting arbitrary stored JSON", () =
     saveRendererPreferences({ mode: "host", reveal: false }),
   ).not.toThrow();
 });
-it("marks exactly the upcoming source range and leaves other editors undecorated", () => {
-  let state = EditorState.create({
-    doc: "Hello 🦊 world",
-    extensions: generatedCode,
+it("bounds upcoming-source offsets using UTF-16 positions", () => {
+  expect(upcomingRange("Hello 🦊 world".length, 6)).toEqual({
+    start: 6,
+    end: 14,
   });
-  expect(state.field(generatedCode).decorations.size).toBe(0);
-  state = state.update({ effects: generatedThrough.of(6) }).state;
-  const ranges: number[][] = [];
-  state
-    .field(generatedCode)
-    .decorations.between(0, state.doc.length, (from, to) => {
-      ranges.push([from, to]);
-    });
-  expect(ranges).toEqual([[6, state.doc.length]]);
-  expect(
-    state
-      .update({ effects: StateEffect.define<boolean>().of(true) })
-      .state.field(generatedCode),
-  ).toBe(state.field(generatedCode));
-  state = state.update({ effects: generatedThrough.of(-1) }).state;
-  expect(state.field(generatedCode).end).toBe(0);
-  state = state.update({
-    changes: { from: state.doc.length, insert: "!" },
-  }).state;
-  expect(state.field(generatedCode).decorations.size).toBe(1);
-  state = state.update({ effects: generatedThrough.of(999) }).state;
-  expect(state.field(generatedCode).decorations.size).toBe(0);
+  expect(upcomingRange(14, -1)).toEqual({ start: 0, end: 14 });
+  expect(upcomingRange(14, 999)).toBeNull();
+  expect(upcomingRange(0, 0)).toBeNull();
 });
 it("chooses readable primary text for dark, light, and midtone inputs", () => {
   expect(primaryForeground("#202020")).toBe("#ffffff");

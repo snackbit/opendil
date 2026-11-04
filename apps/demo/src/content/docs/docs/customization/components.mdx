@@ -5,6 +5,7 @@ sidebar: { order: 4 }
 ---
 
 import { Code } from "@astrojs/starlight/components";
+import { SourceDisclosure } from "../../../../site/components/source-disclosure";
 import { CustomizationPlayground } from "../../../../site/examples/customization-playground";
 import { customizationDocsSource } from "../../../../site/examples/customization-source";
 import { customComponentSource } from "../../../../examples/customization";
@@ -19,10 +20,9 @@ The `Callout` tag renders an application component. The `button` tag uses a cust
 
 <CustomizationPlayground variant="components" client:only="react" />
 
-<details>
-  <summary>View the DIL source</summary>
+<SourceDisclosure label="DIL source" client:load>
   <Code code={customizationDocsSource} lang="mdx" title="message.dil" />
-</details>
+</SourceDisclosure>
 
 ## Register components
 
@@ -51,10 +51,9 @@ Keep component definitions and the registry at module scope. Defining a new comp
 
 The module below is the implementation used by the live example. `Callout` validates its label and forwards named style slots. `Action` forwards DIL clicks and accepts the document's boolean `disabled` attribute.
 
-<details>
-  <summary>View the React implementations</summary>
+<SourceDisclosure label="React implementations" client:load>
   <Code code={customComponentSource} lang="tsx" title="components.tsx" />
-</details>
+</SourceDisclosure>
 
 For Shadow DOM, use `mode="shadow"` and supply any additional application CSS through `shadowStyles`. The stock stylesheet is installed automatically. See [Tokens and Tailwind](../styling/#shadow-dom-css).
 

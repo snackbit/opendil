@@ -1,6 +1,4 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Check, Pause, Play, RotateCcw } from "lucide-react";
-import { Button } from "@snackbit/opendil/ui";
 import {
   exampleById,
   featuredExamples,
@@ -8,14 +6,15 @@ import {
 } from "../../examples/catalog";
 import { DemoRenderer } from "../../demo-renderer";
 import { useReplay } from "../../playback/use-replay";
-import { DEMO_TOKEN_RATE, DEMO_REVEAL } from "../../playback/defaults";
+import { DEMO_TOKEN_RATE } from "../../playback/defaults";
 import { usePreviewFollow } from "../../playback/use-preview-follow";
 import { SourceEditor } from "../../workbench/source-editor";
-import { ShellScope } from "./shell-scope";
-import { CopyButton } from "./copy-button";
 import { useSiteTheme } from "./use-site-theme";
 import { ExamplePicker } from "../../workbench/example-picker";
-import { HeroRate } from "./hero-rate";
+import { PlaybackControls } from "../../playback/playback-controls";
+import { StreamingWorkbench } from "../../workbench/streaming-workbench";
+import { DemoSettings } from "../../playback/demo-settings";
+import { useDemoOptions } from "../../playback/use-demo-options";
 export interface HeroDemoProps {
   tokenCounts: Record<string, number>;
 }
@@ -50,6 +49,7 @@ function StreamingExample({
 }) {
   const source = useMemo(() => example.source(), [example]);
   const replay = useReplay(source, example.id, initialRate);
+  const options = useDemoOptions();
   const appearance = useSiteTheme();
   const detail = useCallback(
     (item: ExampleDefinition) => {
@@ -62,6 +62,7 @@ function StreamingExample({
   );
   const {
     replay: beginReplay,
+    reset: resetReplay,
     finish,
     pause,
     run,
@@ -93,6 +94,11 @@ function StreamingExample({
     setShowAll(true);
     finish();
   }, [finish]);
+  const reset = useCallback(() => {
+    started.current = true;
+    setShowAll(true);
+    resetReplay(source.length);
+  }, [resetReplay, source.length]);
   useEffect(() => {
     const element = root.current;
     if (!element || started.current) return;
@@ -112,91 +118,80 @@ function StreamingExample({
   const done = received === source.length;
   const fraction = received / source.length;
   const output = useRef<HTMLDivElement>(null);
-  usePreviewFollow(output, run, !done);
+  usePreviewFollow(
+    output,
+    run,
+    !done,
+    options.autoScroll,
+    options.scrollBehavior,
+    options.scrollPadding,
+  );
   return (
-    <div className="od-stream-demo" ref={root}>
-      <div className="od-hero-demo-toolbar">
-        <span className="od-demo-caption">
-          <i />
-          <i />
-          <i />
-          <ExamplePicker
-            value={example.id}
-            onChange={onExample}
-            items={featuredExamples}
-            label="Demo example"
-            compact
-            filename
-            detail={detail}
+    <StreamingWorkbench
+      rootRef={root}
+      outputRef={output}
+      scrollPadding={options.scrollPadding}
+      fraction={fraction}
+      run={run}
+      selection={
+        <ExamplePicker
+          value={example.id}
+          onChange={onExample}
+          items={featuredExamples}
+          label="Demo example"
+          compact
+          filename
+          detail={detail}
+        />
+      }
+      actions={
+        <>
+          <PlaybackControls
+            rate={tokensPerSecond}
+            onRate={rateChange}
+            running={running}
+            complete={done}
+            canPause={run !== 0}
+            preparing={preparing}
+            onPause={pause}
+            onReplay={play}
+            onFinish={show}
+            onReset={reset}
           />
-          <CopyButton text={source} label="Copy demo DIL" />
-        </span>
-        <ShellScope className="od-demo-actions">
-          <HeroRate value={tokensPerSecond} onChange={rateChange} />
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={pause}
-            disabled={done || preparing || run === 0}
-          >
-            {running ? <Pause size={14} /> : <Play size={14} />}
-            {running ? "Pause" : "Resume"}
-          </Button>
-          <Button size="xs" variant="ghost" onClick={play} disabled={preparing}>
-            <RotateCcw size={14} />
-            Replay
-          </Button>
-          <Button
-            size="xs"
-            variant="ghost"
-            onClick={show}
-            disabled={done && !preparing}
-          >
-            <Check size={14} />
-            Finish
-          </Button>
-        </ShellScope>
-      </div>
-      <div
-        className="od-stream-progress"
-        role="progressbar"
-        aria-label="Demo source received"
-        aria-valuemin={0}
-        aria-valuemax={100}
-        aria-valuenow={Math.round(fraction * 100)}
-      >
-        <span key={run} style={{ transform: `scaleX(${fraction})` }} />
-      </div>
-      <div className="od-hero-demo">
-        <div className="od-hero-code">
-          <SourceEditor
-            key={run}
-            value={source}
-            readOnly
-            appearance="subtle"
-            generatedLength={received}
-            followTail
-            label="Incoming DIL source"
+          <DemoSettings
+            {...options}
+            tokensPerSecond={tokensPerSecond}
+            onRate={rateChange}
+            benchmark={replay.benchmark}
+            stressSpeed={replay.stressSpeed}
+            onStress={replay.setStressSpeed}
+            customization={false}
           />
-        </div>
-        <div className="od-hero-preview">
-          <div
-            className="od-hero-output"
-            ref={output}
-            tabIndex={0}
-            aria-label="Streaming preview"
-          >
-            <DemoRenderer
-              appearance={appearance}
-              primary={appearance === "dark" ? "#a79cff" : "#5e4cff"}
-              key={run}
-              text={source.slice(0, received)}
-              isStreaming={!done}
-              progressiveReveal={DEMO_REVEAL}
-            />
-          </div>
-        </div>
-      </div>
-    </div>
+        </>
+      }
+      source={
+        <SourceEditor
+          key={run}
+          value={source}
+          readOnly
+          appearance="subtle"
+          generatedLength={received}
+          followTail
+          label="Incoming DIL source"
+        />
+      }
+      preview={
+        <DemoRenderer
+          appearance={appearance}
+          primary={appearance === "dark" ? "#a79cff" : "#5e4cff"}
+          key={`${run}:${options.mode}`}
+          text={source.slice(0, received)}
+          isStreaming={!done}
+          mode={options.mode}
+          progressiveReveal={options.reveal}
+          updateInterval={options.updateInterval}
+        />
+      }
+    />
   );
 }

@@ -4,7 +4,6 @@ description: Install OpenDIL and render your first interactive document in React
 ---
 
 import { LiveExample } from "../../../site/components/live-example";
-import ExampleSource from "../../../site/components/example-source.astro";
 
 OpenDIL renders a growing text response as an interactive React interface. Your application supplies the source; the document can contain Markdown, controls, charts, and its own state.
 
@@ -41,7 +40,6 @@ export function Answer() {
 
 Document state lives in a bounded QuickJS worker. A control updates that state, and expressions supply the next values to the interface.
 
-<ExampleSource id="form" />
 <LiveExample id="form" client:only="react" />
 
 ## Send a stream

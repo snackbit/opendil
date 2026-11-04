@@ -55,17 +55,19 @@ test("demo settings expose reveal state and timing without restarting the docume
   await openShowcase(page);
   const ui = dilPage(page);
   const input = ui.getByRole("textbox", { name: "Display name" });
+  await input.click();
   await input.fill("Keep this name");
-  const toggle = page.getByRole("button", {
-    name: "Progressive reveal",
-    exact: true,
-  });
-  await expect(toggle).toContainText("Off");
-  await toggle.click();
-  await expect(toggle).toContainText("On");
   await page
     .getByRole("button", { name: "Demo settings", exact: true })
     .click();
+  const toggle = page.getByRole("checkbox", {
+    name: "Progressive reveal",
+    exact: true,
+  });
+  await expect(toggle).toBeChecked();
+  await toggle.uncheck();
+  await expect(toggle).not.toBeChecked();
+  await toggle.check();
   await expect(
     page.getByRole("spinbutton", { name: "Reveal step delay (ms)" }),
   ).toHaveValue("100");
@@ -183,9 +185,7 @@ test("stream following survives growth, pauses for reading, and resumes at the t
 }) => {
   await openShowcase(page, "?benchmark=1");
   const ui = dilPage(page);
-  await page
-    .getByRole("button", { name: "Replay stream", exact: true })
-    .click();
+  await page.getByRole("button", { name: "Replay", exact: true }).click();
   await expect(
     ui.getByRole("heading", { name: "Configure your workspace", exact: true }),
   ).toBeAttached();

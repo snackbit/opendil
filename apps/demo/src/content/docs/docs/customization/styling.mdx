@@ -5,6 +5,7 @@ sidebar: { order: 2 }
 ---
 
 import { Code } from "@astrojs/starlight/components";
+import { SourceDisclosure } from "../../../../site/components/source-disclosure";
 import { CustomizationPlayground } from "../../../../site/examples/customization-playground";
 import { customizationStyles } from "../../../../site/examples/customization-source";
 
@@ -90,10 +91,9 @@ The `components` registry comes from the [custom component guide](../components/
 
 This is the CSS used by the live demos:
 
-<details>
-  <summary>View the application stylesheet</summary>
+<SourceDisclosure label="Application stylesheet" client:load>
   <Code code={customizationStyles} lang="css" title="customization.css" />
-</details>
+</SourceDisclosure>
 
 ## Boundaries to account for
 
