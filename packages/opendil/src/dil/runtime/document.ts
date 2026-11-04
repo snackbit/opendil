@@ -5,6 +5,12 @@ import { ExpressionEngine, EvaluationPending, type Scope } from "./expressions";
 import { RenderBudget } from "./render-budget";
 import { PresentationHistory } from "./presentation-history";
 import { PresentationScheduler } from "./presentation-scheduler";
+import {
+  deliverError,
+  ProblemReports,
+  UNREPORTED_PROBLEMS,
+  type DilRenderError,
+} from "../render-error";
 
 export interface NodeState {
   node: DilNode;
@@ -12,6 +18,8 @@ export interface NodeState {
 }
 export interface DocumentStatus {
   complete: boolean;
+  /** The document was finalized while some of its structure was still open. */
+  incomplete: boolean;
   revision: number;
   scanned: number;
   error: string;
@@ -36,6 +44,7 @@ export class DilDocument {
     queueMicrotask(() =>
       this.engine.halt(
         "Rendering stopped: this message exceeds the display limit.",
+        "limit",
       ),
     );
   }
@@ -45,6 +54,7 @@ export class DilDocument {
   private readonly flows = new Map<number, StoreApi<ChildList>>();
   readonly status = createStore<DocumentStatus>(() => ({
     complete: false,
+    incomplete: false,
     revision: 0,
     scanned: 0,
     error: "",
@@ -52,11 +62,45 @@ export class DilDocument {
   }));
   readonly engine: ExpressionEngine;
   readonly drafts = new Map<string, string>();
+  private readonly reports = new ProblemReports();
+  /**
+   * Receives each distinct problem once, within the ProblemReports budget.
+   * Problems readers see only generic wording for are also logged.
+   */
+  onError: ((error: DilRenderError) => void) | undefined;
+  report(problem: DilRenderError) {
+    const error = this.reports.take(problem);
+    if (!error) return;
+    // An incomplete report already lists each unfinished construct's position.
+    if (error.kind !== "incomplete" && error.offset !== undefined)
+      console.warn(
+        `OpenDIL: ${error.message} (at character ${error.offset} of the message source)`,
+      );
+    if (error.kind === "incomplete" || error.message === UNREPORTED_PROBLEMS)
+      console.warn("OpenDIL: " + error.message);
+    deliverError(this.onError, error);
+  }
+  /** Shows a document-level alert and reports it. */
+  fail(error: DilRenderError) {
+    this.status.setState({ error: error.message });
+    this.report(error);
+  }
   constructor() {
     this.engine = new ExpressionEngine(new EventTarget(), this.updates);
     this.engine.events.addEventListener("dil:error", (event) => {
-      if (event instanceof CustomEvent && typeof event.detail === "string")
-        this.status.setState({ error: event.detail });
+      const detail: unknown =
+        event instanceof CustomEvent ? event.detail : undefined;
+      if (
+        detail &&
+        typeof detail === "object" &&
+        "message" in detail &&
+        typeof detail.message === "string"
+      )
+        this.fail({
+          kind:
+            "kind" in detail && detail.kind === "limit" ? "limit" : "runtime",
+          message: detail.message,
+        });
     });
     this.nodes.set(0, {
       node: {
@@ -80,8 +124,10 @@ export class DilDocument {
       try {
         this.engine.declare(source);
       } catch (error) {
-        this.status.setState({
-          error: error instanceof Error ? error.message : "Invalid declaration",
+        this.fail({
+          kind: "runtime",
+          message:
+            error instanceof Error ? error.message : "Invalid declaration",
         });
       }
     }
@@ -139,11 +185,16 @@ export class DilDocument {
       const flow = this.flows.get(id);
       if (flow) flow.setState(this.presentedChildren(id), true);
     }
+    const incomplete = batch.issues.some(
+      (issue) => issue.kind === "incomplete",
+    );
     this.status.setState({
       revision: batch.revision,
       scanned: batch.scanned,
       complete: batch.complete,
+      incomplete: this.status.getState().incomplete || incomplete,
     });
+    for (const issue of batch.issues) this.report(issue);
   }
   private presentedChildren(id: number) {
     const children = this.node(id).getState().children.toArray();

@@ -1,0 +1,70 @@
+---
+title: Introduction
+description: "OpenDIL renders a model's streamed answer as an interactive React interface. Learn what it does and how the pieces fit."
+---
+
+OpenDIL is a React renderer for DIL (Dynamic Interface Language): Markdown mixed with component tags, a little state, and expressions. A model writes DIL as plain text, your app passes along what has arrived so far, and readers use the interface before the answer finishes.
+
+Edit the DIL source below and the interface updates as you type.
+
+<LiveExample id="form" />
+
+## How it works in your app
+
+Adding OpenDIL takes two changes, one on each side of your existing chat:
+
+1. Your server adds the agent spec, the instructions that teach a model to write DIL, to the system prompt.
+2. Your client renders each answer with `<DilRenderer text={…} isStreaming={…} />`.
+
+In between, the model streams DIL text through the transport your chat already uses. OpenDIL never calls your model provider. It works with any client that streams text, including the Vercel AI SDK, the OpenAI and Anthropic SDKs, and plain `fetch`.
+
+## What DIL looks like
+
+```dil title="greeting.dil"
+{@body const [count,setCount] = DIL.useState(0)}
+<box border padding={4} gap={3}>
+  <title>Hello from DIL</title>
+  <button onClick={() => setCount(count + 1)}>Clicked {count} times</button>
+</box>
+```
+
+- Markdown carries the prose: headings, lists, tables, and code.
+- Tags such as `<box>`, `<slider>`, and `<Chart>` become components.
+- `{@body …}` declares state and derived values that belong to the answer.
+- `{#if}` and `{#each}` show content conditionally or repeat it for each item.
+
+The [DIL tour](/docs/language/) explains each part in ten minutes.
+
+## What you get
+
+**Usable while it streams.** OpenDIL parses the partial answer on every update. Text, charts, and controls appear as soon as their source is complete, so a reader can drag a slider while the model is still writing the paragraph below it.
+
+**Plain text a model can write.** DIL reads like Markdown mixed with JSX, two formats models already write well. An answer needs no JSON schema and no tool call, and it can hold its own state, calculations, conditional views, and lists.
+
+**Sandboxed by default.** The default rendering mode draws each answer inside a sandboxed iframe with an opaque origin and no network access. In every mode, expressions run in a sandboxed JavaScript engine (QuickJS) in a Web Worker with memory and work limits, never as JavaScript in your page. When you need your own React components, you can opt in to Shadow DOM or host rendering. See [Security](/docs/security/).
+
+**Built for long answers.** Long lists and large answers mount only the parts near the screen, and controls keep their values when they scroll out of view. The [large document example](/demo/large/) streams 5,000 cards, about 2.6 MB of DIL, into one renderer.
+
+## What OpenDIL does not do
+
+- **It does not fetch data.** An answer cannot make network requests, load remote images, or navigate. Markdown links render as plain text. The model works with the data in the conversation.
+- **It does not run code in your page.** DIL has no HTML, React JSX, TypeScript, imports, or DOM event handlers; its expressions run only in the sandboxed engine. A tag that is neither built in nor registered by your app does not become a component.
+- **It has no maps, live media, or file export.** `AsyncImage` shows a placeholder illustration instead of loading an image. You can register your own components for these in Shadow DOM or host mode.
+- **It does not own your chat.** Your app keeps its transport, message storage, and chat interface. OpenDIL renders one answer at a time.
+
+## Requirements
+
+- React 19. `react` and `react-dom` `^19.0.0` are peer dependencies.
+- A browser with Web Workers, WebAssembly, and sandboxed iframes. Shadow DOM mode also needs constructable stylesheets.
+- Node.js 22 or newer for the `opendil` command that copies the iframe runtime.
+
+[Package and CLI](/docs/package/) lists the entry points and bundler requirements.
+
+## Next steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/getting-started/" description="Install OpenDIL and render a streaming answer in five minutes." />
+  <Card title="Add OpenDIL to your chat app" href="/docs/chat-integration/" description="Connect the AI SDK, OpenAI, Anthropic, or fetch, and render every answer." />
+  <Card title="DIL tour" href="/docs/language/" description="Learn the language your model writes." />
+  <Card title="How it works" href="/docs/how-it-works/" description="Follow an answer through the parser, the expression engine, and the renderer." />
+</Cards>

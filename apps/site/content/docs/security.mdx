@@ -1,0 +1,156 @@
+---
+title: Security
+description: "OpenDIL's security model: what each rendering mode protects, how expressions are sandboxed, what you must configure, and how to report issues."
+---
+
+OpenDIL treats every model answer as untrusted input, because a model can be steered by the content it reads. This page explains what protects your app and what you must configure. It covers the expression sandbox, the boundary each rendering mode draws, and the settings that are your responsibility.
+
+## Threat model
+
+OpenDIL assumes:
+
+- The DIL text is hostile. A prompt injection in a web page, an email, or a tool result can make the model write anything.
+- Your app code, your custom components, and the OpenDIL package are trusted.
+- The browser enforces iframe sandboxing, origins, and Content Security Policy (CSP).
+
+In the default iframe mode, an answer cannot:
+
+- read or change your page, its cookies, or its storage;
+- send network requests or load remote resources;
+- navigate your page, submit forms, or open windows;
+- read the clipboard.
+
+An answer can draw an interface inside its own frame, run its expressions within fixed limits, and write text to the clipboard after a reader clicks one of its buttons. Host and Shadow DOM modes give up the browser-enforced parts of this list; see [What each mode protects](#what-each-mode-protects).
+
+## Expressions run in a sandbox in every mode
+
+Every renderer evaluates the answer's expressions in QuickJS, a JavaScript engine compiled to WebAssembly, in a dedicated Web Worker. This is the same in all three rendering modes.
+
+- The engine exposes no `window`, `document`, DOM, `fetch`, `XMLHttpRequest`, `WebSocket`, storage, or timers.
+- Your page never evaluates the answer's code. Callbacks such as `onClick` reach the page as opaque handles, and the engine runs them.
+- Each answer has its own engine. One answer cannot read another answer's state.
+- Memory, stack depth, and work per evaluation are bounded. A runaway loop stops that answer with "Execution stopped: this action exceeded its time limit." Other answers keep working. [Limits](/docs/limits/#expressions) lists the values.
+
+The [agent spec](/docs/agent-spec/), the instructions that teach a model to write DIL, tells models not to use `eval` or `Function`. That is an authoring rule, not a removal: both exist inside QuickJS, where they reach nothing beyond the answer's own sandbox.
+
+## What each mode protects
+
+The rendering mode decides where the answer's components live. `DilRenderer` uses the iframe mode unless you pass `mode="shadow"` or `mode="host"`.
+
+| Mode                 | Rendering boundary                     | Network from the answer                                                      | Your components' privileges     |
+| -------------------- | -------------------------------------- | ---------------------------------------------------------------------------- | ------------------------------- |
+| `isolated` (default) | Sandboxed iframe with an opaque origin | Blocked by the frame's CSP                                                   | Custom components not supported |
+| `shadow`             | Shadow root: styles only               | Built-in components fetch nothing; the browser enforces only your page's CSP | Your page's full privileges     |
+| `host`               | None beyond CSS scoped to `.dil-scope` | Built-in components fetch nothing; the browser enforces only your page's CSP | Your page's full privileges     |
+
+<Callout type="error" title="Shadow DOM is not a security boundary">
+  Shadow DOM separates styles, not JavaScript. A Shadow DOM renderer and every
+  custom component in it run with your page's full privileges, exactly like
+  host mode.
+</Callout>
+
+### Iframe mode
+
+The iframe has `sandbox="allow-scripts"` and `referrerpolicy="no-referrer"`. The sandbox grants no other permission, so the frame has no same-origin access, no top-level navigation, no forms, and no popups. The frame refuses to start when it has a real origin.
+
+`frame.html` declares its own policy in a `<meta>` tag. Here it is with one directive per line; the script hash changes with each release:
+
+```text
+default-src 'none';
+script-src 'sha256-<hash>' 'strict-dynamic' 'wasm-unsafe-eval';
+style-src 'unsafe-inline';
+worker-src blob:;
+child-src blob:;
+connect-src 'none';
+img-src data:;
+font-src data:;
+base-uri 'none';
+form-action 'none';
+object-src 'none'
+```
+
+The frame runs only OpenDIL's own scripts, WebAssembly for QuickJS, and `blob:` workers. It allows inline styles, and it loads images and fonts only from `data:` URLs. It cannot open network connections, submit forms, or embed objects. Your page and the frame talk only through a private message channel, and both sides validate every message. See [How it works](/docs/how-it-works/#the-iframe-bridge).
+
+### Host and Shadow DOM modes
+
+[`SECURITY.md`](https://github.com/snackbit/opendil/blob/main/SECURITY.md) describes these modes as meant for trusted documents and trusted React extensions. Expressions still run in the sandboxed engine, and built-in components load nothing from the network. But the browser enforces none of this: the components render in your page's origin. A bug in OpenDIL or in a rendering library becomes a bug in your page, and your page's CSP is the only network and script restriction left.
+
+## Markdown, links, and media
+
+The built-in components accept no URLs and do not render raw HTML.
+
+- Markdown links render as plain text without navigation. Markdown images are not rendered.
+- `AsyncImage` draws a local SVG illustration from its query. It never fetches an image.
+- `Mermaid` runs at Mermaid's strict security level and refuses directives, click handlers, class and style definitions, and `<` characters. DOMPurify then removes scripts, `foreignObject`, links, and `href` attributes from the output.
+- SVG elements keep only an allowlist of presentation attributes. Values that contain `javascript:`, `http:`, `https:`, `data:`, or a `url()` other than a local `url(#id)` reference are dropped.
+- Color attributes must be a named color from the spec or a valid CSS color without `url`, `var(`, `;`, or braces. Other values are ignored.
+- In iframe mode the frame validates theme tokens and ignores values that could load a resource. In host and Shadow DOM modes tokens are not validated, because they come from your code, not from the answer.
+
+## Your responsibilities
+
+OpenDIL's protections hold only when your app serves and configures it correctly.
+
+### In iframe mode
+
+- Serve `frame.html` and `frame.js` from the same package version as the renderer. Run `opendil copy-assets` after every upgrade; the renderer logs a warning when the versions differ.
+- Send this response header with `frame.html`. It keeps the sandbox when someone opens the file directly, and it stops other sites from embedding it. List your app's origin instead of `'self'` when the runtime files live on another origin.
+
+```http
+Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'
+```
+
+- Never add `allow-same-origin` to the frame, and never loosen the CSP inside `frame.html`.
+- Do not apply your app's CSP header to the runtime files. A second policy can block the frame's own workers.
+- Allow the frame in your page's CSP with `frame-src`, or a `default-src` that covers it.
+
+### In host and Shadow DOM modes
+
+- Allow `worker-src blob:` and `script-src 'wasm-unsafe-eval'`. If your page's `trusted-types` directive lists policy names, add `opendil`.
+- Validate every attribute your [custom components](/docs/custom-components/) read, including URLs. Never spread attributes onto DOM elements, and never render attribute values as raw HTML.
+- Use these modes only where you accept that the answer renders with your page's privileges.
+
+[Rendering modes](/docs/rendering-modes/#set-a-content-security-policy) shows the CSP and header setup for each mode and framework.
+
+### In every mode
+
+- Keep the package updated. The latest release is the supported security target.
+
+## Clipboard
+
+Writing text to the clipboard with `GenUI.copy(text)` is the only action an answer can take outside its renderer. OpenDIL allows it only when:
+
+- the call runs synchronously in the `onClick` handler of a built-in `button` or `pressable`. A [custom component](/docs/custom-components/#clipboard) that replaces one of these tags cannot authorize a copy;
+- a trusted reader click on that control happened a moment before, and that click authorizes one copy;
+- in iframe mode, the browser also reports active user activation when your page performs the write;
+- the text fits the clipboard size limit.
+
+No API reads the clipboard. [Limits](/docs/limits/#clipboard) lists the time window and the size limit.
+
+## Known limits of the model
+
+- OpenDIL has not had an independent security audit. The sandbox has regression tests.
+- Rendering libraries such as React, Radix, Recharts, React Flow, Mermaid, and DOMPurify are trusted code that processes validated, bounded input. The iframe contains the effects of a bug in one of them; host and Shadow DOM modes do not.
+- OpenDIL does not judge what an answer says. An answer can still show misleading text or controls inside its own area. Links render as text, so a reader cannot follow them by clicking.
+- Virtualization bounds the mounted interface, not memory. The full text and the parsed nodes stay in memory while the renderer is mounted, up to the text length limit.
+
+## Report a vulnerability
+
+Report vulnerabilities through [GitHub private vulnerability reporting](https://github.com/snackbit/opendil/security/advisories/new). Include:
+
+- a minimal DIL answer that shows the problem;
+- the rendering mode;
+- the browser and package versions;
+- the boundary violation you observed.
+
+Do not post an exploit publicly before the maintainers respond. [`SECURITY.md`](https://github.com/snackbit/opendil/blob/main/SECURITY.md) holds the full policy.
+
+Releases are published with npm trusted publishing, so each version carries a provenance statement that links it to the build that produced it.
+
+## Next steps
+
+<Cards>
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose a mode and set its headers and CSP." />
+  <Card title="Limits" href="/docs/limits/" description="The exact limits that stop runaway answers." />
+  <Card title="How it works" href="/docs/how-it-works/" description="Follow an answer through the parser, the engine, and the iframe bridge." />
+  <Card title="Custom components" href="/docs/custom-components/" description="Register your own components and validate their input." />
+</Cards>

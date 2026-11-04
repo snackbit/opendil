@@ -93,7 +93,7 @@ export function RepeatedNodes(props: RepeatedNodesProps) {
   if (document.renderLimited) return null;
   if (svg && items.length > 1000) return <RenderExceeded document={document} />;
   // A repeat expands a complete template, never thousands of partial shells.
-  if (node.status === "streaming") return null;
+  if (node.status === "streaming" || node.status === "incomplete") return null;
   if (items.length > 100 && !svg)
     return (
       <VirtualFlow

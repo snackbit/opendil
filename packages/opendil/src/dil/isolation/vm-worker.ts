@@ -14,11 +14,13 @@ function guard<T>(action: () => T): T {
     );
   }
 }
-const bytes = Uint8Array.from(atob(__DIL_WASM__), (c) => c.charCodeAt(0));
+// The build inlines __DIL_WASM__ at each use, so it is read once.
+const encoded = __DIL_WASM__;
+const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
 const ready = newQuickJSWASMModuleFromVariant(
   newVariant(RELEASE_SYNC, {
     wasmBinary: bytes.buffer,
-    locateFile: () => "data:application/wasm;base64," + __DIL_WASM__,
+    locateFile: () => "data:application/wasm;base64," + encoded,
   }),
 ).then((module) => {
   const runtime = module.newRuntime();

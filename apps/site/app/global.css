@@ -1,0 +1,25 @@
+@import "tailwindcss";
+@import "fumadocs-ui/css/neutral.css";
+@import "fumadocs-ui/css/preset.css";
+@import "../components/site/tokens.css";
+@import "../components/site/shell.css";
+@import "../components/site/docs.css";
+
+/* DESIGN.md fonts and colors as Tailwind utilities (font-sans, bg-od-canvas, text-od-accent, ...). */
+@theme inline {
+  --font-sans: var(--od-font-body);
+  --font-mono: var(--od-font-code);
+  --font-display: var(--od-font-display);
+  --color-od-canvas: var(--od-canvas);
+  --color-od-surface: var(--od-surface);
+  --color-od-surface-subtle: var(--od-surface-subtle);
+  --color-od-surface-muted: var(--od-surface-muted);
+  --color-od-text: var(--od-text);
+  --color-od-text-secondary: var(--od-text-secondary);
+  --color-od-text-muted: var(--od-text-muted);
+  --color-od-border: var(--od-border);
+  --color-od-border-strong: var(--od-border-strong);
+  --color-od-accent: var(--od-accent);
+  --color-od-accent-soft: var(--od-accent-soft);
+  --color-od-link: var(--od-link);
+}

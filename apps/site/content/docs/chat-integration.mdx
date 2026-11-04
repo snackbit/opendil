@@ -1,0 +1,999 @@
+---
+title: Add OpenDIL to your chat app
+description: "Put the agent spec in your system prompt and render streamed answers with DilRenderer, with the AI SDK, OpenAI, Anthropic, or fetch."
+---
+
+OpenDIL needs two changes to a chat app that already streams answers: your server tells the model to write DIL, and your client renders each assistant message with `DilRenderer`. This guide shows both for the Vercel AI SDK, the OpenAI SDK, the Anthropic SDK, and plain `fetch` with server-sent events (SSE), in Next.js or Vite. Pick your backend in the first tab group; every tab group on the page follows your choice.
+
+## What you will build
+
+- A chat route that puts the agent spec in the system prompt and streams the model's DIL.
+- One `DilRenderer` per assistant answer, usable while it streams.
+- Correct finish, stop, truncation, error, and retry handling.
+- A message list that follows the newest answer and offers a "Jump to latest" button.
+- Answers that match your app's light or dark theme.
+
+## Before you start
+
+- A Next.js (App Router) or Vite app with React 19.
+- OpenDIL installed, its runtime files copied, and `frame.html` served with its header. The [Quickstart](/docs/getting-started/#install) covers all three in a few minutes.
+- An API key for your model provider, stored in an environment variable such as `OPENAI_API_KEY` or `ANTHROPIC_API_KEY`. The server reads it; the browser never sees it.
+
+File names below follow the Next.js App Router. In a Vite app, put the files from `components/` in `src/components/`; the server route moves into a small API server in step 2.
+
+<Steps>
+<Step>
+
+### Stream DIL from your server
+
+The agent spec, the instructions that teach a model to write DIL, ships inside the package as `agentSpec`. Import it in your chat route and pass it as the system prompt. Because it comes from the installed package, the prompt always matches your renderer version.
+
+<Tabs groupId="backend" items={["AI SDK","OpenAI","Anthropic","fetch"]} persist>
+<Tab value="AI SDK">
+
+The AI SDK setup needs the `ai`, `@ai-sdk/react`, and `@ai-sdk/openai` packages.
+
+```ts title="app/api/chat/route.ts"
+import { openai } from "@ai-sdk/openai";
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { convertToModelMessages, streamText, type UIMessage } from "ai";
+
+export async function POST(req: Request) {
+  const { messages }: { messages: UIMessage[] } = await req.json();
+  const result = streamText({
+    model: openai("gpt-6.1-sol"),
+    instructions: agentSpec,
+    messages: await convertToModelMessages(messages),
+    // Stop the model when the reader presses Stop.
+    abortSignal: req.signal,
+  });
+  return result.toUIMessageStreamResponse();
+}
+```
+
+This uses AI SDK 7, where the system prompt option is `instructions`. Earlier versions call it `system`, which AI SDK 7 still accepts but deprecates. `openai(…)` reads `OPENAI_API_KEY`. Any AI SDK provider works in its place.
+
+</Tab>
+<Tab value="OpenAI">
+
+This route needs the `openai` package.
+
+```ts title="app/api/chat/route.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+import OpenAI from "openai";
+
+const client = new OpenAI(); // Reads OPENAI_API_KEY.
+const encoder = new TextEncoder();
+
+type Message = { role: "user" | "assistant"; content: string };
+
+export async function POST(req: Request) {
+  const { messages }: { messages: Message[] } = await req.json();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: object) =>
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+        );
+      try {
+        const stream = await client.chat.completions.create(
+          {
+            model: "gpt-6.1-sol",
+            stream: true,
+            messages: [{ role: "system", content: agentSpec }, ...messages],
+          },
+          { signal: req.signal },
+        );
+        for await (const chunk of stream) {
+          const choice = chunk.choices[0];
+          if (choice?.delta.content)
+            send({ type: "text", text: choice.delta.content });
+          if (choice?.finish_reason)
+            send({
+              type: "finish",
+              reason: choice.finish_reason === "length" ? "length" : "stop",
+            });
+        }
+      } catch (error) {
+        if (req.signal.aborted) return; // The reader pressed Stop.
+        console.error(error);
+        send({ type: "error", message: "The model request failed." });
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+    },
+  });
+}
+```
+
+</Tab>
+<Tab value="Anthropic">
+
+This route needs the `@anthropic-ai/sdk` package.
+
+```ts title="app/api/chat/route.ts"
+import Anthropic from "@anthropic-ai/sdk";
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+const client = new Anthropic(); // Reads ANTHROPIC_API_KEY.
+const encoder = new TextEncoder();
+
+type Message = { role: "user" | "assistant"; content: string };
+
+export async function POST(req: Request) {
+  const { messages }: { messages: Message[] } = await req.json();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: object) =>
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+        );
+      try {
+        const stream = client.messages.stream(
+          {
+            model: "claude-opus-5-5",
+            max_tokens: 64000,
+            system: agentSpec,
+            // Cache the long, unchanging prompt prefix between requests.
+            cache_control: { type: "ephemeral" },
+            messages,
+          },
+          { signal: req.signal },
+        );
+        for await (const event of stream) {
+          if (
+            event.type === "content_block_delta" &&
+            event.delta.type === "text_delta"
+          )
+            send({ type: "text", text: event.delta.text });
+          if (event.type === "message_delta" && event.delta.stop_reason) {
+            const reason = event.delta.stop_reason;
+            if (reason === "refusal")
+              send({ type: "error", message: "The model declined to answer." });
+            else
+              send({
+                type: "finish",
+                reason: reason === "max_tokens" ? "length" : "stop",
+              });
+          }
+        }
+      } catch (error) {
+        if (req.signal.aborted) return; // The reader pressed Stop.
+        console.error(error);
+        send({ type: "error", message: "The model request failed." });
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+    },
+  });
+}
+```
+
+</Tab>
+<Tab value="fetch">
+
+This route calls the provider's HTTP API directly and needs no SDK. It works with any provider that offers an OpenAI-compatible Chat Completions endpoint; set `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` for yours.
+
+```ts title="app/api/chat/route.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+// Any provider with an OpenAI-compatible Chat Completions endpoint works.
+const baseUrl = process.env.LLM_BASE_URL ?? "https://api.openai.com/v1";
+const encoder = new TextEncoder();
+
+type Message = { role: "user" | "assistant"; content: string };
+
+export async function POST(req: Request) {
+  const { messages }: { messages: Message[] } = await req.json();
+  const body = new ReadableStream<Uint8Array>({
+    async start(controller) {
+      const send = (event: object) =>
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify(event)}\n\n`),
+        );
+      try {
+        const upstream = await fetch(`${baseUrl}/chat/completions`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${process.env.LLM_API_KEY}`,
+          },
+          body: JSON.stringify({
+            model: process.env.LLM_MODEL ?? "gpt-6.1-sol",
+            stream: true,
+            messages: [{ role: "system", content: agentSpec }, ...messages],
+          }),
+          signal: req.signal,
+        });
+        if (!upstream.ok || !upstream.body)
+          throw new Error(`Provider answered ${upstream.status}`);
+        for await (const data of readData(upstream.body)) {
+          if (data === "[DONE]") break;
+          const choice = JSON.parse(data).choices?.[0];
+          if (choice?.delta?.content)
+            send({ type: "text", text: choice.delta.content });
+          if (choice?.finish_reason)
+            send({
+              type: "finish",
+              reason: choice.finish_reason === "length" ? "length" : "stop",
+            });
+        }
+      } catch (error) {
+        if (req.signal.aborted) return; // The reader pressed Stop.
+        console.error(error);
+        send({ type: "error", message: "The model request failed." });
+      }
+      controller.close();
+    },
+  });
+  return new Response(body, {
+    headers: {
+      "Content-Type": "text/event-stream",
+      "Cache-Control": "no-cache, no-transform",
+    },
+  });
+}
+
+/** Yields the payload of each `data:` line in a server-sent event stream. */
+async function* readData(body: ReadableStream<Uint8Array>) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines)
+      if (line.startsWith("data:")) yield line.slice(5).trim();
+  }
+}
+```
+
+</Tab>
+</Tabs>
+
+The OpenAI, Anthropic, and fetch routes send the browser the same three events: `text` with the next piece of the answer, `finish` with the reason `"stop"` or `"length"`, and `error`. They forward `req.signal`, so the model stops generating when the reader presses Stop.
+
+To add your own instructions, such as your product's tone or when to use components, put them after the spec: `[agentSpec, product].join("\n\n")`. The spec is long and the same on every request, so keep it first, where prompt caching can reuse it: OpenAI caches long prefixes automatically, and in the Anthropic route `cache_control` turns caching on. [Prompting and evaluation](/docs/prompting/#structure-the-system-prompt) shows a complete system prompt, and [Agent Spec](/docs/agent-spec/) explains the full spec and its size.
+
+</Step>
+<Step>
+
+### Serve the route
+
+<Tabs groupId="framework" items={["Next.js","Vite"]} persist>
+<Tab value="Next.js">
+
+The file `app/api/chat/route.ts` already answers `POST /api/chat`. Put your API key in `.env.local` under the name your route reads (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, or `LLM_API_KEY` for the fetch route) and restart the dev server.
+
+</Tab>
+<Tab value="Vite">
+
+Vite serves only the browser code, so run the route in a small API server. Save the route from step 1 as `server/chat.ts`. It uses the web standard `Request` and `Response`, so any server that accepts them can run it. This one uses [Hono](https://hono.dev/):
+
+<Tabs groupId="pm" items={["npm","pnpm","yarn","bun"]} persist>
+<Tab value="npm">
+
+```bash
+npm install hono @hono/node-server
+```
+
+</Tab>
+<Tab value="pnpm">
+
+```bash
+pnpm add hono @hono/node-server
+```
+
+</Tab>
+<Tab value="yarn">
+
+```bash
+yarn add hono @hono/node-server
+```
+
+</Tab>
+<Tab value="bun">
+
+```bash
+bun add hono @hono/node-server
+```
+
+</Tab>
+</Tabs>
+
+```ts title="server/index.ts"
+import { serve } from "@hono/node-server";
+import { Hono } from "hono";
+import { POST } from "./chat.ts";
+
+const app = new Hono();
+app.post("/api/chat", (c) => POST(c.req.raw));
+
+serve({ fetch: app.fetch, port: 8787 });
+```
+
+Put your key in `.env` under the name your route reads: `OPENAI_API_KEY` for the AI SDK and OpenAI routes, `ANTHROPIC_API_KEY` for Anthropic, or `LLM_API_KEY` (with `LLM_BASE_URL` and `LLM_MODEL` as needed) for the fetch route. Then start the server with Node.js 24, which runs TypeScript files directly:
+
+```bash
+node --env-file=.env server/index.ts
+```
+
+Then let the Vite dev server forward `/api` requests to it. This is the `vite.config.ts` from the [Quickstart](/docs/getting-started/#send-the-frames-security-header), with the frame header plugin and a new `server.proxy` entry:
+
+```ts title="vite.config.ts"
+import react from "@vitejs/plugin-react";
+import { defineConfig, type Connect, type Plugin } from "vite";
+
+const frameHeader: Connect.NextHandleFunction = (request, response, next) => {
+  if (request.url?.split("?")[0]?.endsWith("/opendil/frame.html"))
+    response.setHeader(
+      "Content-Security-Policy",
+      "sandbox allow-scripts; frame-ancestors 'self'",
+    );
+  next();
+};
+
+// Sends the frame header from `vite` and `vite preview`.
+function opendilFrameHeader(): Plugin {
+  return {
+    name: "opendil-frame-header",
+    configureServer: (server) => void server.middlewares.use(frameHeader),
+    configurePreviewServer: (server) =>
+      void server.middlewares.use(frameHeader),
+  };
+}
+
+export default defineConfig({
+  plugins: [react(), opendilFrameHeader()],
+  // Forward chat requests to the API server during development.
+  server: { proxy: { "/api": "http://localhost:8787" } },
+});
+```
+
+In production, route `/api` to the API server from your host or reverse proxy.
+
+</Tab>
+</Tabs>
+
+</Step>
+<Step>
+
+### Read the stream in the browser
+
+With the AI SDK, `useChat` from `@ai-sdk/react` reads the stream; skip to the next step.
+
+With the OpenAI, Anthropic, or fetch route, add this hook. It sends the conversation, appends each `text` event to the answer, and records how the answer ended:
+
+```ts title="components/use-chat-stream.ts"
+import { useRef, useState } from "react";
+
+export type ChatMessage = {
+  id: string;
+  role: "user" | "assistant";
+  content: string;
+  status: "streaming" | "done" | "truncated" | "stopped" | "error";
+};
+
+type StreamEvent =
+  | { type: "text"; text: string }
+  | { type: "finish"; reason: "stop" | "length" }
+  | { type: "error"; message: string };
+
+export function useChatStream(api = "/api/chat") {
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const request = useRef<AbortController | null>(null);
+
+  const update = (
+    id: string,
+    change: (m: ChatMessage) => Partial<ChatMessage>,
+  ) =>
+    setMessages((list) =>
+      list.map((m) => (m.id === id ? { ...m, ...change(m) } : m)),
+    );
+
+  async function run(history: ChatMessage[]) {
+    const abort = new AbortController();
+    request.current = abort;
+    const id = crypto.randomUUID();
+    setMessages([
+      ...history,
+      { id, role: "assistant", content: "", status: "streaming" },
+    ]);
+    let status: ChatMessage["status"] = "done";
+    try {
+      const response = await fetch(api, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        // Send earlier answers back exactly as the model wrote them.
+        body: JSON.stringify({
+          messages: history.map(({ role, content }) => ({ role, content })),
+        }),
+        signal: abort.signal,
+      });
+      if (!response.ok || !response.body) throw new Error(response.statusText);
+      for await (const event of readEvents(response.body)) {
+        if (event.type === "text")
+          update(id, (m) => ({ content: m.content + event.text }));
+        if (event.type === "finish" && event.reason === "length")
+          status = "truncated";
+        if (event.type === "error") status = "error";
+      }
+    } catch {
+      status = abort.signal.aborted ? "stopped" : "error";
+    }
+    update(id, () => ({ status }));
+    request.current = null;
+  }
+
+  return {
+    messages,
+    streaming: messages.some((m) => m.status === "streaming"),
+    send: (text: string) =>
+      run([
+        ...messages,
+        {
+          id: crypto.randomUUID(),
+          role: "user",
+          content: text,
+          status: "done",
+        },
+      ]),
+    stop: () => request.current?.abort(),
+    /** Drops the answer with this id and later turns, then asks again. */
+    retry: (id: string) => {
+      const index = messages.findIndex((m) => m.id === id);
+      return run(messages.slice(0, index));
+    },
+  };
+}
+
+/** Reads the `data:` events of a server-sent event stream. */
+async function* readEvents(body: ReadableStream<Uint8Array>) {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { value, done } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    let end;
+    while ((end = buffer.indexOf("\n\n")) >= 0) {
+      const event = buffer.slice(0, end);
+      buffer = buffer.slice(end + 2);
+      if (event.startsWith("data:"))
+        yield JSON.parse(event.slice(5)) as StreamEvent;
+    }
+  }
+}
+```
+
+The hook sends earlier answers back as the DIL the model wrote, not as rendered text. The model then sees its own format in the history and keeps using it.
+
+</Step>
+<Step>
+
+### Render each answer with DilRenderer
+
+Wrap `DilRenderer` in a small component for assistant answers. Every message in your list gets its own instance:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { useRef, useState } from "react";
+import { DilRenderer, type DilRendererHandle } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+type AnswerProps = {
+  /** All text received so far for this answer. */
+  text: string;
+  /** True while more text may arrive. */
+  streaming: boolean;
+  /** Only the newest answer follows the stream. */
+  latest: boolean;
+  dark: boolean;
+};
+
+export function Answer({ text, streaming, latest, dark }: AnswerProps) {
+  const renderer = useRef<DilRendererHandle>(null);
+  const [following, setFollowing] = useState(true);
+  return (
+    <div className="answer">
+      <DilRenderer
+        ref={renderer}
+        text={text}
+        isStreaming={streaming}
+        showStatus={false}
+        autoScroll={latest ? { behavior: "smooth", padding: 24 } : false}
+        onFollowChange={setFollowing}
+        appearance={dark ? "dark" : "light"}
+        tokens={{ "--background": "transparent" }}
+      />
+      {latest && streaming && !following && (
+        <button
+          type="button"
+          onClick={() => renderer.current?.resumeAutoScroll()}
+        >
+          Jump to latest
+        </button>
+      )}
+    </div>
+  );
+}
+```
+
+`showStatus={false}` hides the renderer's "Receiving document" and "Complete" label, because your chat shows its own status. The following steps explain the other props.
+
+Where your message list renders an assistant message today, render an `Answer` instead. Key its element by the message id, and pass the text received so far and whether more may arrive:
+
+<Tabs groupId="backend" items={["AI SDK","OpenAI","Anthropic","fetch"]} persist>
+<Tab value="AI SDK">
+
+`message` and `status` come from `useChat`, and `lastId` is `messages.at(-1)?.id`:
+
+```tsx
+<div key={message.id} className="assistant">
+  {message.parts.map((part, index) =>
+    part.type === "text" ? (
+      <Answer
+        key={index}
+        text={part.text}
+        // part.state stays "streaming" after stop() or an error.
+        streaming={
+          part.state === "streaming" &&
+          status === "streaming" &&
+          message.id === lastId
+        }
+        latest={message.id === lastId}
+        dark={dark}
+      />
+    ) : null,
+  )}
+</div>
+```
+
+An AI SDK message can hold several text parts, for example before and after a tool call. Each text part gets its own `Answer`. Render tool parts with your existing components.
+
+</Tab>
+<Tab value="OpenAI">
+
+`message` comes from the hook's `messages`, and `lastId` is `messages.at(-1)?.id`:
+
+```tsx
+<div key={message.id} className="assistant">
+  <Answer
+    text={message.content}
+    streaming={message.status === "streaming"}
+    latest={message.id === lastId}
+    dark={dark}
+  />
+</div>
+```
+
+</Tab>
+<Tab value="Anthropic">
+
+`message` comes from the hook's `messages`, and `lastId` is `messages.at(-1)?.id`:
+
+```tsx
+<div key={message.id} className="assistant">
+  <Answer
+    text={message.content}
+    streaming={message.status === "streaming"}
+    latest={message.id === lastId}
+    dark={dark}
+  />
+</div>
+```
+
+</Tab>
+<Tab value="fetch">
+
+`message` comes from the hook's `messages`, and `lastId` is `messages.at(-1)?.id`:
+
+```tsx
+<div key={message.id} className="assistant">
+  <Answer
+    text={message.content}
+    streaming={message.status === "streaming"}
+    latest={message.id === lastId}
+    dark={dark}
+  />
+</div>
+```
+
+</Tab>
+</Tabs>
+
+These complete chat components show the lines in context, with an input, a Stop button, a truncation notice, and Retry. They import `chat.css` from [step 7](#follow-the-stream-in-a-scrolling-message-list):
+
+<SourceDisclosure label="components/chat.tsx for the AI SDK">
+
+```tsx title="components/chat.tsx"
+"use client";
+import { useState } from "react";
+import { useChat } from "@ai-sdk/react";
+import { Answer } from "./answer";
+import "./chat.css";
+
+export function Chat({ dark = false }: { dark?: boolean }) {
+  const [truncated, setTruncated] = useState<string[]>([]);
+  const { messages, sendMessage, status, stop, regenerate, error } = useChat({
+    onFinish: ({ message, finishReason }) => {
+      if (finishReason === "length")
+        setTruncated((ids) => [...ids, message.id]);
+    },
+  });
+  const [input, setInput] = useState("");
+  const busy = status === "submitted" || status === "streaming";
+  const lastId = messages.at(-1)?.id;
+
+  return (
+    <div className="chat">
+      <div className="messages">
+        {messages.map((message) => (
+          <div key={message.id} className={message.role}>
+            {message.parts.map((part, index) => {
+              if (part.type !== "text") return null;
+              if (message.role === "user")
+                return <p key={index}>{part.text}</p>;
+              return (
+                <Answer
+                  key={index}
+                  text={part.text}
+                  // part.state stays "streaming" after stop() or an error.
+                  streaming={
+                    part.state === "streaming" &&
+                    status === "streaming" &&
+                    message.id === lastId
+                  }
+                  latest={message.id === lastId}
+                  dark={dark}
+                />
+              );
+            })}
+            {truncated.includes(message.id) && (
+              <p>The answer reached the output limit and may be incomplete.</p>
+            )}
+          </div>
+        ))}
+        {error && (
+          <p role="alert">
+            The answer failed.{" "}
+            <button type="button" onClick={() => regenerate()}>
+              Retry
+            </button>
+          </p>
+        )}
+      </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!input.trim() || busy) return;
+          sendMessage({ text: input });
+          setInput("");
+        }}
+      >
+        <input
+          aria-label="Message"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+        />
+        {busy ? (
+          <button type="button" onClick={() => stop()}>
+            Stop
+          </button>
+        ) : (
+          <button type="submit">Send</button>
+        )}
+      </form>
+    </div>
+  );
+}
+```
+
+</SourceDisclosure>
+
+<SourceDisclosure label="components/chat.tsx for OpenAI, Anthropic, and fetch">
+
+```tsx title="components/chat.tsx"
+"use client";
+import { useState } from "react";
+import { Answer } from "./answer";
+import "./chat.css";
+import { useChatStream } from "./use-chat-stream";
+
+export function Chat({ dark = false }: { dark?: boolean }) {
+  const { messages, streaming, send, stop, retry } = useChatStream();
+  const [input, setInput] = useState("");
+  const lastId = messages.at(-1)?.id;
+
+  return (
+    <div className="chat">
+      <div className="messages">
+        {messages.map((message) => (
+          <div key={message.id} className={message.role}>
+            {message.role === "user" ? (
+              <p>{message.content}</p>
+            ) : (
+              <Answer
+                text={message.content}
+                streaming={message.status === "streaming"}
+                latest={message.id === lastId}
+                dark={dark}
+              />
+            )}
+            {message.status === "truncated" && (
+              <p>The answer reached the output limit and may be incomplete.</p>
+            )}
+            {message.status === "error" && (
+              <p role="alert">
+                The answer failed.{" "}
+                <button type="button" onClick={() => retry(message.id)}>
+                  Retry
+                </button>
+              </p>
+            )}
+          </div>
+        ))}
+      </div>
+      <form
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!input.trim() || streaming) return;
+          send(input);
+          setInput("");
+        }}
+      >
+        <input
+          aria-label="Message"
+          value={input}
+          onChange={(event) => setInput(event.target.value)}
+        />
+        {streaming ? (
+          <button type="button" onClick={stop}>
+            Stop
+          </button>
+        ) : (
+          <button type="submit">Send</button>
+        )}
+      </form>
+    </div>
+  );
+}
+```
+
+</SourceDisclosure>
+
+Three rules keep each answer correct:
+
+- **One renderer per answer, keyed by message id.** A retried or regenerated answer is a new message with a new id, so it gets a fresh renderer. Never reuse a renderer for different text: `text` may only grow, and it may not change after `isStreaming` turns `false`.
+- **Pass all the text received so far.** Pass the accumulated message text, not the latest chunk.
+- **Render user messages as plain text.** They are not DIL, and the reader expects to see exactly what they typed.
+
+Answers without any DIL tags render as ordinary Markdown in the same renderer, including code blocks and inline code. Your model can mix both freely; [Prompting and evaluation](/docs/prompting/#decide-when-the-model-should-use-ui) shows how to steer when it uses components.
+
+Mount the chat on a page. In Next.js, render `<Chat />` from `app/page.tsx`; in Vite, from `src/App.tsx`.
+
+</Step>
+<Step>
+
+### Finish each answer at the right time
+
+`isStreaming` tells the renderer whether more text may arrive. Set it to `false` once, when the answer ends for any reason: it finished, the reader stopped it, or the stream failed. The renderer then completes the answer and stops its parser. An answer that never gets `isStreaming={false}` keeps waiting for text.
+
+With the AI SDK, `part.state` alone is not enough. It stays `"streaming"` after `stop()` or a stream error. The chat component therefore also requires that the chat is still streaming and that the part belongs to the newest message:
+
+```tsx
+streaming={
+  part.state === "streaming" &&
+  status === "streaming" &&
+  message.id === lastId
+}
+```
+
+With the hook, a message leaves the `"streaming"` status when its request ends, whether it finished, failed, or was stopped.
+
+When an answer ends in the middle of a DIL structure, for example inside an open `<box>`, the renderer keeps everything that was complete. It leaves out the unfinished tag or expression and adds the note "This response ended before it was finished.", also when `showStatus` is `false`.
+
+To record what went wrong, pass `onError` to `DilRenderer`. It receives each problem once, with a `kind` of `"incomplete"`, `"syntax"`, `"runtime"`, `"limit"`, or `"source"` and a developer-facing `message`. Send it to your telemetry; `logAnswerProblem` stands for your own function:
+
+```tsx
+<DilRenderer
+  text={text}
+  isStreaming={streaming}
+  onError={(error) => logAnswerProblem(error.kind, error.message)}
+/>
+```
+
+OpenDIL already logs syntax problems and unfinished answers to the console with `console.warn`. Readers see short, generic wording instead of these messages. [DilRenderer](/docs/renderer/) describes every field.
+
+</Step>
+<Step>
+
+### Handle stop, truncation, errors, and retry
+
+- **Stop.** The Stop button aborts the browser request. The server route forwards `req.signal` to the provider, so the provider stops generating too. The answer keeps what arrived.
+- **Truncation.** When the model reaches its output limit, the provider reports it: OpenAI's `finish_reason` is `"length"`, Anthropic's `stop_reason` is `"max_tokens"`, and the AI SDK's `finishReason` is `"length"`. The answer may be incomplete, so the chat shows its own notice. Raise the output limit if this happens often.
+- **Errors.** A failed request shows your own error row with a Retry button. Errors inside an answer, such as malformed DIL, show in place in that answer and reach `onError`.
+- **Retry.** `regenerate()` in the AI SDK and `retry(id)` in the hook replace the answer with a new message. Its new id gives it a new renderer.
+
+</Step>
+<Step>
+
+### Follow the stream in a scrolling message list
+
+Most chats scroll a message list, not the whole page. Give the list a fixed height and `overflow-y: auto`. The complete chat components above import this file:
+
+```css title="components/chat.css"
+.chat {
+  display: flex;
+  flex-direction: column;
+  height: 100dvh;
+}
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+}
+```
+
+The renderer detects that the list scrolls it, also when the list starts short and overflows later. `autoScroll` then follows the answer inside the list, and long lists in the answer mount their rows as the list scrolls.
+
+The `Answer` component enables `autoScroll` only for the newest message, so older answers never move the list. When the reader scrolls up to read, the renderer pauses following and calls `onFollowChange(false)`; the "Jump to latest" button then calls `resumeAutoScroll()` on the renderer's ref.
+
+If the renderer picks the wrong element, for example a wrapper that does not scroll, pass the list with `scrollContainer`:
+
+```tsx
+<DilRenderer text={text} isStreaming={streaming} scrollContainer={listRef} />
+```
+
+[Follow inside a scrolling message list](/docs/streaming/#follow-inside-a-scrolling-message-list) in Streaming explains how the renderer detects the list, what pauses following, and every `scrollContainer` value.
+
+</Step>
+<Step>
+
+### Match your app's theme
+
+`appearance` switches the built-in components between `"light"` and `"dark"`, in every rendering mode. Pass your app's current theme, for example from `next-themes` or your own theme state. `tokens` sets theme variables: `--background: transparent` lets your message bubble show behind the answer. Set colors such as `--primary` the same way.
+
+```tsx
+<DilRenderer
+  text={text}
+  appearance={dark ? "dark" : "light"}
+  tokens={{ "--background": "transparent", "--primary": "#5e4cff" }}
+/>
+```
+
+Changing either prop updates the answer without reloading it. [Theming](/docs/theming/) lists the tokens and the class and Tailwind CSS options.
+
+</Step>
+<Step>
+
+### Strip a code fence the model added
+
+The agent spec tells the model not to wrap its answer in a code fence. Some models do it anyway, and the reader then sees DIL source in a code block instead of an interface. This helper removes one ` ```dil ` fence around the answer. It keeps the text append-only: while the answer streams, a line that starts with a backtick waits until it is complete.
+
+````ts title="components/unwrap-dil-fence.ts"
+/**
+ * Removes one ```dil code fence that a model wrapped around its answer.
+ * The result only grows as `text` grows, so you can pass it to DilRenderer
+ * while the answer streams: a line that starts with a backtick waits until
+ * it is complete.
+ */
+export function unwrapDilFence(text: string, done: boolean) {
+  const lines = (done ? text + "\n" : text).split("\n");
+  const last = lines.pop() ?? ""; // The line that may still be arriving.
+  const kept: string[] = [];
+  let state: "before" | "inside" | "after" = "before";
+  for (const line of lines) {
+    if (state === "before" && /^```dil\s*$/.test(line)) state = "inside";
+    else if (state === "before" && line.startsWith("```")) {
+      // Other code comes first: the answer is ordinary Markdown.
+      state = "after";
+      kept.push(line);
+    } else if (state === "inside" && /^```\s*$/.test(line)) state = "after";
+    else kept.push(line);
+  }
+  const head = kept.map((line) => line + "\n").join("");
+  return state === "after" || !last.startsWith("`") ? head + last : head;
+}
+````
+
+Apply it in `Answer`: `text={unwrapDilFence(text, !streaming)}`. Leave it out if your readers may ask to see DIL source, which the model then shows in a fence on purpose.
+
+</Step>
+</Steps>
+
+## Let readers reply from an answer
+
+What a reader does inside an answer stays in that answer: moving a slider changes the answer's own state, and OpenDIL does not report it to your app. `onInput` and `onCommit` report rendering progress, not reader input. `onInput` runs when the renderer receives new text, and `onCommit` when it has applied it.
+
+To pass a reader's choice back to the model, use one of these:
+
+- **A follow-up message.** The reader writes what they chose. This works in every mode.
+- **`GenUI.copy`.** A button in the answer copies text, such as a configuration, for the reader to paste. See [Clipboard](/docs/security/#clipboard).
+- **A custom component** in Shadow DOM or host mode. Your own React component can call your chat's send function.
+
+This `Reply` component sends its `text` attribute as the reader's next message. The model writes both the attribute and anything between the tags, so the button ignores its children and shows exactly the text it sends. A confused or manipulated answer then cannot label a button one way and send something else in the reader's name:
+
+```tsx title="components/reply.tsx"
+"use client";
+import { createContext, useContext } from "react";
+import type { DilComponentProps } from "@snackbit/opendil";
+
+/** Your chat provides its send function to every answer. */
+export const SendReply = createContext<(text: string) => void>(() => {});
+
+/** <Reply text="…"/> shows `text` and sends it as the reader's next message. */
+function Reply({ attributes, ready }: DilComponentProps) {
+  const send = useContext(SendReply);
+  const text =
+    typeof attributes.text === "string" ? attributes.text.trim() : "";
+  const valid = text.length > 0 && text.length <= 500;
+  return (
+    <button
+      type="button"
+      disabled={!ready || !valid}
+      onClick={() => send(text)}
+    >
+      {valid ? text : "Reply"}
+    </button>
+  );
+}
+
+export const components = { Reply };
+```
+
+Render answers with `mode="shadow"` and `components={components}`, and wrap the message list in `<SendReply value={send}>`, using `sendMessage({ text })` from `useChat` or `send` from the hook. The answer can then fill the text from its own state:
+
+```dil title="reply.dil"
+{@body const [seats, setSeats] = DIL.useState(8)}
+<slider aria-label="Seats" min={1} max={50} value={seats} onChange={setSeats}/>
+<Reply text={"Book " + seats + " seats"}/>
+```
+
+The model only uses `Reply` when your system prompt describes it. [Custom components](/docs/custom-components/#tell-the-model-about-your-components) shows how to write that contract, and what custom components may and may not do.
+
+## Use Shadow DOM or host mode
+
+The default iframe mode needs only one thing from your page's Content Security Policy: permission to load the frame, through `frame-src` or `default-src`. It cannot render your own React components. Pass `mode="shadow"` or `mode="host"` when you need them, or when you do not want an iframe per answer. These modes run with your page's privileges and need two CSP directives if your page sends a policy: `worker-src blob:` and `script-src 'wasm-unsafe-eval'`.
+
+Their code loads the first time a page renders one of them, and until then the answer renders nothing. Start loading it early at module scope in your chat component:
+
+```tsx
+import { preloadHostRenderer } from "@snackbit/opendil";
+
+// A failed load is retried when an answer first renders in these modes.
+preloadHostRenderer().catch(() => {});
+```
+
+[Preload host and Shadow DOM code](/docs/rendering-modes/#preload-host-and-shadow-dom-code) explains the loading behavior, and [Rendering modes](/docs/rendering-modes/) compares the modes and shows the setup for each.
+
+## Recap
+
+- Load the system prompt from `@snackbit/opendil/agent-spec` on your server, spec first, your instructions after it.
+- Render one `DilRenderer` per answer, keyed by the message id, with all the text received so far.
+- Set `isStreaming={false}` when the answer finishes, is stopped, or fails. With the AI SDK, also check the chat `status`.
+- Follow only the newest answer; the renderer finds your scrolling message list.
+- Pass `showStatus={false}` and your app's `appearance` in chat interfaces.
+
+## Next steps
+
+<Cards>
+  <Card title="Streaming" href="/docs/streaming/" description="Fade in new content, follow the stream, and control update frequency." />
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose iframe, Shadow DOM, or host rendering and set up CSP for production." />
+  <Card title="Prompting and evaluation" href="/docs/prompting/" description="Tune the system prompt and test the answers your model writes." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/" description="Fix empty frames, unfinished answers, and answers that show code." />
+</Cards>

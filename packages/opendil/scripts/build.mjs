@@ -6,6 +6,7 @@ import {
   rm,
   copyFile,
   mkdtemp,
+  readdir,
 } from "node:fs/promises";
 import { execFileSync } from "node:child_process";
 import { publishDirectory } from "../bin/publish-directory.mjs";
@@ -14,10 +15,34 @@ import { createHash } from "node:crypto";
 import postcss from "postcss";
 import tailwind from "@tailwindcss/postcss";
 const require = createRequire(import.meta.url);
+async function fixDeclarationImports(directory) {
+  for (const entry of await readdir(directory, { withFileTypes: true })) {
+    const path = directory + "/" + entry.name;
+    if (entry.isDirectory()) {
+      await fixDeclarationImports(path);
+    } else if (entry.name.endsWith(".d.ts")) {
+      const source = await readFile(path, "utf8");
+      const updated = source.replace(
+        /((?:from\s+|import\s*\()\s*["'])(\.{1,2}\/[^"']+)(["'])/g,
+        (match, prefix, specifier, quote) =>
+          /\.(?:js|mjs|cjs|json)$/.test(specifier)
+            ? match
+            : prefix + specifier + ".js" + quote,
+      );
+      if (updated !== source) await writeFile(path, updated);
+    }
+  }
+}
+const agentSpecFiles = {
+  PRIMARY: "genui.agent.md",
+  FULL: "genui.agent.full.md",
+  EXAMPLES: "genui.examples.md",
+};
 await mkdir(".tmp", { recursive: true });
 const staging = await mkdtemp(".tmp/build-");
 try {
-  await mkdir(staging + "/runtime", { recursive: true });
+  for (const directory of ["runtime", "spec", "test"])
+    await mkdir(staging + "/" + directory, { recursive: true });
   const options = {
     bundle: true,
     platform: "browser",
@@ -42,8 +67,13 @@ try {
   const define = {
     __DIL_VM_WORKER__: JSON.stringify(vm.outputFiles[0].text),
     __DIL_PARSER_WORKER__: JSON.stringify(parser.outputFiles[0].text),
+    // The frame announces this version so renderers can detect stale copied assets.
+    __DIL_VERSION__: JSON.stringify(
+      JSON.parse(await readFile("package.json", "utf8")).version,
+    ),
   };
-  await writeFile(staging + "/runtime/vm.js", vm.outputFiles[0].text);
+  // Unit tests run the standalone worker; renderers embed it, so it is not a runtime asset.
+  await writeFile(staging + "/test/vm.js", vm.outputFiles[0].text);
   const frame = await build({
     ...options,
     format: "iife",
@@ -77,8 +107,11 @@ try {
   const css = scoped.toString();
   define.__DIL_STYLES__ = JSON.stringify(css);
   await writeFile(staging + "/styles.css", css);
+  // Until frame.js runs, the loader pings the renderer every second so a slow
+  // download is not reported as a missing runtime, and reports a frame.js that
+  // failed to load. Its hash below must cover the exact text.
   const loader =
-    'const script=document.createElement("script");script.src=new URL("./frame.js",location.href).href;document.head.append(script);';
+    '{let status="dil-loading";const ping=()=>parent.postMessage({type:status},"*");ping();const timer=setInterval(ping,1000);const script=document.createElement("script");script.src=new URL("./frame.js",location.href).href;script.onload=()=>clearInterval(timer);script.onerror=()=>{status="dil-failed";ping()};document.head.append(script)}';
   const hash = createHash("sha256").update(loader).digest("base64");
   const csp = `default-src 'none'; script-src 'sha256-${hash}' 'strict-dynamic' 'wasm-unsafe-eval'; style-src 'unsafe-inline'; worker-src blob:; child-src blob:; connect-src 'none'; img-src data:; font-src data:; base-uri 'none'; form-action 'none'; object-src 'none'`;
   await writeFile(
@@ -98,6 +131,28 @@ try {
     define,
     banner: { js: '"use client";' },
   });
+  // spec/ stays canonical; the package ships copies that version with the renderer.
+  const specs = {};
+  for (const [name, file] of Object.entries(agentSpecFiles)) {
+    specs[name] = await readFile("../../spec/" + file, "utf8");
+    await writeFile(staging + "/spec/" + file, specs[name]);
+  }
+  // A separate, dependency-free entry keeps the specs out of browser renderer bundles.
+  await build({
+    ...options,
+    write: true,
+    platform: "neutral",
+    format: "esm",
+    minify: false,
+    entryPoints: ["src/agent-spec.ts"],
+    outfile: staging + "/agent-spec.js",
+    define: Object.fromEntries(
+      Object.entries(specs).map(([name, text]) => [
+        "__DIL_AGENT_SPEC_" + name + "__",
+        JSON.stringify(text),
+      ]),
+    ),
+  });
   await copyFile("../../LICENSE", "LICENSE");
   await copyFile("../../README.md", "README.md");
   await copyFile("../../THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md");
@@ -112,6 +167,7 @@ try {
     ],
     { stdio: "inherit" },
   );
+  await fixDeclarationImports(staging + "/types");
   await publishDirectory(staging, "dist");
 } finally {
   await rm(staging, { recursive: true, force: true });

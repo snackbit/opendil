@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { act, createElement, useRef } from "react";
+import { act, createElement, StrictMode, useRef } from "react";
 import { createRoot } from "react-dom/client";
 import { RevealController } from "../../../packages/opendil/src/dil/view/reveal/controller";
 import { PresentationHistory } from "../../../packages/opendil/src/dil/runtime/presentation-history";
@@ -15,8 +15,10 @@ import {
   revealDelay,
   useProgressiveReveal,
 } from "../../../packages/opendil/src/dil/view/progressive-reveal";
-import { RendererEnvironmentContext } from "../../../packages/opendil/src/dil/renderer-environment";
+import type { RendererViewport } from "../../../packages/opendil/src/dil/renderer-environment";
 import { DilDocument } from "../../../packages/opendil/src/dil/runtime/document";
+import { FrameViewportReporter } from "../../../packages/opendil/src/dil/isolation/frame-viewport";
+import { ScrollRootTracker } from "../../../packages/opendil/src/dil/view/scroll/root-tracker";
 interface TestAnimation {
   cancel: () => void;
   onfinish: (() => void) | null;
@@ -297,14 +299,21 @@ it("attaches the lifecycle to committed messages and their actual viewport", asy
     active,
     empty,
     id,
+    viewport,
   }: {
     present: boolean;
     active: boolean;
     empty: boolean;
     id: string;
+    viewport?: RendererViewport;
   }) {
     const ref = useRef<HTMLDivElement>(null);
-    const reveal = useProgressiveReveal(ref, active, empty ? null : model);
+    const reveal = useProgressiveReveal(
+      ref,
+      active,
+      empty ? null : model,
+      viewport,
+    );
     return present
       ? createElement(
           "div",
@@ -352,29 +361,130 @@ it("attaches the lifecycle to committed messages and their actual viewport", asy
     ),
   );
   paint();
-  const viewport = {
+  // The iframe runtime's viewport: offsets from the frame top, which does not scroll.
+  const viewport: RendererViewport = {
     offset: 0,
-    revision: 1,
     height: 900,
     width: 1250,
-    listeners: new Set<() => void>(),
+    origin: () => 0,
+    subscribe: () => () => {},
+    scrollTo() {},
   };
   await act(() =>
     reactRoot.render(
-      createElement(
-        RendererEnvironmentContext.Provider,
-        { value: { viewport } },
-        createElement(Probe, {
-          key: "d",
-          present: true,
-          active: true,
-          empty: false,
-          id: "d",
-        }),
-      ),
+      createElement(Probe, {
+        key: "d",
+        present: true,
+        active: true,
+        empty: false,
+        id: "d",
+        viewport,
+      }),
     ),
   );
   paint();
   await act(() => reactRoot.unmount());
   model.engine.dispose();
+});
+it("reveals first-mount and later targets when React replays effects", async () => {
+  vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+  const model = new DilDocument();
+  function Item({ id }: { id: string }) {
+    const ref = usePresentationTarget(id);
+    return createElement("p", { ref, id }, id);
+  }
+  function Renderer({ ids }: { ids: string[] }) {
+    const ref = useRef<HTMLDivElement>(null);
+    const reveal = useProgressiveReveal(ref, true, model);
+    return createElement(
+      "div",
+      { ref },
+      createElement(
+        RevealContext.Provider,
+        { value: reveal },
+        ids.map((id) => createElement(Item, { key: id, id })),
+      ),
+    );
+  }
+  // StrictMode detaches and reattaches refs and layout effects of every new fiber.
+  const reactRoot = createRoot(root);
+  const render = (ids: string[]) =>
+    act(() =>
+      reactRoot.render(
+        createElement(StrictMode, null, createElement(Renderer, { ids })),
+      ),
+    );
+  const item = (id: string) => root.querySelector<HTMLElement>("#" + id)!;
+  await render(["first"]);
+  expect(item("first").style.opacity).toBe("0");
+  paint();
+  expect(animations).toHaveLength(1);
+  expect(item("first").dataset.dilPhase).toBe("revealing");
+  animations[0]?.onfinish?.();
+  // Content that arrives later, such as streamed blocks or action results.
+  await render(["first", "later"]);
+  paint();
+  expect(animations).toHaveLength(2);
+  expect(item("later").inert).toBe(true);
+  animations[1]?.onfinish?.();
+  expect(item("later").style.opacity).toBe("");
+  expect(item("later").inert).toBe(false);
+  // Revealed blocks keep their history when their view is replaced.
+  await render([]);
+  await render(["first", "later"]);
+  paint();
+  expect(animations).toHaveLength(2);
+  expect(item("first").dataset.dilPhase).toBe("visible");
+  await act(() => reactRoot.unmount());
+});
+it("reveals the first screen of an iframe whose height trails its content", () => {
+  // The content-sized iframe starts 0 px tall, 100 px below the window top.
+  const frame = document.createElement("div") as unknown as HTMLIFrameElement;
+  root.append(frame);
+  frame.getBoundingClientRect = () => new DOMRect(0, 100, 500, 0);
+  const post = vi.fn();
+  const reporter = new FrameViewportReporter(
+    frame,
+    new ScrollRootTracker(),
+    post,
+  );
+  expect(post).toHaveBeenLastCalledWith(
+    expect.objectContaining({ offset: 0, height: innerHeight - 100 }),
+  );
+  // A leading heading sizes the frame to 20 px before the blocks under it
+  // arrive; content added below its bottom still lands in the visible part.
+  frame.getBoundingClientRect = () => new DOMRect(0, 100, 500, 20);
+  window.dispatchEvent(new Event("resize"));
+  expect(post).toHaveBeenLastCalledWith(
+    expect.objectContaining({ offset: 0, height: innerHeight - 100 }),
+  );
+  // A frame scrolled out above the window shows nothing.
+  frame.getBoundingClientRect = () => new DOMRect(0, -100, 500, 20);
+  window.dispatchEvent(new Event("resize"));
+  expect(post).toHaveBeenLastCalledWith(
+    expect.objectContaining({ offset: 100, height: 0 }),
+  );
+  frame.getBoundingClientRect = () => new DOMRect(0, 100, 500, 20);
+  window.dispatchEvent(new Event("resize"));
+  // The frame's next commit sees that viewport, as frame.tsx records it.
+  const { offset, height } = post.mock.lastCall![0];
+  dispose();
+  controller = new RevealController(new PresentationHistory(), () => ({
+    top: offset,
+    bottom: offset + height,
+  }));
+  controller.configure({ staggerMs: 50, durationMs: 180 });
+  dispose = controller.start();
+  const [below, offscreen] = [400, innerHeight + 200].map((top, index) => {
+    const element = document.createElement("div");
+    root.append(element);
+    element.getBoundingClientRect = () => new DOMRect(0, top, 500, 40);
+    controller.register("block:" + index, element, true, false);
+    return element;
+  });
+  paint();
+  expect(animations).toHaveLength(1);
+  expect(below?.dataset.dilPhase).toBe("revealing");
+  expect(offscreen?.dataset.dilPhase).toBe("visible");
+  reporter.dispose();
 });

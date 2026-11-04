@@ -1,140 +1,177 @@
 "use client";
-import { lazy, Suspense, useMemo, type Ref } from "react";
+import { Suspense, use, type Ref } from "react";
 import type { DilRendererHandle } from "./renderer-handle";
-import { CustomizationContext, type DilCustomization } from "./customization";
-import { MessageRenderer } from "./message-renderer";
+import type { DilCustomization } from "./customization";
 import { IsolatedRenderer } from "./isolation/isolated-renderer";
-import {
-  RendererEnvironmentContext,
-  type RendererMetrics,
-} from "./renderer-environment";
-import { UiScope } from "../components/ui/overlays/ui-scope";
+import type { RendererMetrics } from "./renderer-environment";
+import type { DilRenderError } from "./render-error";
 import type { ProgressiveReveal } from "./view/reveal-options";
-import type { AutoScroll } from "./view/scroll-options";
+import type { AutoScroll, ScrollContainer } from "./view/scroll-options";
 import {
   parseUpdateInterval,
   type UpdateInterval,
 } from "./runtime/presentation-scheduler";
-const ShadowRenderer = lazy(() =>
-  import("./isolation/shadow-renderer").then((module) => ({
-    default: module.ShadowRenderer,
-  })),
-);
+import type * as StyledRendererModule from "./styled-renderer";
+
+// The iframe mode needs only the frame bridge. Host and Shadow DOM modes embed
+// the parser and QuickJS workers, so pages that never use them never load them.
+type StyledModule = typeof StyledRendererModule;
+// React's use() returns the value of a promise marked as fulfilled without
+// suspending, so a loaded module renders synchronously on every later render.
+let styledLoad: Promise<StyledModule> | undefined;
+function loadStyledRenderer() {
+  if (!styledLoad) {
+    const load: Promise<StyledModule> = import("./styled-renderer").then(
+      (module) => {
+        Object.assign(load, { status: "fulfilled", value: module });
+        return module;
+      },
+      (error: unknown) => {
+        // A later render retries a chunk that failed to load.
+        styledLoad = undefined;
+        throw error;
+      },
+    );
+    styledLoad = load;
+  }
+  return styledLoad;
+}
+/**
+ * Starts loading the code that `mode="host"` and `mode="shadow"` share. Once
+ * it resolves, those modes render synchronously: their `ref` is set in the
+ * first commit and `renderToString` includes them.
+ */
+export async function preloadHostRenderer(): Promise<void> {
+  await loadStyledRenderer();
+}
+/** Suspends only while the shared host and Shadow DOM code loads. */
+function StyledRenderer(props: StyledRendererModule.StyledRendererProps) {
+  // Call use() on every render: React rejects a component that stops calling
+  // use() after it suspended on it.
+  const module = use(loadStyledRenderer());
+  return <module.StyledRenderer {...props} />;
+}
 
 interface DilCommonProps {
   ref?: Ref<DilRendererHandle> | undefined;
   /** Append-only source prefix. Remount with a new key to replace it. */
   text: string;
   isStreaming?: boolean;
-  /** Show the receiving/completion label without affecting errors. */
+  /**
+   * Show the "Receiving document", "Incomplete" or "Complete" label. Errors
+   * and the note that a response ended early stay visible when false.
+   */
   showStatus?: boolean;
   /** Stagger newly shown blocks; disabled by default and under reduced motion. */
   progressiveReveal?: ProgressiveReveal;
   autoScroll?: AutoScroll;
+  /**
+   * What scrolls around the renderer, for `autoScroll` and for virtualized
+   * long content. Defaults to `"auto"`: the nearest ancestor that scrolls
+   * vertically, crossing Shadow DOM boundaries, or the window when none does.
+   * Pass `"window"`, an element, or a ref to an element to choose one.
+   */
+  scrollContainer?: ScrollContainer | undefined;
   /** Maximum streaming presentation frequency; user interaction remains immediate. */
   updateInterval?: UpdateInterval;
+  /** Color scheme of the stock components. Defaults to "light". */
+  appearance?: "light" | "dark" | undefined;
+  /**
+   * CSS custom properties applied to the renderer root, such as `--primary` or
+   * `--background`. The iframe mode accepts only values that cannot load
+   * resources and ignores the rest with a console warning.
+   */
+  tokens?: Readonly<Record<`--${string}`, string>> | undefined;
+  /**
+   * URL of the directory that serves frame.html. Defaults to "/opendil/". Only
+   * the iframe mode loads it; host and Shadow DOM modes ignore it, so a mode
+   * chosen at runtime can always pass the app's runtime location.
+   */
+  runtimeBaseUrl?: string | undefined;
   onFollowChange?: (following: boolean) => void;
   onInput?: (detail: { length: number }) => void;
   onCommit?: (detail: RendererMetrics) => void;
+  /**
+   * Receives each distinct problem once, with a developer-facing message and,
+   * for parse problems, the offset in `text`. Readers see short generic
+   * wording instead. Syntax problems and documents that ended with unfinished
+   * structure are also logged with `console.warn`. One message reports at most
+   * 20 problems, then one `limit` error; the `incomplete` report always
+   * arrives. An exception thrown here is rethrown asynchronously and does not
+   * interrupt rendering.
+   */
+  onError?: ((error: DilRenderError) => void) | undefined;
 }
 export interface DilIsolatedRendererProps extends DilCommonProps {
-  mode?: "isolated";
-  runtimeBaseUrl?: string;
-  components?: never;
-  componentConfig?: never;
-  classNames?: never;
-  slots?: never;
-  tokens?: never;
-  className?: never;
-  appearance?: never;
-  shadowStyles?: never;
+  mode?: "isolated" | undefined;
+  components?: undefined;
+  componentConfig?: undefined;
+  classNames?: undefined;
+  slots?: undefined;
+  className?: undefined;
+  shadowStyles?: undefined;
 }
 interface DilStyledRendererProps extends DilCommonProps, DilCustomization {
-  runtimeBaseUrl?: never;
-  className?: string;
-  tokens?: Readonly<Record<`--${string}`, string>>;
-  appearance?: "light" | "dark";
+  className?: string | undefined;
 }
 export interface DilHostRendererProps extends DilStyledRendererProps {
   mode: "host";
-  shadowStyles?: never;
+  shadowStyles?: undefined;
 }
 export interface DilShadowRendererProps extends DilStyledRendererProps {
   mode: "shadow";
   /** Trusted application CSS installed inside this renderer's ShadowRoot. */
-  shadowStyles?: string;
+  shadowStyles?: string | undefined;
 }
 export type DilRendererProps =
   DilIsolatedRendererProps | DilHostRendererProps | DilShadowRendererProps;
+const styledOnly = [
+  "components",
+  "componentConfig",
+  "classNames",
+  "slots",
+  "className",
+  "shadowStyles",
+] as const;
 export function DilRenderer(props: DilRendererProps) {
   const updateInterval = parseUpdateInterval(props.updateInterval);
-  const environment = useMemo(
-    () => ({
-      ...(props.onInput ? { onInput: props.onInput } : {}),
-      ...(props.onCommit ? { onCommit: props.onCommit } : {}),
-    }),
-    [props.onInput, props.onCommit],
-  );
-  const customization = useMemo(
-    () => ({
-      ...(props.components ? { components: props.components } : {}),
-      ...(props.componentConfig
-        ? { componentConfig: props.componentConfig }
-        : {}),
-      ...(props.classNames ? { classNames: props.classNames } : {}),
-      ...(props.slots ? { slots: props.slots } : {}),
-    }),
-    [props.components, props.componentConfig, props.classNames, props.slots],
-  );
   if (props.mode !== "host" && props.mode !== "shadow") {
-    if (
-      [
-        "components",
-        "componentConfig",
-        "classNames",
-        "slots",
-        "tokens",
-        "className",
-        "appearance",
-        "shadowStyles",
-      ].some((key) => key in props)
-    )
+    // Untyped callers can still pass these; undefined means "not set".
+    const unsupported = styledOnly.filter((key) => props[key] !== undefined);
+    if (unsupported.length)
       throw new Error(
-        'OpenDIL customization requires mode="host" or mode="shadow".',
+        `OpenDIL customization (${unsupported.join(", ")}) requires mode="host" or mode="shadow".`,
       );
     return <IsolatedRenderer {...props} updateInterval={updateInterval} />;
   }
-  const content = (
-    <UiScope
-      {...(props.className ? { className: props.className } : {})}
-      appearance={props.appearance ?? "light"}
-      {...(props.tokens ? { tokens: props.tokens } : {})}
-    >
-      <MessageRenderer
-        updateInterval={updateInterval}
+  // The boundary stays in place after the code loads, so the tree keeps its
+  // shape and hydration matches the server. It also catches custom components
+  // that suspend; wrap those in your own Suspense to show a fallback.
+  return (
+    <Suspense fallback={null}>
+      <StyledRenderer
+        mode={props.mode}
+        rendererRef={props.ref}
         text={props.text}
         isStreaming={props.isStreaming ?? false}
         showStatus={props.showStatus ?? true}
         progressiveReveal={props.progressiveReveal ?? false}
         autoScroll={props.autoScroll ?? false}
+        scrollContainer={props.scrollContainer}
+        updateInterval={updateInterval}
         onFollowChange={props.onFollowChange}
-        rendererRef={props.ref}
+        onInput={props.onInput}
+        onCommit={props.onCommit}
+        onError={props.onError}
+        components={props.components}
+        componentConfig={props.componentConfig}
+        classNames={props.classNames}
+        slots={props.slots}
+        className={props.className}
+        appearance={props.appearance ?? "light"}
+        tokens={props.tokens}
+        shadowStyles={props.mode === "shadow" ? props.shadowStyles : undefined}
       />
-    </UiScope>
-  );
-  return (
-    <RendererEnvironmentContext.Provider value={environment}>
-      <CustomizationContext.Provider value={customization}>
-        {props.mode === "shadow" ? (
-          <Suspense fallback={null}>
-            <ShadowRenderer shadowStyles={props.shadowStyles}>
-              {content}
-            </ShadowRenderer>
-          </Suspense>
-        ) : (
-          <div data-dil-mode="host">{content}</div>
-        )}
-      </CustomizationContext.Provider>
-    </RendererEnvironmentContext.Provider>
+    </Suspense>
   );
 }

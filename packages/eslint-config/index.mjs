@@ -11,7 +11,7 @@ export default [
       "**/dist/**",
       "**/coverage/**",
       "**/.next/**",
-      "**/.astro/**",
+      "**/.tmp/**",
       "**/public/opendil/**",
       "**/public/dil-runtime/**",
       "**/test-results/**",

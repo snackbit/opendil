@@ -1,0 +1,277 @@
+---
+title: React UI exports
+description: "Use OpenDIL's React primitives, such as Button, Select, Tabs, and UiScope, in your app and in custom components."
+---
+
+`@snackbit/opendil/ui` exports the React components that OpenDIL's built-in components are made of, styled like generated answers. Use them for app controls next to answers, such as a toolbar, and inside your [custom components](/docs/custom-components/). They are React components, not DIL tags: a model can use one only through a custom component you register that wraps it.
+
+```tsx title="components/answer-toolbar.tsx"
+"use client";
+import { Button, Tooltip, UiScope } from "@snackbit/opendil/ui";
+import "@snackbit/opendil/styles.css";
+
+interface AnswerToolbarProps {
+  dark: boolean;
+  onRetry: () => void;
+}
+
+export function AnswerToolbar({ dark, onRetry }: AnswerToolbarProps) {
+  return (
+    <UiScope appearance={dark ? "dark" : "light"}>
+      <Tooltip label="Ask the model again">
+        <Button variant="outline" size="sm" onClick={onRetry}>
+          Retry
+        </Button>
+      </Tooltip>
+    </UiScope>
+  );
+}
+```
+
+## UiScope
+
+`UiScope` applies OpenDIL's styles, appearance, and tokens to the components inside it. Wrap every group of these components in your app with one; the styles apply only inside a `.dil-scope` element.
+
+| Prop         | Type                                        | Default   | Description                                                      |
+| ------------ | ------------------------------------------- | --------- | ---------------------------------------------------------------- |
+| `appearance` | `"light" \| "dark"`                         | `"light"` | Color scheme, as on `DilRenderer`. Also sets `color-scheme`      |
+| `tokens`     | ``Readonly<Record<`--${string}`, string>>`` |           | CSS custom properties, such as `--primary`, set as inline styles |
+| `boundary`   | `Element`                                   |           | Element that popovers and tooltips stay inside when they flip    |
+| other props  | `<section>` props                           |           | `className`, `style`, `aria-label`, and so on                    |
+
+`UiScope` renders a `<section class="dil-scope">` and, at its end, a container for overlays. `Tooltip`, `PopoverContent`, and `SelectPortal` render into that container instead of `document.body`, so open overlays keep the scope's styles and appearance.
+
+- When you set colors only through `tokens`, pass `appearance` too, or set `color-scheme` yourself; otherwise native controls and scrollbars stay light.
+- `UiScope` only styles. It runs no DIL and has no expression sandbox; `DilRenderer` owns that.
+- Every renderer already wraps its answer in a `.dil-scope` root with its `appearance` and `tokens`. Inside a custom component, use the components directly, without another `UiScope`: a nested one would reset the appearance to its own default, light.
+
+## Components
+
+Most components wrap a [Radix](https://www.radix-ui.com/primitives) primitive from the `radix-ui` package and accept that primitive's props, with OpenDIL classes added.
+
+| Export                                                    | Purpose                                       | Built on                 |
+| --------------------------------------------------------- | --------------------------------------------- | ------------------------ |
+| `UiScope`                                                 | Styles, appearance, tokens, overlay container | `<section>`              |
+| `Button`, `buttonVariants`                                | Buttons; `buttonVariants` returns the classes | `<button>`, Radix `Slot` |
+| `Input`                                                   | Text input                                    | `<input>`                |
+| `Checkbox`                                                | Checkbox with a check mark                    | Radix Checkbox           |
+| `Slider`                                                  | Range slider, one thumb per value             | Radix Slider             |
+| `Select` and its parts                                    | Selection menu                                | Radix Select             |
+| `ToggleGroup`, `ToggleGroupItem`                          | Single or multiple choice buttons             | Radix Toggle Group       |
+| `Tabs`, `TabsList`, `TabsTrigger`, `TabsContent`          | Tabs with panels                              | Radix Tabs               |
+| `Collapsible`, `CollapsibleTrigger`, `CollapsibleContent` | A section that expands and collapses          | Radix Collapsible        |
+| `Popover`, `PopoverTrigger`, `PopoverContent`             | Floating panel opened by a trigger            | Radix Popover            |
+| `Tooltip`                                                 | Short label on hover and focus                | Radix Tooltip            |
+
+### Button
+
+`variant` is one of `default`, `destructive`, `outline`, `secondary`, `ghost`, or `link`. `size` is one of `default`, `xs`, `sm`, `lg`, `icon`, `icon-xs`, `icon-sm`, or `icon-lg`. Both default to `default`. Pass `asChild` to render the button styles on your own child element, such as a link. `buttonVariants({ variant, size })` returns the same class string for elements that are not buttons.
+
+The DIL `button` tag exposes fewer options: variants `default`, `outline`, and `ghost`, and sizes `default`, `sm`, and `xs`. See [Actions](/docs/components/actions/).
+
+### ToggleGroup
+
+Besides the Radix props, `ToggleGroup` accepts `variant` (`default` or `outline`), `size` (`default`, `sm`, or `lg`), `spacing`, and `segmented`. `segmented` puts the items on a shared track, like the DIL `segmented-control`. Items take their `variant` and `size` from the group.
+
+### Tooltip
+
+`Tooltip` is one component instead of Radix's parts:
+
+| Prop       | Type        | Description                                                 |
+| ---------- | ----------- | ----------------------------------------------------------- |
+| `label`    | `ReactNode` | The tooltip text                                            |
+| `children` | `ReactNode` | The trigger, a single element that can hold a ref and focus |
+| `open`     | `boolean`   | Controls visibility. Leave it out for hover and focus       |
+
+The tooltip opens after a 250 ms delay. It adds a description, not a name: an icon-only trigger still needs its own `aria-label`.
+
+### Select
+
+`Select`, `SelectGroup`, `SelectValue`, `SelectViewport`, `SelectItemIndicator`, and `SelectItemText` are the Radix parts unchanged. `SelectTrigger`, `SelectContent`, `SelectItem`, and `SelectLabel` add OpenDIL classes. `SelectContent` does not portal on its own: wrap it in `SelectPortal`, which renders into the nearest `UiScope` or renderer.
+
+```tsx title="components/model-picker.tsx"
+"use client";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectItemIndicator,
+  SelectItemText,
+  SelectPortal,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport,
+  UiScope,
+} from "@snackbit/opendil/ui";
+import "@snackbit/opendil/styles.css";
+
+const models = [
+  { value: "fast", label: "Fast" },
+  { value: "thorough", label: "Thorough" },
+];
+
+interface ModelPickerProps {
+  value: string;
+  onChange: (value: string) => void;
+}
+
+export function ModelPicker({ value, onChange }: ModelPickerProps) {
+  return (
+    <UiScope>
+      <Select value={value} onValueChange={onChange}>
+        <SelectTrigger aria-label="Model">
+          <SelectValue placeholder="Choose a model" />
+        </SelectTrigger>
+        <SelectPortal>
+          <SelectContent position="popper" sideOffset={4}>
+            <SelectViewport>
+              {models.map((model) => (
+                <SelectItem key={model.value} value={model.value}>
+                  <SelectItemIndicator
+                    style={{ position: "absolute", left: 10 }}
+                  >
+                    ✓
+                  </SelectItemIndicator>
+                  <SelectItemText>{model.label}</SelectItemText>
+                </SelectItem>
+              ))}
+            </SelectViewport>
+          </SelectContent>
+        </SelectPortal>
+      </Select>
+    </UiScope>
+  );
+}
+```
+
+`SelectItem` leaves room on its left for the indicator; position it there yourself, as above.
+
+## Use them in a custom component
+
+A custom component can render these components and call back into the answer with `invoke`. This `Picker` wraps `Select` and sends the chosen string to the answer's `onChange` callback:
+
+```tsx title="components/picker.tsx"
+"use client";
+import type { DilComponentProps } from "@snackbit/opendil";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectItemText,
+  SelectPortal,
+  SelectTrigger,
+  SelectValue,
+  SelectViewport,
+} from "@snackbit/opendil/ui";
+
+function readOptions(value: unknown) {
+  if (!Array.isArray(value)) return [];
+  return value
+    .filter((option): option is string => typeof option === "string")
+    .filter((option) => option.length > 0 && option.length <= 80)
+    .slice(0, 50);
+}
+
+export function Picker({
+  attributes,
+  ready,
+  invoke,
+  className,
+  presentationRef,
+}: DilComponentProps) {
+  const options = readOptions(attributes.options);
+  const label =
+    typeof attributes.label === "string" ? attributes.label : "Choose";
+  const value =
+    typeof attributes.value === "string" && options.includes(attributes.value)
+      ? attributes.value
+      : "";
+  return (
+    <Select
+      value={value}
+      disabled={!ready}
+      onValueChange={(next) => invoke("onChange", next)}
+    >
+      <SelectTrigger
+        ref={presentationRef}
+        className={className}
+        aria-label={label}
+      >
+        <SelectValue placeholder={label} />
+      </SelectTrigger>
+      <SelectPortal>
+        <SelectContent position="popper" sideOffset={4}>
+          <SelectViewport>
+            {options.map((option) => (
+              <SelectItem key={option} value={option}>
+                <SelectItemText>{option}</SelectItemText>
+              </SelectItem>
+            ))}
+          </SelectViewport>
+        </SelectContent>
+      </SelectPortal>
+    </Select>
+  );
+}
+```
+
+`readOptions` treats the attribute as untrusted model output: it keeps only short, non-empty strings. Register `Picker` in host or Shadow DOM mode:
+
+```tsx title="components/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import { Picker } from "./picker";
+
+const components = { Picker };
+
+interface AnswerProps {
+  text: string;
+  isStreaming: boolean;
+  dark: boolean;
+}
+
+export function Answer({ text, isStreaming, dark }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="shadow"
+      text={text}
+      isStreaming={isStreaming}
+      appearance={dark ? "dark" : "light"}
+      components={components}
+    />
+  );
+}
+```
+
+An answer can then bind the picker to state:
+
+```dil title="plan.dil"
+{@body const [plan, setPlan] = DIL.useState("Team")}
+{@body const plans = ["Starter", "Team", "Enterprise"]}
+<Picker label="Plan" options={plans} value={plan} onChange={setPlan}/>
+<text>Selected plan: {plan}</text>
+```
+
+The open menu renders into the renderer's own overlay container, inside the shadow root in Shadow DOM mode, so it keeps the answer's styles and appearance. The model writes `<Picker>` only when your system prompt describes it; see [Tell the model about your components](/docs/custom-components/#tell-the-model-about-your-components).
+
+## Styling
+
+Components that render an element accept `className`, except `Tooltip`, which always uses the `dil-tooltip` class. OpenDIL merges your classes with its own and drops its conflicting Tailwind classes, so `className="h-10"` replaces the default height.
+
+- `@snackbit/opendil/styles.css` contains only the classes OpenDIL itself uses. Classes you add need your own CSS, or your own Tailwind CSS build.
+- If you compile `@snackbit/opendil/tailwind.css` with Tailwind CSS 4, your classes and OpenDIL's share one build, and the `dil-dark:` variant applies a class only inside a scope with dark appearance, for example `dil-dark:bg-neutral-800`. Your own `dark:` variant stays unchanged. See [Use Tailwind CSS](/docs/theming/#tailwind-v4).
+- Colors come from tokens such as `--primary`, `--background`, and `--border`, so `tokens` on `UiScope` restyles every component inside it. [Theming](/docs/theming/) lists the tokens.
+- In a custom component in Shadow DOM mode, page CSS does not reach your classes; pass their CSS through `shadowStyles`. See [Style inside a shadow root](/docs/theming/#shadow-dom-css).
+
+## Not exported
+
+Generated answers also use badges, cards, tables, text areas, radio groups, toggles, charts, and carousels. The package does not export their React components. Use the DIL tags through the renderer, or your own components.
+
+The DIL `popover` tag is separate from the React `Popover` export; see [Overlays](/docs/components/overlays/).
+
+## Next steps
+
+<Cards>
+  <Card title="Custom components" href="/docs/custom-components/" description="Register React components as DIL tags and call back into the answer." />
+  <Card title="Theming" href="/docs/theming/" description="Tokens, dark appearance, and Tailwind CSS for answers and these components." />
+</Cards>

@@ -1,1 +1,8 @@
-{ "plugins": ["prettier-plugin-astro"] }
+{
+  "overrides": [
+    {
+      "files": "apps/site/content/**/*.mdx",
+      "options": { "embeddedLanguageFormatting": "off" }
+    }
+  ]
+}

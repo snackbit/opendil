@@ -46,7 +46,7 @@ beforeEach(() => {
   vi.stubGlobal("Worker", BrowserWorker);
   vi.stubGlobal(
     "__DIL_VM_WORKER__",
-    readFileSync("packages/opendil/dist/runtime/vm.js", "utf8"),
+    readFileSync("packages/opendil/dist/test/vm.js", "utf8"),
   );
   vi.stubGlobal("window", new EventTarget());
 });
@@ -105,7 +105,7 @@ it("evicts inactive callback results and releases their worker handles", async (
   await vi.waitFor(() => expect(engine.stats.inFlight).toBe(0));
   const errors: string[] = [];
   engine.events.addEventListener("dil:error", (event) => {
-    if (event instanceof CustomEvent) errors.push(String(event.detail));
+    if (event instanceof CustomEvent) errors.push(event.detail.message);
   });
   engine.halt("Stopped deliberately");
   engine.halt("Duplicate");
@@ -407,6 +407,7 @@ it("rejects unknown parents and lazily reuses node stores across updates", () =>
       nodes: [],
       links: [{ parent: 999, child: 1 }],
       declarations: [],
+      issues: [],
       complete: true,
       scanned: 0,
     }),
@@ -414,6 +415,8 @@ it("rejects unknown parents and lazily reuses node stores across updates", () =>
 });
 it("ignores stale transport replies and reports worker failures", async () => {
   const engine = create();
+  // The first job starts the worker.
+  expect(() => engine.evaluate("1")).toThrow("Waiting");
   const facade = facades.at(-1);
   facade?.onmessage?.({ data: { id: 999, value: "stale" } });
   expect(await value(engine, "1")).toBe(1);

@@ -1,0 +1,116 @@
+---
+title: Popovers
+description: Show extra detail in a popover with keyboard support, collision handling, and focus return.
+---
+
+A popover shows supplementary content next to a button without leaving the answer.
+
+<LiveExample id="overlays" />
+
+## Compose a popover
+
+A popover has two parts inside `popover`: one `popover-trigger` that holds exactly one `button`, and one `popover-content` region. The button opens the popover by itself; it needs no `onClick`. The content can hold text, layout, and controls. The three sections below show each part.
+
+## `popover`
+
+The container that connects the trigger and the content.
+
+**Usage**
+
+```dil
+<popover>
+  <popover-trigger><button variant="outline">Details</button></popover-trigger>
+  <popover-content><text>Additional review notes.</text></popover-content>
+</popover>
+```
+
+**Attributes**
+
+<ComponentProps name="popover" />
+
+There is no attribute to open the popover from state. Opening and closing belong to the reader.
+
+**Accessibility:** the popover opens from the keyboard with Enter or Space on its trigger, closes with Escape or a click outside, and returns focus to the trigger when it closes. Keep essential information out of popovers, because readers may never open them.
+
+**Styling:** `classNames` does not apply to `popover`.
+
+<SpecExcerpt name="popover" />
+
+## `popover-trigger`
+
+The wrapper that turns one button into the opener.
+
+**Usage**
+
+```dil
+<popover>
+  <popover-trigger><button aria-label="Review details" variant="ghost"><icon name="info"/></button></popover-trigger>
+  <popover-content><caption>No additional action required.</caption></popover-content>
+</popover>
+```
+
+**Attributes**
+
+<ComponentProps name="popover-trigger" />
+
+The button inside accepts all [`button`](/docs/components/actions/#button) attributes. A box or text cannot be a trigger.
+
+**Accessibility:** an icon-only trigger button needs an `aria-label`, as in the example.
+
+**Styling:** `classNames` does not apply to `popover-trigger`. `classNames.button` styles the button inside it in host and Shadow DOM modes.
+
+<SpecExcerpt name="popover-trigger" />
+
+## `popover-content`
+
+The panel that opens next to the trigger.
+
+**Usage**
+
+```dil
+{@body const [showNotes,setShowNotes] = DIL.useState(true)}
+<popover>
+  <popover-trigger><button variant="outline">Display options</button></popover-trigger>
+  <popover-content side="top" align="end">
+    <box gap={2}>
+      <checkbox checked={showNotes} onChange={setShowNotes} lineThrough={false}>Show notes</checkbox>
+      <caption>Selection: {showNotes ? "shown" : "hidden"}</caption>
+    </box>
+  </popover-content>
+</popover>
+{#if showNotes}<text>Review notes are visible.</text>{/if}
+```
+
+**Attributes**
+
+<ComponentProps name="popover-content" />
+
+`side` is `"bottom"` (default) or `"top"`. `align` is `"center"` (default) or `"end"`. Other values fall back to the defaults. When the panel does not fit on the chosen side, it flips or shifts to stay visible. The content has no width or padding attributes; put a [`box`](/docs/components/layout/#box) inside for layout.
+
+**Accessibility:** controls inside the content work with the keyboard like anywhere else. Focus moves into the panel when it opens.
+
+**Styling:** the panel renders inside the renderer's own scope: inside the iframe, inside the shadow root, or in a portal container within `.dil-scope` in host mode. Theme tokens such as `--popover` and `--popover-foreground` apply to it. `classNames` does not apply to `popover-content`.
+
+In the default iframe mode, an open popover makes the frame taller until it closes, so a popover in a short answer is not clipped.
+
+<SpecExcerpt name="popover-content" />
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Actions and views"
+    href="/docs/components/actions/"
+    description="Configure the trigger button and add other actions."
+  />
+  <Card
+    title="Theming"
+    href="/docs/theming/"
+    description="Change popover colors with theme tokens."
+  />
+  <Card
+    title="Rendering modes"
+    href="/docs/rendering-modes/"
+    description="See how the iframe, Shadow DOM, and host modes contain overlays."
+  />
+</Cards>

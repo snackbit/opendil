@@ -9,6 +9,7 @@ import { LoadingBlock } from "../../../packages/opendil/src/dil/view/loading-blo
 import { RenderAllowance } from "../../../packages/opendil/src/dil/view/render-limit";
 import { RenderBoundary } from "../../../packages/opendil/src/dil/view/render-boundary";
 import { renderToStaticMarkup } from "react-dom/server";
+import type { DilRenderError } from "../../../packages/opendil/src/dil/render-error";
 // Only transport timing is controlled here; real QuickJS is exercised by runtime and browser suites.
 let holding = false;
 class Transport {
@@ -94,8 +95,25 @@ it.each([
   ["<svg><text>Vector</text></svg>", "Vector"],
   ["{#if flag}<text>Yes</text>{:else}<text>No</text>{/if}", "Yes"],
   ["{#each list as entry,i}<text>{entry.label}</text>{/each}", "OneTwo"],
-  ["<text title={bad}>Hidden</text>", "Missing binding"],
-  ["</wrong>", "Unexpected closing tag"],
+  [
+    "<text title={bad}>Hidden</text>",
+    "This part of the response couldn't be shown.",
+  ],
+  ["</Wrong>", "This part of the response couldn't be shown."],
+  ["<box><text>Kept</text><text>Cut", "KeptCut"],
+  [
+    "Pass `{ leading: false }` to `debounce`.",
+    "Pass { leading: false } to debounce.",
+  ],
+  [
+    "Wrap the chart in a `<div>` if it overflows.\n\nThen measure it.",
+    "Wrap the chart in a <div> if it overflows.Then measure it.",
+  ],
+  [
+    "Wrap it in a <div> if it overflows.",
+    "Wrap it in a <div> if it overflows.",
+  ],
+  ["<div>\nBlock prose\n</div>", "<div>\nBlock prose\n</div>"],
 ])(
   "presents ready content and local errors through the real parser: %s",
   async (source, expected) => {
@@ -194,6 +212,7 @@ it("keeps genuine render failures scoped and retries only after a changed revisi
   const container = document.createElement("div"),
     root = createRoot(container);
   const consoleError = vi.spyOn(console, "error").mockImplementation(() => {});
+  const onError = vi.fn();
   function Broken(): never {
     throw "Component failed";
   }
@@ -203,33 +222,110 @@ it("keeps genuine render failures scoped and retries only after a changed revisi
         createElement(RenderBoundary, {
           revision: "one",
           streaming: false,
+          onError,
           children: createElement(Broken),
         }),
       ),
     );
     expect(container.textContent).toContain("Cannot render this component");
+    expect(onError).toHaveBeenCalledExactlyOnceWith(
+      "Cannot render this component",
+    );
     await act(() =>
       root.render(
         createElement(RenderBoundary, {
           revision: "two",
           streaming: true,
+          onError,
           children: createElement(Broken),
         }),
       ),
     );
     expect(container.textContent).toBe("");
+    // A failure while streaming can still resolve, so it is not reported.
+    expect(onError).toHaveBeenCalledOnce();
     await act(() =>
       root.render(
         createElement(RenderBoundary, {
           revision: "three",
           streaming: false,
+          onError,
           children: "Recovered",
         }),
       ),
     );
     expect(container.textContent).toBe("Recovered");
+    expect(onError).toHaveBeenCalledOnce();
   } finally {
     await act(() => root.unmount());
     consoleError.mockRestore();
+  }
+});
+it("reports each problem readers see to onError and the console once the message is final", async () => {
+  const model = new DilDocument(),
+    parser = new DilParser();
+  const reported: DilRenderError[] = [];
+  model.onError = (error) => reported.push(error);
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const source =
+    "Seats: {bad}\n\n<text title={bad}>Hidden</text><Foo>Custom</Foo>";
+  try {
+    await act(() => {
+      model.apply(parser.append(source));
+      root.render(createElement(NodeView, { id: 0, document: model }));
+    });
+    // Later source could still define a binding, so nothing is reported yet.
+    expect(container.textContent).toContain("Cannot evaluate this value.");
+    expect(reported).toEqual([]);
+    await act(() => model.apply(parser.append("", true)));
+    const text = source.indexOf("<text");
+    const custom = source.indexOf("<Foo");
+    expect(reported).toHaveLength(3);
+    expect(reported).toEqual(
+      expect.arrayContaining([
+        {
+          kind: "runtime",
+          message: "Cannot evaluate {bad}: Missing binding",
+          offset: 0,
+        },
+        {
+          kind: "runtime",
+          message: "Cannot evaluate the attributes of <text>: Missing binding",
+          offset: text,
+        },
+        {
+          kind: "syntax",
+          message:
+            "<Foo> is neither a stock DIL component nor one passed in the components prop.",
+          offset: custom,
+        },
+      ]),
+    );
+    expect(warn).toHaveBeenCalledWith(
+      `OpenDIL: Cannot evaluate {bad}: Missing binding (at character 0 of the message source)`,
+    );
+    expect(warn).toHaveBeenCalledTimes(3);
+    // Readers see generic wording instead of developer details.
+    const alerts = [...container.querySelectorAll('[role="alert"]')].map(
+      (alert) => alert.textContent,
+    );
+    expect(alerts).toEqual([
+      "Cannot evaluate this value.",
+      "This part of the response couldn't be shown.",
+      "This part of the response couldn't be shown.",
+    ]);
+    expect(container.textContent).not.toContain("Foo");
+    // Re-rendering the final message reports nothing again.
+    await act(() =>
+      root.render(createElement(NodeView, { id: 0, document: model })),
+    );
+    expect(reported).toHaveLength(3);
+  } finally {
+    await act(() => root.unmount());
+    model.engine.dispose();
+    container.remove();
   }
 });

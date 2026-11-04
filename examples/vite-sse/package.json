@@ -1,0 +1,31 @@
+{
+  "name": "opendil-example-vite-sse",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "opendil copy-assets --out public/opendil",
+    "dev": "vite",
+    "server": "node --env-file=.env server/index.ts",
+    "build": "vite build",
+    "preview": "vite preview",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@hono/node-server": "^2.1.6",
+    "@snackbit/opendil": "^0.2.0",
+    "hono": "^4.13.16",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "@vitejs/plugin-react": "^6.2.1",
+    "typescript": "^5.9.3",
+    "vite": "^8.3.5"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

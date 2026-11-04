@@ -18,7 +18,7 @@ Design keywords: **open, composable, structured, precise, approachable, develope
 
 1. **Show the interface, not an illustration of it.** Product demos, real UI outputs, source snippets, and inspector views are the primary imagery.
 2. **One accent, intentional use.** Violet identifies brand and primary action; neutral colors do most of the work.
-3. **Borders before shadows.** Structure comes from spacing, surface contrast, and 1px rules. Only high-level product previews float.
+3. **Borders before shadows.** Structure comes from spacing, surface contrast, and 1px rules. Only high-level product previews float; the selected segment of a segmented control is the one small raised element.
 4. **Code and rendered UI are equal citizens.** Show source and result together wherever possible.
 5. **Dense where useful, spacious where explanatory.** Documentation and developer tools are compact; marketing headlines and product showcases breathe.
 6. **OpenDIL is not the theme of its output.** Brand styles belong to the site and shell; embedded/generated interfaces may use their own tokens, palettes, and component vocabulary.
@@ -42,7 +42,7 @@ Design keywords: **open, composable, structured, precise, approachable, develope
 
 **OpenDIL** is an open-source generative UI system. Its visual identity should feel like an interface development environment, not a generic AI chat app or a polished no-code website builder.
 
-Suggested product tagline: **“Generate interfaces. Keep control.”**
+Suggested product tagline: **“Generative interfaces for your agents.”**
 
 Supporting line: _“An open, declarative foundation for interactive AI-generated interfaces.”_ This is messaging direction, not a claim about currently shipped functionality.
 
@@ -191,7 +191,7 @@ Use readily licensed/open fonts; do not require proprietary Writer, Zed Mono, or
 | Feature grid gap           | 16–24px                          |
 | Major section gap          | 64–96px marketing / 40–64px docs |
 | Main content width         | max 1200px                       |
-| Article width              | max 760px                        |
+| Docs layout width          | max 1920px, article fluid        |
 | Playground main area       | Fluid, prefer `minmax(0, 1fr)`   |
 | Site page gutter           | 24px desktop / 16px mobile       |
 
@@ -215,7 +215,8 @@ The **8px radius is the default**. Do not mix Zed's universal 2px, Drizzle's 8px
 - Hover: stronger border, subtle surface tint; no jumpy elevation.
 - Floating menus: border + `0 8px 24px rgba(27,29,41,.10)`.
 - Large product showcase: `0 24px 60px rgba(27,29,41,.12)` on light surfaces.
-- Avoid shadows on nested controls, every feature card, or decorative tiles.
+- Selected segment in a segmented control: `--od-shadow-raised` (`0 1px 2px rgba(27,29,41,.12)` plus a 0.5px hairline ring).
+- Avoid shadows on other nested controls, every feature card, or decorative tiles.
 
 ### Responsive breakpoints
 
@@ -276,8 +277,11 @@ All interactive controls require visible `:focus-visible`, accessible names, and
 ### Tabs / segmented controls
 
 - Use **tabs** for views and **segmented controls** for mutually exclusive modes.
-- Neutral track with an outlined or softly tinted active item, not oversized pills everywhere.
-- 8px radius for the track; active indication must include more than color alone.
+- Segmented controls follow the stock OpenDIL tabs: one neutral track per group (`--od-surface-muted`, 10px radius, 3px padding) holds the options; the selected option is a raised pill (`--od-surface`, 7px radius, `--od-shadow-raised`); other options are plain secondary text.
+- Dark theme: the track sits below the surface (`--od-canvas` with a 1px inset `--od-border` ring) and the pill uses `--od-surface-muted`, so the selection still reads as raised.
+- A single on/off mode is a two-option segment (for example `Light | Dark`), not a lone toggle button.
+- Active indication must include more than color alone; focus uses the standard 2px `--od-focus` outline because the pill shadow would hide a ring.
+- Site controls use the shared `SegmentedControl` (`.od-segmented`); do not restyle toggle groups locally.
 - In code demos, use clear labels such as `Source`, `Preview`, `Inspector`.
 
 ### Badges
@@ -318,17 +322,18 @@ The centerpiece of the site and developer experience.
 
 **Desktop:** split two-pane layout: **DIL source on the left, live rendered output on the right**. Optional collapsible inspector panel shows component tree, props, state, events, and validation feedback.
 
-**Mobile:** Source / Preview / Inspector tabs, each full width.
+**Narrow containers:** Source and Preview views each occupy the full frame. The demo also exposes React usage.
 
 Visual rules:
 
 - Parent frame: 12px radius, 1px border, soft shadow only on high-level promotional showcase.
 - Toolbar: 44–48px, neutral with hairline bottom border.
-- Source panel: theme-matched code editor; mono typography; line numbers low contrast. The landing showcase displays upcoming source at 0.3 opacity and received source at full opacity.
+- Source panel: locally bundled Monaco with DIL syntax, site-matched colors, and muted line numbers. The landing showcase displays upcoming source at 0.3 opacity and received source at full opacity. Demo edits apply automatically; editor controls stay out of its footer.
 - Render panel: white, deliberately unbranded content canvas with optional dotted guide grid **outside** generated UI bounds.
 - Separator: 1px border or accessible draggable splitter.
 - Status bar: parse/render state, errors, and duration only when measured. Never fabricate latency or success claims.
-- Controls: `Copy source`, `Reset`, `Run`, `Open example` as supported by the actual product.
+- Playback controls share an animation speed, Pause/Resume, Replay, and Finish/Reset toolbar. Settings use compact segmented controls; editable examples also expose Run and auto-run.
+- Documentation examples use the same split source and preview pattern, with their label outside the frame and no extra surrounding card.
 - Animations between code and render should be restrained, fast, and disabled under reduced-motion preference.
 
 ### B. Component Tree / Inspector
@@ -374,7 +379,8 @@ Visual rules:
 
 ### Documentation
 
-- Desktop: left sidebar 240px, central article max 760px, optional right-side page outline 200px.
+- Desktop: left sidebar 240px, central article filling the space up to the optional right-side page outline 232px; the docs layout and its header span up to 1920px.
+- Live examples span the article: source and preview side by side once the source fits about 100 characters (760px) beside a preview of at least 480px, source above preview at full width when narrower, Source/Preview tabs on phones.
 - Search and version selector in header where functionality exists.
 - Mostly white canvas; subtle-neutral sidebar; blue/violet reserved for links and selected nav states.
 - Headings, copyable code, runnable previews, admonitions, API tables, and keyboard navigation are first-class.
@@ -484,9 +490,11 @@ The following are **shell and documentation defaults**. The OpenDIL renderer mus
 
   /* Layout */
   --od-page-max: 1200px;
-  --od-article-max: 760px;
+  --od-docs-max: 1920px;
   --od-page-gutter: 24px;
   --od-border-width: 1px;
+  --od-shadow-raised:
+    0 1px 2px rgba(27, 29, 41, 0.12), 0 0 0 0.5px rgba(27, 29, 41, 0.06);
   --od-shadow-overlay: 0 8px 24px rgba(27, 29, 41, 0.1);
   --od-shadow-showcase: 0 24px 60px rgba(27, 29, 41, 0.12);
 }
@@ -512,6 +520,8 @@ The following are **shell and documentation defaults**. The OpenDIL renderer mus
   --od-terminal-text: #e2e5f0;
   --od-focus: #b2a9ff;
   --od-on-accent: #12141c;
+  --od-shadow-raised:
+    0 1px 2px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.06);
   --od-shadow-overlay: 0 8px 24px rgba(0, 0, 0, 0.28);
   --od-shadow-showcase: 0 24px 60px rgba(0, 0, 0, 0.32);
 }
@@ -637,7 +647,7 @@ Keep the theme bridge optional. The system is framework-agnostic; CSS variables 
 ### Hero specification
 
 - Eyebrow (optional): 12px mono, neutral, such as `OPEN SOURCE · GENERATIVE UI`.
-- H1: `Generate interfaces. Keep control.` at display size; 2–3 lines maximum.
+- H1: `Generative interfaces` / `For your agents` at display size; 2–3 lines maximum.
 - Supporting text: concise and concrete, 18px body; maximum 60 characters per line.
 - Primary CTA: `Open playground` (only if available); secondary: `Read documentation`.
 - Right/below: composed interface diagram or authentic split source/render preview; faint 16px construction lines outside the rendered UI.

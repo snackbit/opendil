@@ -1,0 +1,116 @@
+---
+title: How it works
+description: "The architecture behind OpenDIL: incremental parsing, the expression engine, the iframe bridge, rendering, and virtualization."
+---
+
+This page follows one answer from the first character to an interactive interface. It explains what runs where, so you can reason about performance, security, and bugs. Contributors will find pointers into the source at the end.
+
+## The pipeline
+
+Every answer passes through the same five stages. In the default iframe mode, stages 2 to 5 run inside a sandboxed iframe. In host and Shadow DOM modes, the same code runs in your page.
+
+1. Your app passes `DilRenderer` all the text received so far. The text is append-only: each update keeps the previous text as its start. The renderer remembers how much it has forwarded and sends only the new characters on.
+2. A parser worker extends a syntax tree with the new characters and reports only the nodes that changed.
+3. The renderer applies the parser's reports at most once per animation frame.
+4. React views mount the components. A sandboxed JavaScript engine (QuickJS) in a second Web Worker evaluates the answer's expressions. This page calls it the expression engine.
+5. When a reader types or clicks, the control sends the new value to the expression engine. Only the views that read the changed state update.
+
+## Incremental parsing
+
+The parser keeps its state between appends: its position, the lexical state of an open string, comment, or expression, the stack of open tags, and the open `{#if}` and `{#each}` blocks. It never scans a closed token again. The one bounded exception is an inline code span that never closes: the parser then scans the rest of that paragraph again as prose.
+
+The parser recognizes strings, template strings, comments, expression braces, and code before it looks for DIL tags. A `<` inside a JavaScript string or an inline code span never opens a tag.
+
+Each node gets a stable id when it first appears. An opening tag that is still arriving becomes a pending node. When the tag completes, the same node becomes the element, so React keeps the mounted view. Each report carries only the changed nodes, the new parent-child links, and the new declarations, never the whole tree.
+
+The parser holds back the last few characters when a delimiter could cross a chunk boundary, so the parsed position can trail the received text by a few characters while the answer streams. It splits large inputs into bounded tasks and yields between them; [Limits](/docs/limits/) lists the task size.
+
+When several reports arrive within one frame, the renderer keeps the latest record of each node and applies all links and declarations in order. When your app sets `isStreaming={false}` and the final text is parsed and applied, the renderer stops the parser worker.
+
+## State and expressions
+
+```dil title="counter.dil"
+{@body const [count,setCount] = DIL.useState(0)}
+{@body const doubled = count * 2}
+<button onClick={() => setCount(previous => previous + 1)}>Add one</button>
+<text>{count} items; doubled: {doubled}</text>
+```
+
+`DIL.useState` declares state for the whole answer. It is not a React hook, so a declaration can arrive late in the stream without changing React's hook order. The engine creates each state value once and keeps it outside the mounted components. The value survives new text, hidden branches, and virtualized items that scroll out of view. A `const` declaration such as `doubled` is evaluated when a view reads it.
+
+The engine records which state each evaluation reads and which state each callback changes. A change refreshes only the expressions that read that state, not the whole answer.
+
+Built-in controls such as `input` and `slider` keep the reader's draft until the engine confirms it. A result computed for older input never overwrites newer typing.
+
+Your page never evaluates the answer's code. Only the engine sees executable source. Functions in an answer, such as an `onClick` handler, reach the page as opaque handles. When a reader clicks, the page sends the handle back to the engine, which runs the function.
+
+The engine starts the first time an answer needs an expression, state, or an action. An answer of plain Markdown never starts one. See [DIL tour](/docs/language/) for the language itself.
+
+## The iframe bridge
+
+In the default iframe mode, each `DilRenderer` creates one `<iframe sandbox="allow-scripts">` that loads `frame.html` from your server. Without `allow-same-origin`, the frame gets an opaque origin: it cannot read your page, its cookies, or its storage. The frame refuses to start when it has a real origin.
+
+The page and the frame connect in three steps:
+
+1. The frame posts a `dil-ready` message with its package version.
+2. The page accepts it only from its own iframe and only from an opaque origin. It then hands the frame one end of a private `MessageChannel`.
+3. All later messages use that channel.
+
+If the frame's version differs from the installed package, the renderer logs a warning to copy the runtime files again. If the frame never reports ready, the renderer shows an error that names the URL it tried.
+
+Over the channel, your page sends the new text, the streaming settings, the theme (`appearance` and `tokens`), and the part of the frame that is visible in the viewport. The frame sends back its content height, the reports behind `onCommit` and `onInput`, scroll requests for `autoScroll`, reading gestures that pause following, and clipboard requests.
+
+Both sides check the type and range of every field and drop messages that do not match. The page sizes the iframe to the reported height. The frame validates theme tokens and drops values that could load a resource. Clipboard requests need a recent reader click; see [Security](/docs/security/#clipboard).
+
+## Host and Shadow DOM rendering
+
+With `mode="host"` or `mode="shadow"`, the parser and the engine run in your page as `blob:` workers. OpenDIL creates their URLs through a Trusted Types policy named `opendil`, so pages that enforce Trusted Types can allow them. Your page's Content Security Policy must allow these workers and WebAssembly; see [Rendering modes](/docs/rendering-modes/#set-a-content-security-policy).
+
+Host mode renders into your page's DOM with styles scoped to `.dil-scope`. Shadow DOM mode renders into an open shadow root and installs the built-in styles inside it. Shadow DOM separates styles; it does not contain JavaScript.
+
+The code for these two modes ships as a separate chunk. Your app loads it the first time it renders a host or Shadow DOM renderer, so an app that uses only the iframe mode does not bundle a second copy of the parser and the expression engine. The frame loads its own copy from `frame.js`.
+
+## Rendering while an answer streams
+
+Markdown between tags goes through `react-markdown` with `remark-gfm` (GitHub Flavored Markdown). While the answer streams, `remend` closes unfinished formatting, such as bold text whose closing `**` has not arrived. Built-in components follow shadcn/ui patterns on Radix primitives. `Chart` uses Recharts, `NodeGraph` uses React Flow, and `Mermaid` output is sanitized with DOMPurify.
+
+The renderer does not draw placeholders of guessed size for unfinished parts:
+
+- A component mounts when its opening tag is complete.
+- A control stays disabled until its own definition closes.
+- An `{#each}` block renders after its `{/each}` arrives.
+- A component that fails to render shows a local error after the answer finishes. The rest of the answer stays usable.
+
+To fade in new content or slow down screen updates, see [Streaming](/docs/streaming/).
+
+## Virtualization
+
+When an answer, or a box inside it, has many direct children, or an `{#each}` block has many items, the renderer mounts only the items near the visible area. Items that scroll away unmount. Their state stays in the engine, and focused items stay mounted.
+
+The visible area comes from whatever scrolls the answer: the page, or the nearest ancestor that scrolls, such as a chat message list. The `scrollContainer` prop can name it instead. In iframe mode the frame cannot see your page or its scroll position, so the page reports which part of the frame is visible inside that scroller. See [Name the scroll container](/docs/performance/#name-the-scroll-container).
+
+Virtualization limits the mounted interface, not memory. The full text and the parsed nodes stay in memory while the renderer is mounted. [Performance](/docs/performance/#large-answers-and-virtualization) lists the thresholds and what they mean for long chats.
+
+## Read the source
+
+| Area                     | Files                                                                                                                                                                                                                                                                                                                                                                     |
+| ------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Public React contract    | [`dil-renderer.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/dil-renderer.tsx)                                                                                                                                                                                                                                                             |
+| Incremental parser       | [`parser/dil-parser.ts`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/parser/dil-parser.ts), [`parser/stream-worker.ts`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/parser/stream-worker.ts)                                                                                                                        |
+| State and expressions    | [`runtime/document.ts`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/runtime/document.ts), [`runtime/expressions.ts`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/runtime/expressions.ts), [`isolation/vm-worker.ts`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/isolation/vm-worker.ts) |
+| Built-in components      | [`widgets/primitives/primitive.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/widgets/primitives/primitive.tsx), [`widgets/controls.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/widgets/controls.tsx)                                                                                                      |
+| Virtualization           | [`view/virtual-flow.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/view/virtual-flow.tsx), [`view/repeated-nodes.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/view/repeated-nodes.tsx)                                                                                                                      |
+| Iframe bridge            | [`isolation/isolated-renderer.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/isolation/isolated-renderer.tsx), [`isolation/frame.tsx`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/isolation/frame.tsx)                                                                                                          |
+| Workers and CSP messages | [`runtime/inline-worker.ts`](https://github.com/snackbit/opendil/blob/main/packages/opendil/src/dil/runtime/inline-worker.ts)                                                                                                                                                                                                                                             |
+| Scale tests              | [`tests/e2e/scale.spec.ts`](https://github.com/snackbit/opendil/blob/main/tests/e2e/scale.spec.ts)                                                                                                                                                                                                                                                                        |
+
+To build and test the repository, follow [CONTRIBUTING.md](https://github.com/snackbit/opendil/blob/main/CONTRIBUTING.md).
+
+## Next steps
+
+<Cards>
+  <Card title="Security" href="/docs/security/" description="What each rendering mode protects and what you must configure." />
+  <Card title="Limits" href="/docs/limits/" description="Every size, work, and display limit with its exact value." />
+  <Card title="Long conversations and performance" href="/docs/performance/" description="Keep chats with many answers fast." />
+  <Card title="Streaming" href="/docs/streaming/" description="Pass growing text, fade in content, and follow the stream." />
+</Cards>

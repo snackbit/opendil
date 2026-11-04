@@ -1,0 +1,157 @@
+/*
+ * Fumadocs docs layout on DESIGN.md section 8: 240px sidebar, fluid article, right outline.
+ * These rules are unlayered, so they win over the Tailwind utilities Fumadocs ships.
+ */
+#nd-docs-layout {
+  /* Fumadocs centers its grid within --fd-layout-width (97rem by default); the docs span up to --od-docs-max. */
+  --fd-layout-width: var(--od-docs-max);
+  min-height: calc(100dvh - var(--od-header-height));
+}
+/*
+ * Header and footer follow the wider docs grid, inset by the page gutter at every width,
+ * so the brand stays aligned with the sidebar links even when the grid is centered.
+ */
+body:has(#nd-docs-layout) :is(.od-header, .od-footer) {
+  width: calc(min(100%, var(--od-docs-max)) - 2 * var(--od-page-gutter));
+}
+@media (min-width: 768px) {
+  #nd-docs-layout:has(> [data-sidebar-placeholder]) {
+    --fd-sidebar-width: 240px;
+  }
+}
+@media (min-width: 1280px) {
+  #nd-docs-layout:has(> :is(#nd-toc, #nd-toc-placeholder)) {
+    --fd-toc-width: 232px;
+  }
+}
+/* The docs menu button lives in the site header and only on narrow screens. */
+.od-docs-menu-slot {
+  display: contents;
+}
+@media (min-width: 768px) {
+  .od-docs-menu {
+    display: none;
+  }
+}
+
+/* Sidebar: subtle-neutral surface, violet only for the current page. */
+#nd-sidebar,
+:root.dark #nd-sidebar {
+  --color-fd-card: var(--od-surface-subtle);
+  --color-fd-muted: var(--od-surface-muted);
+  --color-fd-secondary: var(--od-surface-muted);
+  --color-fd-muted-foreground: var(--od-text);
+  font-size: 14px;
+}
+/* Without a title or collapse button, the sidebar's header row is empty. */
+#nd-sidebar > :first-child:not(:has(a, button, input)) {
+  display: none;
+}
+#nd-sidebar a[data-active="true"] {
+  background: var(--od-accent-soft);
+  color: var(--od-link);
+  font-weight: 500;
+}
+#nd-sidebar a:hover:not([data-active="true"]) {
+  background: var(--od-surface-muted);
+  color: var(--od-text);
+}
+#nd-sidebar p:not(a p) {
+  color: var(--od-text);
+  font: 600 15px var(--od-font-display);
+  letter-spacing: -0.01em;
+}
+
+/* Article column: fills the space between the sidebar and the outline (Fumadocs caps it at 900px). */
+#nd-page {
+  max-width: none;
+}
+#nd-page > h1 {
+  font: 600 48px/1.1 var(--od-font-display);
+  letter-spacing: -0.03em;
+}
+#nd-page .prose {
+  --tw-prose-body: var(--od-text);
+  --tw-prose-headings: var(--od-text);
+  --tw-prose-links: var(--od-link);
+  --tw-prose-bold: var(--od-text);
+  --tw-prose-code: var(--od-text);
+  --tw-prose-bullets: var(--od-text-muted);
+  --tw-prose-counters: var(--od-text-secondary);
+  font-size: 16px;
+  line-height: 1.65;
+}
+#nd-page .prose :is(h2, h3, h4) {
+  font-family: var(--od-font-display);
+  font-weight: 600;
+}
+#nd-page .prose h2 {
+  font-size: 32px;
+  line-height: 1.18;
+  letter-spacing: -0.025em;
+}
+#nd-page .prose h3 {
+  font-size: 24px;
+  font-weight: 500;
+  line-height: 1.25;
+  letter-spacing: -0.018em;
+}
+#nd-page .prose h4 {
+  font-size: 18px;
+  line-height: 1.35;
+  letter-spacing: -0.012em;
+}
+#nd-page .prose a:not([data-card]) {
+  font-weight: 500;
+  text-underline-offset: 3px;
+}
+#nd-page .prose a:not([data-card]):hover {
+  opacity: 1;
+  text-decoration-thickness: 2px;
+}
+#nd-page .prose :not(pre) > code {
+  padding: 2px 6px;
+  border: 1px solid var(--od-border);
+  border-radius: var(--od-radius-xs);
+  background: var(--od-surface-subtle);
+  font: 400 0.8125em var(--od-font-code);
+}
+#nd-page .prose table {
+  font-size: 14px;
+}
+#nd-page .prose th {
+  font-weight: 600;
+}
+/* Fumadocs uses 12px radii; DESIGN.md keeps standard components at 8px. */
+#nd-page .rounded-xl {
+  border-radius: var(--od-radius-md);
+}
+#nd-page figure.shiki {
+  background: var(--od-surface-subtle);
+}
+#nd-page figure.shiki pre,
+#nd-page figure.shiki code {
+  font-family: var(--od-font-code);
+  line-height: 1.6;
+}
+
+/* Outline. */
+#nd-toc #toc-title {
+  color: var(--od-text);
+  font: 600 16px var(--od-font-display);
+}
+#nd-toc a[data-active="true"] {
+  color: var(--od-link);
+}
+
+@media (max-width: 639px) {
+  #nd-page > h1 {
+    font-size: 34px;
+  }
+  #nd-page .prose h2 {
+    font-size: 28px;
+  }
+  #nd-page .prose h3 {
+    font-size: 22px;
+  }
+}

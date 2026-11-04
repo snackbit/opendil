@@ -1,4 +1,11 @@
-import { dilPage, openShowcase } from "./dil-page";
+import {
+  dilPage,
+  openShowcase,
+  previewPane,
+  scrollPreview,
+} from "./site-demo-page";
+
+/* scale.spec.ts, run against the Next.js playground with URLs relative to SITE_BASE_PATH. */
 import { expect, test } from "@playwright/test";
 
 test("virtualizes thousands of blocks while preserving focus and offscreen state", async ({
@@ -10,13 +17,18 @@ test("virtualizes thousands of blocks while preserving focus and offscreen state
   await openShowcase(page);
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
   await ui.getByRole("radio", { name: "Large document", exact: true }).click();
+  // The previous document is complete too, so wait for the large one's size.
+  await expect
+    .poll(
+      async () =>
+        Number(await ui.locator("[data-scanned]").getAttribute("data-scanned")),
+      { timeout: 30000 },
+    )
+    .toBeGreaterThan(1024 * 1024);
   await expect(ui.locator('[data-complete="true"]')).toBeAttached();
   await expect(
     ui.getByRole("heading", { name: "Record 1", exact: true }),
   ).toBeVisible();
-  expect(
-    Number(await ui.locator("[data-scanned]").getAttribute("data-scanned")),
-  ).toBeGreaterThan(1024 * 1024);
   expect(
     await ui.locator('[data-dil-content] [data-d-component="box"]').count(),
   ).toBeLessThan(100);
@@ -24,11 +36,11 @@ test("virtualizes thousands of blocks while preserving focus and offscreen state
     name: "A note that survives scrolling",
   });
   await note.fill("Keep this edit");
-  await page.evaluate(() => window.scrollTo(0, 100000));
+  await scrollPreview(page, 100000);
   await expect(note).toBeFocused();
-  await ui.getByRole("button", { name: "Replay stream" }).focus();
+  await ui.getByRole("button", { name: "Replay" }).focus();
   await expect(note).not.toBeAttached();
-  await page.evaluate(() => window.scrollTo(0, 0));
+  await scrollPreview(page, 0);
   await expect(note).toHaveValue("Keep this edit");
   await expect(ui.locator('.dil-document [role="alert"]')).toHaveCount(0);
   expect(errors).toEqual([]);
@@ -52,10 +64,8 @@ test("virtualizes repeated templates and table rows without invalid HTML", async
       .getByRole("button", { name: "Inspect Entry 1", exact: true })
       .click();
     await expect(ui.getByText("Selected", { exact: true })).toBeVisible();
-    await ui.getByRole("button", { name: "Replay stream" }).focus();
-    await page.evaluate(() =>
-      window.scrollTo(0, document.documentElement.scrollHeight),
-    );
+    await ui.getByRole("button", { name: "Replay" }).focus();
+    await scrollPreview(page, 10_000_000);
     try {
       await expect(
         ui.getByRole("button", { name: "Inspect Entry 5000", exact: true }),
@@ -65,11 +75,14 @@ test("virtualizes repeated templates and table rows without invalid HTML", async
         "Virtual tail diagnostic",
         JSON.stringify({
           fixture,
-          host: await page.locator("iframe").evaluate((element) => ({
-            y: scrollY,
-            height: document.documentElement.scrollHeight,
-            frame: element.getBoundingClientRect().toJSON(),
-            viewport: innerHeight,
+          host: await previewPane(page).evaluate((element) => ({
+            y: element.scrollTop,
+            height: element.scrollHeight,
+            frame: document
+              .querySelector("iframe")
+              ?.getBoundingClientRect()
+              .toJSON(),
+            viewport: element.clientHeight,
           })),
           flow: await ui
             .locator('[data-virtualized="true"]')
@@ -95,7 +108,7 @@ test("virtualizes repeated templates and table rows without invalid HTML", async
     ).toBeLessThan(100);
     if (fixture === "Long table")
       expect(await ui.locator("tbody > div").count()).toBe(0);
-    await page.evaluate(() => window.scrollTo(0, 0));
+    await scrollPreview(page, 0);
     await expect(ui.getByText("Selected", { exact: true })).toBeVisible();
   }
   expect(errors).toEqual([]);
@@ -165,11 +178,14 @@ test("streams a large document with bounded DOM and responsive updates", async (
       value: { latencies, longTasks, longTaskContexts },
     });
   });
-  await ui.getByRole("button", { name: "Replay stream" }).click();
+  await ui.getByRole("button", { name: "Replay" }).click();
+  // Reading the preview pane pauses following there.
+  await previewPane(page).hover();
   await page.mouse.wheel(0, -5000);
   const note = ui.getByRole("textbox", {
     name: "A note that survives scrolling",
   });
+  await note.click();
   await note.fill("Edited during streaming");
   await expect(ui.locator('[data-complete="true"]')).toBeAttached({
     timeout: 45000,

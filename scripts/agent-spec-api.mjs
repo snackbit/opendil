@@ -117,16 +117,119 @@ export function extractApi() {
   });
   return { api, layout, svgProps };
 }
-export function documentedApi(markdown, layout) {
-  const api = new Map();
-  for (const match of markdown.matchAll(/^- <([\w-]+)>: (.*); children:/gm)) {
-    const props = new Set(
-      [...match[2].matchAll(/(?:^|, )([\w-]+)\??:/g)].map((m) => m[1]),
-    );
-    if (/\blayout\b/.test(match[2])) for (const p of layout) props.add(p);
-    api.set(match[1], props);
+function splitProps(source) {
+  const result = [];
+  let start = 0;
+  let depth = 0;
+  let quote = "";
+  for (let i = 0; i < source.length; i++) {
+    const char = source[i];
+    if (quote) {
+      if (char === quote) quote = "";
+    } else if (char === '"' || char === "'") quote = char;
+    else if (/[([{]/.test(char)) depth++;
+    else if (/[)\]}]/.test(char)) depth--;
+    else if (char === "," && depth === 0) {
+      result.push(source.slice(start, i).trim());
+      start = i + 1;
+    }
   }
-  return api;
+  result.push(source.slice(start).trim());
+  return result;
+}
+
+function componentContracts(
+  markdown,
+  layout = new Set(),
+  svgProps = new Set(),
+) {
+  const entries = [
+    ...markdown.matchAll(/^- <([\w-]+)>: (.*); children: (.*)$/gm),
+  ].map((m) => ({ name: m[1], props: splitProps(m[2]), children: m[3] }));
+  const headings = [...markdown.matchAll(/^#### Component: ([\w-]+)$/gm)];
+  for (const [index, heading] of headings.entries()) {
+    const section = markdown.slice(
+      heading.index + heading[0].length,
+      headings[index + 1]?.index,
+    );
+    const block = /^```text\nProperties:([^]*?)\n\nChildren: (.*)\n```/m.exec(
+      section,
+    );
+    if (!block) throw new Error("Missing property block: " + heading[1]);
+    entries.push({
+      name: heading[1],
+      props: block[1].trim().split(/\n\s*/).filter(Boolean),
+      children: block[2],
+    });
+  }
+  const contracts = new Map();
+  for (const { name, props: fields, children } of entries) {
+    if (contracts.has(name)) throw new Error("Duplicate component: " + name);
+    const props = new Set();
+    for (const field of fields) {
+      if (["none", "no props"].includes(field)) continue;
+      if (field === "layout" || field === "svg props") {
+        for (const prop of field === "layout" ? layout : svgProps)
+          props.add(prop);
+      } else {
+        const match = /^([\w-]+)\??:/.exec(field);
+        if (!match) throw new Error("Invalid property: " + name + "." + field);
+        if (props.has(match[1]))
+          throw new Error("Duplicate property: " + name + "." + match[1]);
+        props.add(match[1]);
+      }
+    }
+    contracts.set(name, { props, children });
+  }
+  return contracts;
+}
+
+export function documentedApi(markdown, layout, svgProps) {
+  return new Map(
+    [...componentContracts(markdown, layout, svgProps)].map(
+      ([name, contract]) => [name, contract.props],
+    ),
+  );
+}
+
+export function sharedProps(markdown, name) {
+  const tail = markdown.split("Shared " + name + " props")[1];
+  if (!tail) throw new Error("Missing shared props: " + name);
+  const body = tail.slice(tail.indexOf(":") + 1).trimStart();
+  const section = body.startsWith("```text")
+    ? body.slice(8, body.indexOf("\n```"))
+    : body.split("\n\n")[0];
+  // Expanded references use text blocks; compact layout definitions use inline code.
+  const expanded = body.startsWith("```text");
+  if (name === "SVG" && !expanded)
+    return new Set(section.split(".")[0].split(/,\s*/));
+  return new Set(
+    [...section.matchAll(expanded ? /^([\w-]+)\??:/gm : /`([\w-]+)\??:/g)].map(
+      (m) => m[1],
+    ),
+  );
+}
+
+export function executableExamples(markdown, file) {
+  const examples = [];
+  const lines = markdown.split("\n");
+  let heading = "document";
+  for (let i = 0; i < lines.length; i++) {
+    if (/^#{1,6} /.test(lines[i])) heading = lines[i].replace(/^#+ /, "");
+    const opening = /^(`{3,}|~{3,})dil\s*$/.exec(lines[i]);
+    if (!opening) continue;
+    const line = i + 1;
+    const source = [];
+    const closing = new RegExp("^" + opening[1] + "\\s*$");
+    while (++i < lines.length && !closing.test(lines[i])) source.push(lines[i]);
+    if (i === lines.length)
+      throw new Error(`${file}:${line}: Unclosed DIL fence`);
+    examples.push({
+      name: `${file}:${line}: ${heading}`,
+      source: source.join("\n") + "\n",
+    });
+  }
+  return examples;
 }
 export function compareApi(actual, documented) {
   const errors = [];
@@ -140,7 +243,6 @@ export function compareApi(actual, documented) {
         errors.push(`Missing property: ${name}.${prop}`);
   }
   for (const [name, props] of documented) {
-    if (name === "svg") continue;
     if (!actual.has(name)) {
       errors.push("Nonexistent component: " + name);
       continue;
@@ -153,12 +255,7 @@ export function compareApi(actual, documented) {
 }
 
 export function compositionErrors(nodes, links, markdown) {
-  const contracts = new Map(
-    [...markdown.matchAll(/^- <([\w-]+)>: .*; children: (.*)$/gm)].map((m) => [
-      m[1],
-      m[2],
-    ]),
-  );
+  const contracts = componentContracts(markdown);
   const errors = [];
   const byId = new Map(nodes.map((n) => [n.id, n]));
   function children(id) {
@@ -173,9 +270,59 @@ export function compositionErrors(nodes, links, markdown) {
             : [];
       });
   }
+  const svgNodes = new Set();
+  function markSvg(id, svg = false) {
+    const node = byId.get(id);
+    if (!node) return;
+    if (svg || node.name === "svg") svgNodes.add(id);
+    for (const link of links.filter((l) => l.parent === id))
+      markSvg(link.child, svg || node.name === "svg");
+  }
+  markSvg(0);
+  const requiredParent = {
+    "table-row": "table",
+    "table-cell": "table-row",
+    "popover-trigger": "popover",
+    "popover-content": "popover",
+    "carousel-item": "carousel",
+    radio: "radio-group",
+  };
+  function elementParent(id) {
+    const parent = byId.get(links.find((link) => link.child === id)?.parent);
+    return parent && ["if", "branch", "each"].includes(parent.kind)
+      ? elementParent(parent.id)
+      : parent;
+  }
   for (const node of nodes) {
     if (node.kind !== "element") continue;
-    const contract = contracts.get(node.name);
+    if (svgNodes.has(node.id)) continue;
+    const contract = contracts.get(node.name)?.children;
+    const parent = requiredParent[node.name];
+    if (parent && elementParent(node.id)?.name !== parent)
+      errors.push(node.name + " requires parent " + parent);
+    if (
+      [
+        "button",
+        "pressable",
+        "input",
+        "slider",
+        "checkbox",
+        "radio-group",
+        "radio",
+        "segmented-control",
+      ].includes(node.name)
+    ) {
+      let ancestor = elementParent(node.id);
+      while (ancestor) {
+        if (["button", "pressable"].includes(ancestor.name)) {
+          errors.push(
+            ancestor.name + " cannot contain interactive " + node.name,
+          );
+          break;
+        }
+        ancestor = elementParent(ancestor.id);
+      }
+    }
     if (
       !contract ||
       ["generic", "inline", "raw", "SVG elements"].includes(contract)

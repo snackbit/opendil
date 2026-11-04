@@ -1,0 +1,203 @@
+---
+title: Layout
+description: Arrange content with box, row, grid, grid-item, spacer, and divider, using the shared layout attributes.
+---
+
+Layout components arrange other content. They add no meaning of their own, such as a form or a landmark.
+
+<LiveExample id="layout" />
+
+## Shared layout attributes
+
+`box`, `row`, `grid`, `grid-item`, `table-cell`, and `pressable` accept the same set of layout attributes. Other components, such as `text`, `button`, or `Chart`, do not. Wrap them in a `box` or `row` when you need spacing or alignment around them.
+
+<ComponentProps name="layout" />
+
+How the values translate:
+
+- `padding` and `gap`: numbers are 4 px units, so `gap={3}` is 12 px. `padding={{x:4,y:2}}` sets inline and block padding separately.
+- `width`, `maxWidth`, and `height`: numbers are pixels. Strings are CSS lengths or percentages, such as `"100%"`.
+- `flex`: a CSS flex value, not a width.
+- `radius`: `sm`, `md`, `lg`, `xl`, `2xl`, and `full` are 4, 6, 8, 12, 16, and 9999 px. Other strings pass through as a CSS border radius.
+- `border`: `true` draws a 1 px border in the theme border color. `{size, color}` changes the width and color.
+- `background` and border colors: one of the color names `default`, `primary`, `secondary`, `tertiary`, `success`, `warning`, `danger`, `surface-secondary`, `surface-tertiary`, `subtle`, `strong`, or a plain CSS color. The renderer ignores colors that contain `url(`, `var(`, or CSS declarations. For the length limit, see [Component limits](/docs/limits/#components).
+- `align`: use `start`, `center`, `end`, or `stretch`. `justify`: use `start`, `center`, `end`, or `between`.
+- `wrap="wrap"` lets a row wrap onto more lines.
+- `columns` only affects `grid`.
+- `clip` hides overflowing content. Avoid it around controls and long text.
+
+## `box`
+
+A vertical stack, and the usual way to draw a card or panel.
+
+**Usage**
+
+```dil
+<box border={{size:1,color:"subtle"}} padding={{x:4,y:3}} radius="xl" background="surface-secondary" gap={2} maxWidth={480}>
+  <title>Review panel</title><text>Two records are ready.</text>
+</box>
+```
+
+**Attributes**
+
+<ComponentProps name="box" />
+
+**Accessibility:** a box adds no role. Readers hear its children in source order.
+
+**Styling:** in host and Shadow DOM modes, `classNames={{ box: "…" }}` adds a class to every box. See [Theming](/docs/theming/#class-overrides).
+
+<SpecExcerpt name="box" />
+
+## `row`
+
+A horizontal group, such as a title next to a badge or a set of buttons.
+
+**Usage**
+
+```dil
+<row gap={2} align="center" justify="between" wrap="wrap">
+  <text>Release status</text><badge color="success">Ready</badge>
+</row>
+```
+
+**Attributes**
+
+<ComponentProps name="row" />
+
+Use `justify="between"` or a [`spacer`](#spacer) to push groups apart. Add `wrap="wrap"` when the row holds controls or labels that may not fit on a narrow screen.
+
+**Accessibility:** a row adds no role. Keep the source order the order you want read aloud.
+
+**Styling:** `classNames.row` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="row" />
+
+## `grid`
+
+Equal-width columns for a set of peers, such as metric cards.
+
+**Usage**
+
+```dil
+<grid columns={2} gap={3}>
+  <box border padding={3}><title>Alpha</title><text>12 units</text></box>
+  <box border padding={3}><title>Beta</title><text>18 units</text></box>
+</grid>
+```
+
+**Attributes**
+
+<ComponentProps name="grid" />
+
+`columns` defaults to 2. Every grid drops to one column when the viewport is 520 px wide or less, so keep the source order meaningful as a single column.
+
+**Accessibility:** a grid adds no role. On narrow screens it reads top to bottom in source order.
+
+**Styling:** `classNames.grid` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="grid" />
+
+## `grid-item`
+
+A grid child that needs its own padding, border, or background. A grid does not require it around every child.
+
+**Usage**
+
+```dil
+<grid columns={2} gap={3}>
+  <grid-item border padding={3} radius="lg"><title>Alpha</title></grid-item>
+  <grid-item border padding={3} radius="lg"><title>Beta</title></grid-item>
+</grid>
+```
+
+**Attributes**
+
+<ComponentProps name="grid-item" />
+
+There is no span or placement attribute. A grid item always fills one cell.
+
+**Accessibility:** a grid item adds no role.
+
+**Styling:** `classNames["grid-item"]` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="grid-item" />
+
+## `spacer`
+
+Fills the remaining space in a row, pushing the items after it to the end.
+
+**Usage**
+
+```dil
+<row gap={2} align="center"><title>Review</title><spacer/><badge>Prepared</badge></row>
+```
+
+**Attributes**
+
+<ComponentProps name="spacer" />
+
+`spacer` has no size. For fixed spacing, set `gap` or `padding` on the parent.
+
+**Accessibility:** a spacer is empty, so screen readers skip it.
+
+**Styling:** `classNames` does not apply to `spacer`.
+
+<SpecExcerpt name="spacer" />
+
+## `divider`
+
+A horizontal rule between groups of content.
+
+**Usage**
+
+```dil
+<box gap={3}><text>Overview</text><divider/><text>Details</text></box>
+```
+
+**Attributes**
+
+<ComponentProps name="divider" />
+
+Do not place a divider directly inside `table`, `table-row`, or `radio-group`. Those parents accept only their own child types.
+
+**Accessibility:** the divider is decorative, so screen readers skip it. Do not rely on it to separate content for them; use headings or text instead.
+
+**Styling:** `classNames` does not apply to `divider`. Its color follows the `--border` token.
+
+<SpecExcerpt name="divider" />
+
+## Composition
+
+Layout components nest freely. This card holds a grid whose items each contain a row:
+
+```dil
+<box gap={3}>
+  <title>Sample overview</title>
+  <grid columns={2} gap={3}>
+    <grid-item border padding={3} radius="lg"><row gap={2} align="center"><icon name="wallet"/><text>12 units</text></row></grid-item>
+    <grid-item border padding={3} radius="lg"><row gap={2} align="center"><icon name="users"/><text>3 reviewers</text></row></grid-item>
+  </grid>
+</box>
+```
+
+Layout tags add no headings or landmarks. Use Markdown headings for the structure of an answer and [`title`](/docs/components/text/#title) for the heading of a card.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Text and status"
+    href="/docs/components/text/"
+    description="Fill your layouts with values, titles, captions, badges, and icons."
+  />
+  <Card
+    title="Tables"
+    href="/docs/components/tables/"
+    description="Use rows and cells when items share columns."
+  />
+  <Card
+    title="Theming"
+    href="/docs/theming/#class-overrides"
+    description="Add your own classes to box, row, grid, and grid-item."
+  />
+</Cards>

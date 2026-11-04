@@ -5,14 +5,14 @@ import { join, resolve } from "node:path";
 import { chromium, expect } from "@playwright/test";
 
 // Records the landing-page stream for the README. Needs ffmpeg and a running
-// production preview (`npm run preview -w @opendil/demo`).
-const baseURL = process.env.DIL_BASE_URL ?? "http://127.0.0.1:3100/";
+// production server (`npm run build`, then `npm run start -w @opendil/site`).
+const baseURL = process.env.DIL_BASE_URL ?? "http://127.0.0.1:3101/";
 const output = resolve("docs/dil-assets/streaming-demo.gif");
 const viewport = { width: 1280, height: 900 };
 try {
   if (!(await fetch(baseURL)).ok) throw new Error("HTTP error");
 } catch {
-  throw new Error("Start the production preview before recording: " + baseURL);
+  throw new Error("Start the production server before recording: " + baseURL);
 }
 const scratch = await mkdtemp(join(tmpdir(), "opendil-readme-"));
 const browser = await chromium.launch();

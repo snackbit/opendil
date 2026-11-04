@@ -1,0 +1,213 @@
+---
+title: Package and CLI
+description: "What @snackbit/opendil exports, which stylesheet to import, how to load the agent spec, and the opendil copy-assets command."
+---
+
+`@snackbit/opendil` contains the React renderer, its stylesheets, React UI components, the agent spec, and the `opendil` command that copies the iframe runtime into your app. Install it with your package manager:
+
+<Tabs groupId="pm" items={["npm","pnpm","yarn","bun"]} persist>
+<Tab value="npm">
+
+```bash
+npm install @snackbit/opendil
+```
+
+</Tab>
+<Tab value="pnpm">
+
+```bash
+pnpm add @snackbit/opendil
+```
+
+</Tab>
+<Tab value="yarn">
+
+```bash
+yarn add @snackbit/opendil
+```
+
+</Tab>
+<Tab value="bun">
+
+```bash
+bun add @snackbit/opendil
+```
+
+</Tab>
+</Tabs>
+
+## Requirements
+
+- **React 19.** `react` and `react-dom` `^19.0.0` are peer dependencies; your app provides them.
+- **Node.js 22 or newer** for the `opendil` command (`engines.node` is `>=22`).
+- **ES modules.** The package is ESM only. `import` works everywhere; `require("@snackbit/opendil")` and `require("@snackbit/opendil/ui")` fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. `@snackbit/opendil/agent-spec` also loads with `require()` in Node versions that can require ES modules (22.12 and later).
+- **A bundler that reads package `exports` and CSS imports**, such as Next.js or Vite. The renderer and UI entries start with `"use client"`, so the Next.js App Router treats them as Client Components.
+- **Browsers** with Web Workers, WebAssembly, and sandboxed iframes. Shadow DOM mode also needs constructable stylesheets (`adoptedStyleSheets`).
+
+## Entry points
+
+| Import path                             | Use it for                                                      | Notes                                                                           |
+| --------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
+| `@snackbit/opendil`                     | `DilRenderer`, `preloadHostRenderer`, and their types           | See [DilRenderer](/docs/renderer/)                                              |
+| `@snackbit/opendil/styles.css`          | Compiled styles for the renderer and the UI components          | Import this or `tailwind.css`, not both                                         |
+| `@snackbit/opendil/tailwind.css`        | The same styles as Tailwind CSS 4 source                        | For apps that compile Tailwind CSS 4. See [Theming](/docs/theming/#tailwind-v4) |
+| `@snackbit/opendil/ui`                  | React components such as `Button`, `Select`, and `UiScope`      | See [React UI exports](/docs/ui/)                                               |
+| `@snackbit/opendil/agent-spec`          | `agentSpec`, `agentSpecFull`, `agentSpecExamples` strings       | Has no imports; works on servers and edge runtimes                              |
+| `@snackbit/opendil/spec/genui.agent.md` | The primary spec as a Markdown file                             | Also `genui.agent.full.md` and `genui.examples.md`                              |
+| `@snackbit/opendil/package.json`        | The package manifest, for example to read the installed version |                                                                                 |
+
+The `opendil` command is the package's only binary. The iframe runtime it copies, `frame.html` and `frame.js`, is not an import path: your app serves it as static files.
+
+## Stylesheets
+
+Import one stylesheet once, for example in your root layout or entry file:
+
+- `@snackbit/opendil/styles.css` is compiled CSS. Use it unless your app compiles Tailwind CSS 4.
+- `@snackbit/opendil/tailwind.css` is the Tailwind CSS 4 source of the same styles. Your Tailwind build compiles it, which adds the `dil-dark` variant for your own classes. See [Use Tailwind CSS](/docs/theming/#tailwind-v4).
+
+Import one of them in every app that uses OpenDIL, unless it renders only in Shadow DOM mode. Both are scoped to `.dil-scope`, the root element of every renderer and `UiScope`, and contain no global reset, so they do not restyle the rest of your page. Host mode and the UI components depend on the stylesheet. In iframe and Shadow DOM modes the answer brings its own styles inside the frame or shadow root; the page stylesheet then only styles the iframe renderer's outer element and its startup and error messages. The package marks `**/*.css` as having side effects, so bundlers keep the import even though it has no exports.
+
+## Agent spec
+
+The agent spec, the instructions that teach a model to write DIL, ships with the package, so the prompt always matches the installed renderer:
+
+```ts title="lib/system-prompt.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+export const systemPrompt = [
+  agentSpec,
+  "You are the assistant in a budgeting app. Keep answers short.",
+].join("\n\n");
+```
+
+`agentSpec` is the primary spec, `agentSpecFull` the full spec, and `agentSpecExamples` the examples catalog. Your renderer bundle never includes them unless you import this entry in client code. Tools that read files can resolve the raw Markdown from `@snackbit/opendil/spec/genui.agent.md`, `genui.agent.full.md`, and `genui.examples.md`. [Agent Spec](/docs/agent-spec/) explains which one to use and how to add your own instructions.
+
+## opendil copy-assets
+
+The default iframe mode loads its runtime, `frame.html` and `frame.js`, from your app. `opendil copy-assets` copies both files into a folder your app serves:
+
+```text
+Usage: opendil copy-assets --out <public-directory>
+
+Options:
+  --out <dir>, --out=<dir>  Destination directory (created if missing)
+  -h, --help                Show this help
+```
+
+Run it with your package manager's runner:
+
+<Tabs groupId="pm" items={["npm","pnpm","yarn","bun"]} persist>
+<Tab value="npm">
+
+```bash
+npx opendil copy-assets --out public/opendil
+```
+
+</Tab>
+<Tab value="pnpm">
+
+```bash
+pnpm exec opendil copy-assets --out public/opendil
+```
+
+</Tab>
+<Tab value="yarn">
+
+```bash
+yarn opendil copy-assets --out public/opendil
+```
+
+</Tab>
+<Tab value="bun">
+
+```bash
+bunx opendil copy-assets --out public/opendil
+```
+
+</Tab>
+</Tabs>
+
+`public/opendil` matches the renderer's default `runtimeBaseUrl` of `/opendil/` in Next.js and Vite. Only the iframe mode needs these files; host and Shadow DOM modes never load them.
+
+What it does:
+
+- Copies `frame.html` and `frame.js` into the `--out` directory, creating it if needed.
+- Writes `.opendil-manifest.json` next to them, with the package version and a hash of each file.
+- On the next run, removes files that an earlier copy wrote and the new version no longer ships. It keeps files the manifest does not list, and files that changed since they were copied.
+- Prints what it did, with the installed version and the absolute `--out` path:
+
+  ```text
+  Copied 2 files (7.8 MB) from @snackbit/opendil@<version> to /srv/chat-app/public/opendil
+  ```
+
+  An extra line names any files it removed, or kept because they changed.
+
+- Exits with code 0 after a copy and after `--help`. Without `--out`, or with an unknown argument, it prints the usage to standard error and exits with code 1.
+
+Serve `frame.html` with `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`; see [Send the frame header](/docs/rendering-modes/#send-the-frame-header).
+
+<Callout type="warn" title="Serve frame.html with its own headers">
+  Do not apply your app's Content Security Policy header to the copied files. `frame.html` carries its own policy; send it only the header above.
+</Callout>
+
+### Copy the runtime on every install
+
+Run the command from your app's `postinstall` script, so each install and upgrade refreshes the copy:
+
+```json title="package.json"
+{
+  "scripts": {
+    "postinstall": "opendil copy-assets --out public/opendil"
+  }
+}
+```
+
+Then keep the copied files out of version control:
+
+```txt title=".gitignore"
+public/opendil/
+```
+
+Your deployment then copies the runtime during its own install step.
+
+## Bundle size
+
+Measured for this release with Vite 8.3 and React 19.3, on a page that renders one `DilRenderer`, compared with the same page without OpenDIL:
+
+| Part                         | Loaded                                                     | Minified | Gzip   |
+| ---------------------------- | ---------------------------------------------------------- | -------- | ------ |
+| Renderer code in iframe mode | With your page                                             | 22 kB    | 8 kB   |
+| `styles.css`                 | With your page                                             | 66 kB    | 10 kB  |
+| Host and Shadow DOM chunk    | When a page first renders `mode="host"` or `mode="shadow"` | 2.6 MB   | 960 kB |
+| Iframe runtime (`frame.js`)  | Inside each frame, from your public folder                 | 8.1 MB   | 2.5 MB |
+
+The host and Shadow DOM chunk contains the parser, the expression engine, and the built-in components. Mermaid diagrams load further chunks the first time one renders. The agent spec adds nothing to these numbers unless you import it in client code.
+
+To measure your own Vite app, build it with and without OpenDIL and compare the compressed entry chunk:
+
+```sh
+npx vite build
+gzip -9c dist/assets/index-*.js | wc -c
+```
+
+## Upgrading
+
+After you update `@snackbit/opendil`:
+
+1. **Copy the runtime again.** `frame.html` and `frame.js` change between releases. The `postinstall` script above does this for you. When the copied runtime and the installed package differ, the renderer logs a `console.warn` that starts with "OpenDIL: the runtime frame at". It names the installed version and, for frames copied from this release on, the copied one.
+2. **Read the release notes** in the [repository](https://github.com/snackbit/opendil) for changes to props and behavior.
+
+Upgrading from 0.1.0: earlier copies have no manifest, so delete a leftover `public/opendil/vm.js` once by hand. The runtime no longer uses it.
+
+## License
+
+OpenDIL is licensed under Apache-2.0. The package includes `LICENSE` and `THIRD_PARTY_NOTICES.md`, which lists the libraries OpenDIL builds on, such as React, Radix UI, QuickJS, Recharts, React Flow, and Mermaid, and the MIT license of the shadcn/ui-derived UI components. Each dependency's license stays in its own package.
+
+## Next steps
+
+<Cards>
+  <Card title="Quickstart" href="/docs/getting-started/" description="Install, copy the runtime, and render your first answer." />
+  <Card title="Agent Spec" href="/docs/agent-spec/" description="Load the spec and add it to your model's system prompt." />
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose iframe, Shadow DOM, or host mode and set its headers." />
+  <Card title="Theming" href="/docs/theming/" description="Match generated answers to your app's colors and dark mode." />
+</Cards>

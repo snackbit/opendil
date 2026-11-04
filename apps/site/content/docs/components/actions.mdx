@@ -1,0 +1,130 @@
+---
+title: Actions and views
+description: Run actions with button and pressable, switch views with segmented-control, and copy text to the clipboard.
+---
+
+Actions change state when the reader clicks. Combine a `segmented-control` with `{#if}` to switch between views.
+
+The model writes these tags in its answer. For state, expressions, and `{#if}`, see the [DIL tour](/docs/language/).
+
+<LiveExample id="tabs" />
+
+## `button`
+
+An explicit action, such as "Add one" or "Copy report".
+
+**Usage**
+
+```dil
+{@body const [count,setCount] = DIL.useState(0)}
+<button variant="outline" size="sm" onClick={() => setCount(previous => previous + 1)}>Add one</button>
+<text>Count: {count}</text>
+```
+
+**Attributes**
+
+<ComponentProps name="button" />
+
+`variant` is `default` (filled), `outline`, or `ghost` (low chrome). `size` is `default`, `sm`, or `xs`. `block` stretches the button to the full width. Unknown values fall back to `default`.
+
+A button can stay unavailable while its tag or the answer is still incomplete, even with `disabled={false}`. The renderer enables it once the tag is complete.
+
+**Callback value:** `onClick` receives no value.
+
+**Accessibility:** a button with only an icon needs an `aria-label` that names the action, such as `aria-label="Reset count"`. A `size="xs"` button without `aria-label` is announced as "Dismiss notification", whatever its visible text says, so give every `xs` button an `aria-label` that matches its text. Buttons respond to Enter and Space.
+
+**Styling:** `classNames.button` applies in host and Shadow DOM modes. In those modes, `componentConfig={{ button: { variant: "outline" } }}` changes the default look of every button; the default iframe mode does not accept `componentConfig`. Attributes the model writes still win. See [Custom components](/docs/custom-components/) to replace the button with your own.
+
+<SpecExcerpt name="button" />
+
+## `pressable`
+
+A whole card that acts as one button.
+
+**Usage**
+
+```dil
+{@body const [selected,setSelected] = DIL.useState(false)}
+<pressable border padding={4} radius="xl" gap={2} onClick={() => setSelected(previous => !previous)}>
+  <title>Alpha option</title><text>Select this local option.</text>
+  <badge>{selected ? "Selected" : "Not selected"}</badge>
+</pressable>
+```
+
+**Attributes**
+
+<ComponentProps name="pressable" />
+
+`pressable` accepts the [shared layout attributes](/docs/components/layout/#shared-layout-attributes), so it can look like any card.
+
+**Callback value:** `onClick` receives no value.
+
+**Accessibility:** `pressable` has no `aria-label` and no `disabled` attribute. Its visible content is its accessible name, so that content must say what the action does. Never put buttons, inputs, checkboxes, radio groups, or another pressable inside it. Place secondary actions next to it instead.
+
+**Styling:** `classNames.pressable` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="pressable" />
+
+## `segmented-control`
+
+A row of segments that selects one value from a short list.
+
+**Usage**
+
+```dil
+{@body const [view,setView] = DIL.useState("summary")}
+<segmented-control aria-label="View" value={view} onChange={setView} options={[{value:"summary",label:"Summary"},{value:"details",label:"Details"}]}/>
+{#if view === "summary"}<text>Summary content.</text>{:else}<text>Detailed content.</text>{/if}
+```
+
+**Attributes**
+
+<ComponentProps name="segmented-control" />
+
+**Callback value:** `onChange` receives the selected option's `value` as a string. Clicking the selected segment again does not clear the selection.
+
+**Accessibility:** give the control an `aria-label`. Arrow keys move between segments; Enter or Space selects one. For long option labels, use a [`radio-group`](/docs/components/inputs/#radio-group) instead.
+
+**Styling:** `classNames["segmented-control"]` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="segmented-control" />
+
+## Switch between views
+
+DIL has no tabs tag. To show one view at a time, bind a `segmented-control` to state and render each view in an `{#if}` branch, as the `segmented-control` example above does. Hiding a view does not reset the answer's state, so inputs bound to state keep their values when the reader switches back.
+
+## Copy to the clipboard
+
+`GenUI.copy(text)` is the only action an answer can trigger in your app. It writes a string to the reader's clipboard:
+
+```dil
+{@body const report = "Review complete: Alpha and Beta checked."}
+<button onClick={() => GenUI.copy(report)}><icon name="copy"/> Copy report</button>
+```
+
+The rules:
+
+- Call it synchronously from the `onClick` of a `button` or `pressable` that the reader clicked. Calls from other callbacks, such as `onChange`, or from expressions are refused. Do not defer the call through a promise.
+- The text must stay within the limit in [Clipboard limits](/docs/limits/#clipboard). Empty text copies nothing.
+- The control that the reader clicked shows "Copied" or "Copy failed" for 2 seconds, and screen readers hear "Copied to clipboard." or "Copy failed. Check clipboard permissions." The browser can deny the request; the answer cannot tell which happened, so it should not show its own success message.
+- There is no other action: no opening URLs, downloads, network requests, or messages back to your app.
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Inputs"
+    href="/docs/components/inputs/"
+    description="Collect the values your actions work with."
+  />
+  <Card
+    title="Popovers"
+    href="/docs/components/overlays/"
+    description="Open extra detail from a button."
+  />
+  <Card
+    title="DIL tour"
+    href="/docs/language/"
+    description="Learn how state, conditions, and callbacks fit together."
+  />
+</Cards>

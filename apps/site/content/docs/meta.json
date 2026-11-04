@@ -1,0 +1,29 @@
+{
+  "title": "Docs",
+  "pages": [
+    "---Get started---",
+    "index",
+    "getting-started",
+    "chat-integration",
+    "---Guides---",
+    "streaming",
+    "rendering-modes",
+    "theming",
+    "custom-components",
+    "performance",
+    "troubleshooting",
+    "---Writing DIL---",
+    "language",
+    "agent-spec",
+    "prompting",
+    "---Components---",
+    "...components",
+    "---Reference and concepts---",
+    "renderer",
+    "package",
+    "ui",
+    "limits",
+    "how-it-works",
+    "security"
+  ]
+}

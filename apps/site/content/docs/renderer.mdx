@@ -1,0 +1,467 @@
+---
+title: DilRenderer
+description: "Every DilRenderer prop, its default and supported modes, the ref handle, exported types, and usage by task."
+---
+
+`DilRenderer` is the React component that renders one DIL answer. Pass it the text the model has sent so far, and it parses, runs, and draws the answer as the text grows. This page lists every prop, the ref handle, and the exported types, followed by short recipes.
+
+```tsx title="answer.tsx"
+import { DilRenderer, type DilRendererProps } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+```
+
+The module is a Client Component (`"use client"`). In Next.js, render it from a Client Component whenever you pass callbacks, a `ref`, or custom components.
+
+The default iframe mode loads its runtime from `/opendil/` in your app. Copy it there with [`opendil copy-assets`](/docs/package/#opendil-copy-assets) and serve `frame.html` with [the frame header](/docs/rendering-modes/#send-the-frame-header). Without the runtime files, the answer shows "OpenDIL's runtime frame did not start from …".
+
+## Props
+
+Types without inline definitions are listed under [Types](#types).
+
+### All modes
+
+| Prop                | Type                               | Default      | Description                                                                                       |
+| ------------------- | ---------------------------------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| `text`              | `string`                           | required     | All text received so far. Append-only; see [Streaming](/docs/streaming/)                          |
+| `isStreaming`       | `boolean`                          | `false`      | `true` while text may still arrive. Set `false` to finish the answer                              |
+| `mode`              | `"isolated" \| "shadow" \| "host"` | `"isolated"` | Where the answer renders. See [Rendering modes](/docs/rendering-modes/)                           |
+| `showStatus`        | `boolean`                          | `true`       | Shows "Receiving document", "Incomplete", or "Complete". Errors show either way                   |
+| `progressiveReveal` | `ProgressiveReveal`                | `false`      | Fades in new blocks. `true` means a 50 ms stagger and a 180 ms fade                               |
+| `updateInterval`    | `UpdateInterval`                   | `"instant"`  | Minimum milliseconds between screen updates while streaming                                       |
+| `autoScroll`        | `AutoScroll`                       | `false`      | Keeps the end of a streaming answer in view. `true` scrolls instantly, without padding            |
+| `scrollContainer`   | `ScrollContainer`                  | `"auto"`     | What scrolls around the renderer, for `autoScroll` and long lists                                 |
+| `appearance`        | `"light" \| "dark"`                | `"light"`    | Color scheme of the built-in components. See [Theming](/docs/theming/)                            |
+| `tokens`            | ``Record<`--${string}`, string>``  |              | CSS custom properties, such as `--primary`, on the renderer root. Iframe mode drops unsafe values |
+
+### Callbacks and ref
+
+All callbacks and the ref work in every mode.
+
+| Prop             | Type                                   | Description                                                                     |
+| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
+| `onFollowChange` | `(following: boolean) => void`         | Reports whether `autoScroll` is following the answer                            |
+| `onInput`        | `(detail: { length: number }) => void` | Called when the renderer forwards new text or the finish signal                 |
+| `onCommit`       | `(detail: RendererMetrics) => void`    | Called after the renderer applies parsed text, at most once per animation frame |
+| `onError`        | `(error: DilRenderError) => void`      | Receives each distinct rendering problem once                                   |
+| `ref`            | `Ref<DilRendererHandle>`               | Handle with `resumeAutoScroll()`. See [Ref handle](#ref-handle)                 |
+
+### Iframe mode
+
+| Prop             | Type     | Default       | Description                                                                                                                                 |
+| ---------------- | -------- | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runtimeBaseUrl` | `string` | `"/opendil/"` | URL of the folder that serves `frame.html`, as copied by [`opendil copy-assets`](/docs/package/#opendil-copy-assets). Other modes ignore it |
+
+### Host and Shadow DOM modes
+
+These props customize the answer, so they need `mode="host"` or `mode="shadow"`.
+
+| Prop              | Type                                  | Description                                                                                                                        |
+| ----------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `components`      | `DilCustomization["components"]`      | Your React components by tag name. See [Custom components](/docs/custom-components/)                                               |
+| `componentConfig` | `DilCustomization["componentConfig"]` | Default attributes per tag, built-in or custom. Attributes in the answer win                                                       |
+| `classNames`      | `DilCustomization["classNames"]`      | A class for each tag's root element. See [Theming](/docs/theming/#class-overrides)                                                 |
+| `slots`           | `DilCustomization["slots"]`           | Named class strings for the parts of your custom components                                                                        |
+| `className`       | `string`                              | A class on the renderer's `.dil-scope` root                                                                                        |
+| `shadowStyles`    | `string`                              | Shadow DOM mode only. Trusted CSS added to the shadow root after the built-in styles. See [Theming](/docs/theming/#shadow-dom-css) |
+
+### Details
+
+- **`isStreaming`**: setting it to `false` finishes the answer even when `text` did not change. The renderer then stops its parser. An answer that ends with an open tag keeps what it completed and shows "This response ended before it was finished."
+- **`showStatus`**: chat apps usually pass `false`, because the conversation already shows progress. The note about an answer that ended early stays visible.
+- **`progressiveReveal`**: readers who ask for reduced motion see content without the fade.
+- **`updateInterval`**: `0` and `"instant"` update as soon as text is parsed. Reader input, such as typing into an input, always updates at once.
+- **`autoScroll`**: following starts when streaming starts and pauses when the reader scrolls, swipes, or presses a scrolling key in the same scroller. `"smooth"` falls back to instant scrolling under reduced motion. `padding` scrolls up to that many extra pixels past the answer's end, when the page or list has room below it.
+- **`scrollContainer`**: `"auto"` uses the nearest ancestor that scrolls vertically, crossing Shadow DOM boundaries, and the window when none does. It checks again when the layout changes. `"window"` always uses the page. An element, or a ref to one, names the scroller; `null` and an empty ref behave like `"auto"`.
+- **`tokens`**: the values override both appearances, so pass different values for light and dark when you need them. The iframe mode ignores values that could load resources, with one `console.warn` per token name. The exact rules are on [Limits](/docs/limits/#iframe-startup-and-theme).
+- **`onInput`**: `length` is the length of `text` at that moment. The renderer calls it when it forwards new text, and once more when it forwards the finish signal.
+- **`runtimeBaseUrl`**: include your app's base path. A trailing slash is optional.
+
+## Ref handle
+
+```ts
+interface DilRendererHandle {
+  resumeAutoScroll(): void;
+}
+```
+
+`resumeAutoScroll()` resumes following and moves to the end of the answer. Use it for a "Jump to latest" button; see [Show a Jump to latest button](#show-a-jump-to-latest-button). It does nothing while `autoScroll` is `false`.
+
+In host and Shadow DOM modes, the ref stays `null` until the code for those modes has loaded. Call [`preloadHostRenderer()`](#preloadhostrenderer) to load it early.
+
+## preloadHostRenderer()
+
+```ts
+function preloadHostRenderer(): Promise<void>;
+```
+
+Host and Shadow DOM modes load their code, including the parser and the expression engine, in a separate chunk the first time a page renders one of them. Pages that only use the iframe mode never download it. Until the chunk loads, a host or Shadow DOM renderer renders nothing, its `ref` is `null`, and a synchronous `renderToString` leaves it out. Streaming server rendering waits for the chunk.
+
+`preloadHostRenderer()` starts loading the chunk. Once its promise resolves, both modes render synchronously. If the chunk fails to load, the promise rejects; a renderer that then renders passes the error to your error boundary and tries again on its next render. See [Load host and Shadow DOM code early](#load-host-and-shadow-dom-code-early).
+
+## Types
+
+The package root exports these types:
+
+| Type                                                                         | Describes                                                                                                                    |
+| ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `DilRendererProps`                                                           | All props: a union of the three types below, keyed by `mode`                                                                 |
+| `DilIsolatedRendererProps`, `DilShadowRendererProps`, `DilHostRendererProps` | Props for one mode                                                                                                           |
+| `DilRendererHandle`                                                          | The `ref` handle                                                                                                             |
+| `AutoScroll`, `AutoScrollOptions`                                            | The `autoScroll` value                                                                                                       |
+| `ScrollContainer`                                                            | The `scrollContainer` value                                                                                                  |
+| `ProgressiveReveal`, `ProgressiveRevealOptions`                              | The `progressiveReveal` value                                                                                                |
+| `UpdateInterval`                                                             | The `updateInterval` value                                                                                                   |
+| `RendererMetrics`                                                            | What `onCommit` receives                                                                                                     |
+| `DilRenderError`, `DilRenderErrorKind`                                       | What `onError` receives                                                                                                      |
+| `DilComponentProps`                                                          | Props of a custom component; see [Custom components](/docs/custom-components/#read-attributes-and-call-back-into-the-answer) |
+| `DilCustomization`                                                           | `components`, `componentConfig`, `classNames`, and `slots` together                                                          |
+
+The option types and `DilCustomization`, as declared in the package:
+
+```ts
+type AutoScroll = boolean | AutoScrollOptions;
+interface AutoScrollOptions {
+  behavior?: "instant" | "smooth"; // default "instant"
+  padding?: number; // pixels, default 0
+}
+
+type ScrollContainer =
+  | "auto"
+  | "window"
+  | HTMLElement
+  | RefObject<HTMLElement | null>
+  | null;
+
+type ProgressiveReveal = boolean | ProgressiveRevealOptions;
+interface ProgressiveRevealOptions {
+  staggerMs?: number; // default 50
+  durationMs?: number; // default 180
+}
+
+type UpdateInterval = "instant" | number; // milliseconds
+
+interface RendererMetrics {
+  scanned: number; // characters of text the parser has read
+  complete: boolean; // the finished text has been applied
+  incomplete: boolean; // the answer ended with unfinished structure
+}
+
+interface DilRenderError {
+  kind: DilRenderErrorKind;
+  message: string; // for developers; readers see shorter wording
+  offset?: number; // position in text, for parse problems
+}
+type DilRenderErrorKind =
+  | "incomplete"
+  | "syntax"
+  | "runtime"
+  | "limit"
+  | "source";
+
+interface DilCustomization {
+  components?: Readonly<Record<string, ComponentType<DilComponentProps>>>;
+  componentConfig?: Readonly<Record<string, Readonly<Record<string, unknown>>>>;
+  classNames?: Readonly<Record<string, string>>; // tag name to class
+  slots?: Readonly<Record<string, Readonly<Record<string, string>>>>;
+}
+```
+
+The `tokens` prop has the type ``Readonly<Record<`--${string}`, string>>``.
+
+`DilRenderErrorKind` values:
+
+| Kind         | Meaning                                                                                                                    |
+| ------------ | -------------------------------------------------------------------------------------------------------------------------- |
+| `incomplete` | The answer finished with unfinished structure: the reader stopped it, the model hit its output limit, or the stream failed |
+| `syntax`     | The text contains malformed DIL. Readers see "This part of the response couldn't be shown."                                |
+| `runtime`    | The parser, the expression engine, or the iframe runtime failed or was blocked by a security policy                        |
+| `limit`      | A size, display, or execution limit stopped the answer. See [Limits](/docs/limits/)                                        |
+| `source`     | `text` changed in an unsupported way, for example it got shorter or grew after the answer finished                         |
+
+`onError` receives each distinct problem once, in every mode, up to the bound on [Limits](/docs/limits/#what-happens-at-a-limit). After that it receives a single `limit` error saying that later problems are not reported; the `incomplete` report still arrives. Syntax problems and incomplete answers are also logged with `console.warn`. An exception thrown inside `onError` is rethrown asynchronously, so it does not stop rendering.
+
+`DilRendererProps` is a union keyed by `mode`. In iframe mode, TypeScript types `components`, `componentConfig`, `classNames`, `slots`, `className`, and `shadowStyles` as `undefined`. A mode held in a variable of type `"isolated" | "shadow" | "host"` type-checks with every prop that all modes accept, including `runtimeBaseUrl`. JavaScript callers that pass one of the excluded props in iframe mode get this error during render:
+
+```text
+OpenDIL customization (components) requires mode="host" or mode="shadow".
+```
+
+## Caveats
+
+- **`text` is append-only.** Each update must start with the previous text. To replace an answer, for example on retry, render a new `DilRenderer` with a new `key`. Otherwise the answer shows an error. In iframe mode, shorter text shows "Start a new message instance before replacing its source." In host and Shadow DOM modes, and in iframe mode when text grows after the answer finished, it shows "Start a new renderer instance before replacing or restarting the document." See [Streaming](/docs/streaming/).
+- **Finish every answer.** Set `isStreaming` to `false` when the response ends, also after a stop or an error, so the renderer can finish the answer and stop its parser. See [Handle stop, truncation, errors, and retry](/docs/chat-integration/#handle-stop-truncation-errors-and-retry).
+- **Inline option objects are fine.** You can create `autoScroll`, `progressiveReveal`, and `tokens` objects during render; a new object with the same values changes nothing. Keep `components` and the components in it at module scope: a component type created during render remounts on every render.
+- **Invalid options throw during render.** `updateInterval`, `autoScroll`, and `scrollContainer` values outside their types throw in every mode, for example "Auto-scroll padding must be a finite nonnegative number." Invalid `progressiveReveal` timings throw in host and Shadow DOM modes and turn the reveal off in iframe mode. Validate values your users can configure.
+- **Host and Shadow DOM modes start empty** until their code loads; tests can call [`preloadHostRenderer()`](#preloadhostrenderer) first.
+- **Errors render inside the answer.** Readers see short messages with `role="alert"` in place of the failed part. Use `onError` to get the developer details.
+
+## Usage by task
+
+Most recipes wrap `DilRenderer` in a component that takes the same props and sets a few of its own.
+
+### Render a finished answer
+
+Pass only `text` for a saved answer. `isStreaming` defaults to `false`. In iframe mode, this needs [the runtime files](/docs/package/#opendil-copy-assets).
+
+```tsx title="components/saved-answer.tsx"
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+export function SavedAnswer({ text }: { text: string }) {
+  return <DilRenderer text={text} />;
+}
+```
+
+### Stream answers in a chat
+
+Render user messages as plain text and assistant messages with `DilRenderer`. Give each message a stable `key`, mark only the answer that is still arriving as streaming, and hide the status label. [Add OpenDIL to your chat app](/docs/chat-integration/) shows how to derive `streaming` from each SDK.
+
+```tsx title="components/messages.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+type Message = { id: string; role: "user" | "assistant"; text: string };
+
+export function Messages(props: { messages: Message[]; streaming: boolean }) {
+  const { messages, streaming } = props;
+  return messages.map((message, index) =>
+    message.role === "user" ? (
+      <p key={message.id}>{message.text}</p>
+    ) : (
+      <DilRenderer
+        key={message.id}
+        text={message.text}
+        isStreaming={streaming && index === messages.length - 1}
+        showStatus={false}
+      />
+    ),
+  );
+}
+```
+
+### Show a Jump to latest button
+
+`onFollowChange` reports `false` when the reader scrolls away during streaming. Show a button then, and call `resumeAutoScroll()` from it.
+
+```tsx title="components/streaming-answer.tsx"
+"use client";
+import { useRef, useState } from "react";
+import {
+  DilRenderer,
+  type DilRendererHandle,
+  type DilRendererProps,
+} from "@snackbit/opendil";
+
+export function StreamingAnswer(props: DilRendererProps) {
+  const renderer = useRef<DilRendererHandle>(null);
+  const [following, setFollowing] = useState(false);
+  return (
+    <div>
+      <DilRenderer
+        {...props}
+        ref={renderer}
+        autoScroll={{ behavior: "smooth", padding: 24 }}
+        onFollowChange={setFollowing}
+      />
+      {props.isStreaming && !following && (
+        <button
+          type="button"
+          onClick={() => renderer.current?.resumeAutoScroll()}
+        >
+          Jump to latest
+        </button>
+      )}
+    </div>
+  );
+}
+```
+
+### Follow the stream inside a scrolling message list
+
+The default `scrollContainer="auto"` finds a message list that scrolls with `overflow-y: auto`. Name the list yourself when detection picks the wrong element, or pass `"window"` when the page scrolls:
+
+```tsx title="components/chat-pane.tsx"
+"use client";
+import { useRef } from "react";
+import { DilRenderer, type DilRendererProps } from "@snackbit/opendil";
+
+export function ChatPane(props: DilRendererProps) {
+  const pane = useRef<HTMLDivElement>(null);
+  return (
+    <div ref={pane} style={{ height: "100%", overflowY: "auto" }}>
+      {/* Earlier messages go here. */}
+      <DilRenderer {...props} autoScroll scrollContainer={pane} />
+    </div>
+  );
+}
+```
+
+The same scroller decides which rows of a long list or table mount as the reader scrolls. See [Follow the stream in a scrolling message list](/docs/chat-integration/#follow-the-stream-in-a-scrolling-message-list).
+
+### Fade in new content
+
+```tsx title="components/revealed-answer.tsx"
+import { DilRenderer, type DilRendererProps } from "@snackbit/opendil";
+
+export function RevealedAnswer(props: DilRendererProps) {
+  return (
+    <DilRenderer
+      {...props}
+      progressiveReveal={{ staggerMs: 80, durationMs: 240 }}
+    />
+  );
+}
+```
+
+Pass `progressiveReveal` (or `progressiveReveal={true}`) for the default timing. See [Fade in new content](/docs/streaming/#fade-in-new-content).
+
+### Match your app's theme
+
+`appearance` and `tokens` work in every mode, including the iframe.
+
+```tsx title="components/themed-answer.tsx"
+import { DilRenderer, type DilRendererProps } from "@snackbit/opendil";
+
+export function ThemedAnswer({
+  dark,
+  ...props
+}: DilRendererProps & { dark: boolean }) {
+  return (
+    <DilRenderer
+      {...props}
+      appearance={dark ? "dark" : "light"}
+      tokens={{
+        "--primary": dark ? "#a5b4fc" : "#4338ca",
+        "--radius": "0.5rem",
+      }}
+    />
+  );
+}
+```
+
+[Theming](/docs/theming/) lists every token.
+
+### Serve the runtime under a base path
+
+The iframe mode loads `frame.html` from `runtimeBaseUrl`. When your app runs under a base path, include it:
+
+```tsx title="components/answer.tsx"
+import { DilRenderer } from "@snackbit/opendil";
+
+// The app runs under /assistant, so public/opendil is /assistant/opendil/.
+const runtimeBaseUrl = "/assistant/opendil/";
+
+export function Answer({ text }: { text: string }) {
+  return <DilRenderer text={text} runtimeBaseUrl={runtimeBaseUrl} />;
+}
+```
+
+[Quickstart](/docs/getting-started/#set-the-runtime-path-for-a-base-path-or-subfolder) shows how to read the base path in Next.js and Vite.
+
+### Render in Shadow DOM with your components
+
+Shadow DOM mode keeps page CSS out, so pass the CSS for your classes through `shadowStyles`.
+
+```tsx title="components/shadow-answer.tsx"
+"use client";
+import { DilRenderer, type DilComponentProps } from "@snackbit/opendil";
+
+function Note({ children, className, presentationRef }: DilComponentProps) {
+  return (
+    <aside ref={presentationRef} className={className}>
+      {children}
+    </aside>
+  );
+}
+
+const components = { Note };
+const shadowStyles = `
+  .answer-note {
+    border-inline-start: 3px solid var(--primary);
+    padding: 8px 12px;
+  }
+`;
+
+type AnswerProps = { text: string; isStreaming: boolean };
+
+export function ShadowAnswer({ text, isStreaming }: AnswerProps) {
+  return (
+    <DilRenderer
+      mode="shadow"
+      text={text}
+      isStreaming={isStreaming}
+      components={components}
+      classNames={{ Note: "answer-note" }}
+      shadowStyles={shadowStyles}
+    />
+  );
+}
+```
+
+An answer can now use `<Note>…</Note>` once your system prompt describes it. See [Custom components](/docs/custom-components/).
+
+### Load host and Shadow DOM code early
+
+Call [`preloadHostRenderer()`](#preloadhostrenderer) at module scope in a client module, so the first host or Shadow DOM answer renders without an empty first frame:
+
+```tsx title="components/host-answer.tsx"
+"use client";
+import { DilRenderer, preloadHostRenderer } from "@snackbit/opendil";
+
+// Start loading host and Shadow DOM code when this module loads.
+// A failed load is retried when an answer first renders in these modes.
+preloadHostRenderer().catch(() => {});
+
+type AnswerProps = { text: string; isStreaming: boolean };
+
+export function HostAnswer({ text, isStreaming }: AnswerProps) {
+  return <DilRenderer mode="host" text={text} isStreaming={isStreaming} />;
+}
+```
+
+### Report rendering problems
+
+Send problems to your logging or monitoring with `onError`:
+
+```tsx title="components/monitored-answer.tsx"
+"use client";
+import {
+  DilRenderer,
+  type DilRenderError,
+  type DilRendererProps,
+} from "@snackbit/opendil";
+
+export function MonitoredAnswer({
+  id,
+  ...props
+}: DilRendererProps & { id: string }) {
+  const report = (error: DilRenderError) => {
+    const where = error.offset === undefined ? "" : ` at ${error.offset}`;
+    console.warn(`Answer ${id}: ${error.kind}${where}: ${error.message}`);
+  };
+  return <DilRenderer {...props} onError={report} />;
+}
+```
+
+To find out why a model writes invalid DIL, see [Prompting and evaluation](/docs/prompting/).
+
+### Measure applied text
+
+`onCommit` runs after the renderer applies parsed text, and `onInput` when it forwards new text. The time between them is how long readers wait. `onCommit` does not mean the browser has painted or that charts have finished drawing. [Time how fast text reaches the screen](/docs/performance/#time-how-fast-text-reaches-the-screen) records it as a performance measure.
+
+## Troubleshooting
+
+- The iframe stays empty or shows "OpenDIL's runtime frame did not start": see [Troubleshooting: Setup](/docs/troubleshooting/#setup).
+- A host or Shadow DOM answer says the page's security policy blocks it: see [Troubleshooting: Rendering modes and Content Security Policy](/docs/troubleshooting/#rendering-modes-and-content-security-policy).
+- "Start a new message instance before replacing its source.", "Start a new renderer instance before replacing or restarting the document.", or following does not work: see [Troubleshooting: Streaming](/docs/troubleshooting/#streaming).
+- "Unsupported DIL component" or "This part of the response couldn't be shown.": see [Troubleshooting: Model output](/docs/troubleshooting/#model-output).
+
+## Next steps
+
+<Cards>
+  <Card title="Streaming" href="/docs/streaming/" description="Pass growing text, follow the stream, and fade in new content." />
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose between iframe, Shadow DOM, and host mode." />
+  <Card title="Theming" href="/docs/theming/" description="Dark appearance, tokens, classes, and Shadow DOM styles." />
+  <Card title="Custom components" href="/docs/custom-components/" description="Register your own React components as DIL tags." />
+</Cards>

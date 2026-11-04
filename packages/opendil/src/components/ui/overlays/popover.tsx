@@ -3,7 +3,7 @@
 import * as React from "react";
 import { cn } from "../../../lib/cn";
 import { Popover as PopoverPrimitive } from "radix-ui";
-import { usePortalScope } from "./ui-scope";
+import { useCollisionPadding, usePortalScope } from "./ui-scope";
 
 function Popover({
   ...props
@@ -17,27 +17,41 @@ function PopoverTrigger({
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
-function PopoverContent({
+type PopoverContentProps = React.ComponentProps<
+  typeof PopoverPrimitive.Content
+>;
+
+function PopoverContent(props: PopoverContentProps) {
+  const { container } = usePortalScope();
+  return (
+    <PopoverPrimitive.Portal container={container}>
+      <PlacedPopoverContent {...props} />
+    </PopoverPrimitive.Portal>
+  );
+}
+
+/** Mounted only while open, so closed popovers do not follow overlay room. */
+function PlacedPopoverContent({
   className,
   align = "center",
   sideOffset = 4,
+  collisionPadding,
   ...props
-}: React.ComponentProps<typeof PopoverPrimitive.Content>) {
-  const { container, boundary } = usePortalScope();
+}: PopoverContentProps) {
+  const { boundary } = usePortalScope();
   return (
-    <PopoverPrimitive.Portal container={container}>
-      <PopoverPrimitive.Content
-        data-slot="popover-content"
-        align={align}
-        sideOffset={sideOffset}
-        collisionBoundary={boundary}
-        className={cn(
-          "z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
-          className,
-        )}
-        {...props}
-      />
-    </PopoverPrimitive.Portal>
+    <PopoverPrimitive.Content
+      data-slot="popover-content"
+      align={align}
+      sideOffset={sideOffset}
+      collisionBoundary={boundary}
+      collisionPadding={useCollisionPadding(collisionPadding)}
+      className={cn(
+        "z-50 w-72 origin-(--radix-popover-content-transform-origin) rounded-md border bg-popover p-4 text-popover-foreground shadow-md outline-hidden data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+        className,
+      )}
+      {...props}
+    />
   );
 }
 

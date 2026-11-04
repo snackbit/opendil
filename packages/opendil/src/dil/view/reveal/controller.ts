@@ -6,6 +6,8 @@ interface Target {
   opacity: string;
   endOpacity: string;
   inert: boolean;
+  /** Hidden by prepare() and waiting for its animation. */
+  hidden?: boolean;
   animation?: Animation;
 }
 export class RevealController {
@@ -41,7 +43,11 @@ export class RevealController {
       cancelAnimationFrame(this.frame);
       this.frame = 0;
       media.removeEventListener("change", change);
-      this.showAll();
+      // Stopping is not finishing: React replays effects under StrictMode and
+      // <Activity>, and the restarted controller reveals what is still queued.
+      for (const target of this.targets.values())
+        if (target.animation) this.finish(target);
+        else this.restore(target);
     };
   }
   register(
@@ -51,7 +57,7 @@ export class RevealController {
     skip: boolean,
   ) {
     const previous = this.targets.get(key);
-    if (previous) this.finish(previous);
+    if (previous) this.release(previous);
     const target: Target = {
       key,
       element,
@@ -73,9 +79,28 @@ export class RevealController {
     }
     return () => {
       if (this.targets.get(key) !== target) return;
-      this.finish(target);
+      this.release(target);
       this.targets.delete(key);
     };
+  }
+  /**
+   * Stops tracking a target. A reveal in progress completes at once. A target
+   * that never started revealing stays "ready" in history, so registering it
+   * again, as React does when it replays refs, reveals it.
+   */
+  private release(target: Target) {
+    if (target.animation) this.finish(target);
+    else {
+      this.queued.delete(target);
+      this.restore(target);
+    }
+  }
+  private restore(target: Target) {
+    if (!target.hidden) return;
+    target.hidden = false;
+    target.element.style.opacity = target.opacity;
+    target.element.inert = target.inert;
+    delete target.element.dataset.dilPhase;
   }
   private prepare(target: Target) {
     const { element } = target;
@@ -100,10 +125,12 @@ export class RevealController {
     target.endOpacity = getComputedStyle(element).opacity;
     element.style.opacity = "0";
     element.inert = true;
+    target.hidden = true;
     element.dataset.dilPhase = "ready";
   }
   private finish(target: Target) {
     this.queued.delete(target);
+    target.hidden = false;
     const animation = target.animation;
     if (animation) {
       animation.onfinish = null;

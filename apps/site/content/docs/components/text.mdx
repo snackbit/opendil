@@ -1,0 +1,185 @@
+---
+title: Text and status
+description: Show values, titles, captions, labels, status badges, and icons alongside Markdown prose.
+---
+
+Use Markdown for prose and headings. Use these tags for styled values, small titles, status labels, and icons inside components.
+
+<LiveExample id="status" />
+
+## Markdown or a text tag?
+
+- **Headings:** use Markdown headings (`#`, `##`) for the outline of an answer. Use [`title`](#title) for the heading of a card or panel. It always renders an `h3`.
+- **Bold:** use Markdown emphasis (`**bold**`). `weight="medium"` is 500, not bold.
+- **Links:** Markdown links render their label as plain text without navigation. Write the URL as visible text when the reader needs it.
+- **Images:** Markdown images are hidden. See [Media](/docs/components/media/) for illustrations.
+
+`text`, `title`, and `caption` share one size scale:
+
+| `size` | Pixels |
+| ------ | ------ |
+| `xs`   | 12     |
+| `sm`   | 14     |
+| `md`   | 16     |
+| `lg`   | 18     |
+| `xl`   | 24     |
+| `2xl`  | 30     |
+
+## `text`
+
+An inline value or short sentence, often with an expression inside.
+
+**Usage**
+
+```dil
+<text color="primary" size="lg" weight="medium" tabularNums>1,234 units</text>
+```
+
+**Attributes**
+
+<ComponentProps name="text" />
+
+`tabularNums` gives digits equal widths so changing numbers do not shift. It does not format numbers; format them in the expression, for example with `toFixed(2)`.
+
+**Accessibility:** `text` renders a plain inline element. Do not let color alone carry meaning.
+
+**Styling:** `classNames.text` applies in host and Shadow DOM modes. Without `color`, text inherits the surrounding color, which defaults to the `--foreground` token.
+
+<SpecExcerpt name="text" />
+
+## `title`
+
+The heading of a card, panel, or group.
+
+**Usage**
+
+```dil
+<title size="xl">Quarterly review</title>
+```
+
+**Attributes**
+
+<ComponentProps name="title" />
+
+`title` renders an `h3` at weight 600 and 18 px by default. `size` changes how it looks, not its heading level, and `weight` has no effect.
+
+**Accessibility:** screen readers list every `title` as a level 3 heading. Keep buttons and other controls outside it, next to it in a `row`.
+
+**Styling:** `classNames.title` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="title" />
+
+## `caption`
+
+Small secondary text for units, context, or a short validation message.
+
+**Usage**
+
+```dil
+<caption color="secondary">Synthetic values, shown in units.</caption>
+```
+
+**Attributes**
+
+<ComponentProps name="caption" />
+
+A caption defaults to 12 px in the muted text color.
+
+**Accessibility:** a caption is visible text only. It is not linked to an input and screen readers do not announce it when it changes.
+
+**Styling:** `classNames.caption` applies in host and Shadow DOM modes. The default color comes from the `--muted-foreground` token.
+
+<SpecExcerpt name="caption" />
+
+## `label`
+
+Medium-weight text above a field or a group of values.
+
+**Usage**
+
+```dil
+{@body const [name,setName] = DIL.useState("")}
+<label>Name</label>
+<input aria-label="Name" value={name} onChange={setName}/>
+```
+
+**Attributes**
+
+<ComponentProps name="label" />
+
+**Accessibility:** `label` is visual text, not an HTML `<label>`. It is not connected to the input next to it. Name the input itself with `aria-label`, using the same words as the visible label. See [Inputs](/docs/components/inputs/).
+
+**Styling:** `classNames` does not apply to `label`.
+
+<SpecExcerpt name="label" />
+
+## `badge`
+
+A compact status label, such as "Ready" or "Needs review".
+
+**Usage**
+
+```dil
+<badge color="warning"><icon name="alert-triangle" size="xs"/> Needs review</badge>
+```
+
+**Attributes**
+
+<ComponentProps name="badge" />
+
+`success`, `warning`, and `danger` also tint the background. These backgrounds are fixed colors, not theme tokens, so they stay light in dark appearance. Other colors change only the text.
+
+**Accessibility:** always put the status in words inside the badge. Color and icon alone do not tell a screen reader or a color-blind reader anything.
+
+**Styling:** `classNames.badge` applies in host and Shadow DOM modes.
+
+<SpecExcerpt name="badge" />
+
+## `icon`
+
+A small decorative symbol next to text.
+
+**Usage**
+
+```dil
+<button onClick={() => GenUI.copy("Review complete")}><icon name="copy" size="xs"/> Copy review</button>
+```
+
+**Attributes**
+
+<ComponentProps name="icon" />
+
+OpenDIL supports 21 icon names. An unknown name falls back to `circle` without an error, so check names against the list. Sizes are `xs` (13 px), the default (17 px), and `lg` (22 px). This example from the examples catalog shows every supported name:
+
+```dil
+{@body const names = ["chart-no-axes-combined","circle-check","check-circle-2","circle","wallet","trending-up","users","rotate-ccw","copy","sliders-horizontal","ellipsis","sparkles","mouse-pointer-click","x","git-merge","package-check","shield-check","settings-2","info","code-2","alert-triangle"]}
+<grid columns={2} gap={3}>
+  {#each names as name}<row gap={2} align="center"><icon name={name} size="lg"/><text>{name}</text></row>{/each}
+</grid>
+```
+
+**Accessibility:** icons are hidden from screen readers and cannot take a label. Pair every icon with visible text. A button that shows only an icon needs `aria-label`, as described in [Actions and views](/docs/components/actions/#button).
+
+**Styling:** `classNames` does not apply to `icon`. Without `color`, an icon uses the current text color.
+
+<SpecExcerpt name="icon" />
+
+## Next steps
+
+<Cards>
+  <Card
+    title="Layout"
+    href="/docs/components/layout/"
+    description="Place text and badges in boxes, rows, and grids."
+  />
+  <Card
+    title="Actions and views"
+    href="/docs/components/actions/"
+    description="Pair icons with buttons and switch views."
+  />
+  <Card
+    title="DIL tour"
+    href="/docs/language/"
+    description="Show state and computed values with expressions inside text."
+  />
+</Cards>

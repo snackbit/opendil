@@ -1,0 +1,30 @@
+{
+  "name": "opendil-example-next-ai-sdk",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "postinstall": "opendil copy-assets --out public/opendil",
+    "dev": "next dev",
+    "build": "next build",
+    "start": "next start",
+    "typecheck": "next typegen && tsc --noEmit"
+  },
+  "dependencies": {
+    "@ai-sdk/openai": "^4.0.108",
+    "@ai-sdk/react": "^4.0.166",
+    "@snackbit/opendil": "^0.2.0",
+    "ai": "^7.0.162",
+    "next": "^16.4.5",
+    "react": "^19.2.0",
+    "react-dom": "^19.2.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/react": "^19.2.0",
+    "@types/react-dom": "^19.2.0",
+    "typescript": "^5.9.3"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

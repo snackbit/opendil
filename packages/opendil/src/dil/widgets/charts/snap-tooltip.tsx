@@ -6,12 +6,14 @@ import {
 } from "../../../components/ui/overlays/popover";
 import { ChartTooltipContent } from "../../../components/ui/display/chart";
 import type { ChartItem } from "./chart-selection";
-import type { ChartHit } from "./snap-cursor";
+import type { ChartHit } from "./chart-hover";
 export interface SnapTooltipProps {
   hit: ChartHit | null;
   items: readonly ChartItem[];
+  /** category: x label with every visible series; scatter: x and y; slice: one pie slice. */
+  kind: "category" | "scatter" | "slice";
   xKey: string;
-  scatter: boolean;
+  valueKey: string;
   onHover: (hit: ChartHit | null) => void;
 }
 function keepFocus(event: Event) {
@@ -20,8 +22,9 @@ function keepFocus(event: Event) {
 export function SnapTooltip({
   hit,
   items,
+  kind,
   xKey,
-  scatter,
+  valueKey,
   onHover,
 }: SnapTooltipProps) {
   const x = hit?.clientX ?? 0,
@@ -39,8 +42,10 @@ export function SnapTooltip({
     [onHover],
   );
   if (!hit) return null;
-  const row = hit.point.row;
-  const entries = items.flatMap((item) => {
+  const { row, item: target } = hit.target;
+  const scatter = kind === "scatter";
+  const series = kind === "slice" ? [{ ...target, id: valueKey }] : items;
+  const entries = series.flatMap((item) => {
     const value = row[item.id];
     return typeof value === "number" || typeof value === "string"
       ? [
@@ -55,6 +60,8 @@ export function SnapTooltip({
         ]
       : [];
   });
+  // Bold the hovered series only when it has to stand out from other series rows.
+  const emphasized = entries.length > 1 ? target.id : undefined;
   const xValue = row[xKey];
   if (scatter && (typeof xValue === "number" || typeof xValue === "string"))
     entries.unshift({
@@ -62,7 +69,7 @@ export function SnapTooltip({
       dataKey: xKey,
       name: xKey,
       value: xValue,
-      color: hit.point.item.color,
+      color: target.color,
       payload: row,
     });
   return (
@@ -81,7 +88,8 @@ export function SnapTooltip({
         <ChartTooltipContent
           active
           payload={entries}
-          {...(!scatter &&
+          emphasizedKey={emphasized}
+          {...(kind === "category" &&
           (typeof xValue === "string" || typeof xValue === "number")
             ? { label: xValue }
             : {})}

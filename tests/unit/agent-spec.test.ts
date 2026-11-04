@@ -11,10 +11,48 @@ import {
   documentedApi,
   compareApi,
   compositionErrors,
+  executableExamples,
+  sharedProps,
 } from "../../scripts/agent-spec-api.mjs";
 
 const files = ["genui.agent.md", "genui.agent.full.md", "genui.examples.md"];
 const primary = readFileSync("spec/genui.agent.md", "utf8");
+const full = readFileSync("spec/genui.agent.full.md", "utf8");
+const catalog = readFileSync("spec/genui.examples.md", "utf8");
+const inventory = extractApi();
+const actual = new Map([...inventory.api, ["svg", inventory.svgProps]]);
+const hierarchy = [
+  "## 1. Output format and safety",
+  "## 2. Syntax and parsing",
+  "### Markdown",
+  "### JavaScript expressions",
+  "### State declarations",
+  "### Conditional rendering",
+  "## 3. Component API",
+  "### Text components",
+  "### Media components",
+  "### Layout components",
+  "### Input components",
+  "## 4. Specialized components",
+  "### Data-linked components",
+  "### Links and citations",
+  "### Embedded application blocks",
+  "## 5. Visualizations",
+  "### Images",
+  "### Charts",
+  "### Maps",
+  "## 6. Interactivity",
+  "### State management",
+  "### Event callbacks",
+  "### Data bindings",
+  "### Host actions",
+  "## 7. Assets",
+  "### Icons",
+];
+it("keeps the requested hierarchy in every reference and the example catalog", () => {
+  for (const markdown of [primary, full, catalog])
+    expect(markdown.match(/^#{2,3} .+$/gm)).toEqual(hierarchy);
+});
 it("documents icon and SVG element allowlists", () => {
   for (const name of Object.keys(ICONS)) expect(primary).toContain(name);
   for (const name of SVG_ELEMENTS)
@@ -25,7 +63,7 @@ afterEach(async () => {
   await Promise.all(workers.splice(0).map((w) => w.terminate()));
 });
 function vm() {
-  const code = readFileSync("packages/opendil/dist/runtime/vm.js", "utf8");
+  const code = readFileSync("packages/opendil/dist/test/vm.js", "utf8");
   const worker = new Worker(
     `const {parentPort}=require('node:worker_threads');globalThis.self=globalThis;self.postMessage=v=>parentPort.postMessage(v);${code};parentPort.on('message',data=>self.onmessage({data}));`,
     { eval: true },
@@ -46,8 +84,101 @@ function vm() {
     });
 }
 it("documents exactly the stock dispatch and consumed props", () => {
-  const { api, layout } = extractApi();
-  expect(compareApi(api, documentedApi(primary, layout))).toEqual([]);
+  const { layout, svgProps } = inventory;
+  for (const markdown of [primary, full]) {
+    expect(
+      compareApi(actual, documentedApi(markdown, layout, svgProps)),
+    ).toEqual([]);
+    expect([...sharedProps(markdown, "layout")].sort()).toEqual(
+      [...layout].sort(),
+    );
+    expect([...sharedProps(markdown, "SVG")].sort()).toEqual(
+      [...svgProps].sort(),
+    );
+  }
+});
+it("has searchable runnable examples for every component and SVG element", () => {
+  const examples = executableExamples(catalog, "genui.examples.md");
+  const names = new Set<string>();
+  for (const example of examples) {
+    const parser = new DilParser();
+    parser.append(example.source, true);
+    for (const node of parser.snapshot())
+      if (node.kind === "element") names.add(node.name);
+  }
+  for (const name of actual.keys()) {
+    expect(catalog).toContain("#### Component: " + name + "\n");
+    expect(names.has(name), name).toBe(true);
+  }
+  for (const name of SVG_ELEMENTS) {
+    if (name !== "svg")
+      expect(catalog).toContain("#### SVG element: " + name + "\n");
+    expect(names.has(name), name).toBe(true);
+  }
+  for (const name of [
+    "static-card",
+    "controlled-counter",
+    "conditional-status",
+    "dynamic-list",
+    "validation-form",
+    "host-action",
+    "external-data",
+    "incomplete-stream",
+  ])
+    expect(
+      examples.some((example) => example.name.endsWith("Task: " + name)),
+      name,
+    ).toBe(true);
+  for (const name of [
+    "table > table-row > table-cell",
+    "popover > popover-trigger + popover-content",
+    "carousel > carousel-item",
+    "radio-group > radio",
+    "svg > defs > linearGradient > stop",
+  ])
+    expect(
+      examples.some((example) => example.name.endsWith("Composition: " + name)),
+      name,
+    ).toBe(true);
+});
+it("reads nested prop types and reports duplicate definitions", () => {
+  const signature =
+    "- <slider>: marks?:{label:string,value?:number}[], value?:number; children: none";
+  expect([
+    ...(documentedApi(signature, new Set()).get("slider") ?? []),
+  ]).toEqual(["marks", "value"]);
+  expect(() => documentedApi(signature + "\n" + signature, new Set())).toThrow(
+    "Duplicate component: slider",
+  );
+  expect(() =>
+    documentedApi(
+      "- <slider>: value?:number, value?:number; children: none",
+      new Set(),
+    ),
+  ).toThrow("Duplicate property: slider.value");
+  expect(() =>
+    documentedApi("- <slider>: nonsense; children: none", new Set()),
+  ).toThrow("Invalid property");
+  expect(() => documentedApi("#### Component: slider\n", new Set())).toThrow(
+    "Missing property block",
+  );
+  expect(() => sharedProps("", "layout")).toThrow("Missing shared props");
+});
+it("extracts nested Markdown fences with heading and line diagnostics", () => {
+  expect(
+    executableExamples(
+      "# Example\n\n````dil\n```mermaid\nflowchart LR\nA --> B\n```\n````\n",
+      "sample.md",
+    ),
+  ).toEqual([
+    {
+      name: "sample.md:3: Example",
+      source: "```mermaid\nflowchart LR\nA --> B\n```\n",
+    },
+  ]);
+  expect(() =>
+    executableExamples("```dil\n<text>unfinished fence</text>", "sample.md"),
+  ).toThrow("sample.md:1: Unclosed DIL fence");
 });
 it("detects missing and invented APIs", () => {
   const actual = new Map([["slider", new Set(["value"])]]);
@@ -68,9 +199,45 @@ it("rejects invalid composition and malformed syntax", () => {
   expect(compositionErrors(parser.snapshot(), batch.links, primary)).toEqual([
     "table cannot contain text",
   ]);
-  const invalid = new DilParser();
-  invalid.append("<box value={", true);
-  expect(invalid.snapshot().some((n) => n.status === "error")).toBe(true);
+  const unfinished = new DilParser().append("<box value={", true);
+  expect(unfinished.issues.map((issue) => issue.kind)).toEqual(["incomplete"]);
+  const malformed = new DilParser().append("<box value=wrong/>", true);
+  expect(malformed.issues.map((issue) => issue.kind)).toEqual(["syntax"]);
+});
+it.each([
+  ["<input>Unexpected child</input>", ["input accepts no children"]],
+  ['<radio value="x">Orphan</radio>', ["radio requires parent radio-group"]],
+  [
+    "<popover><popover-trigger/></popover>",
+    ["popover-trigger requires one child"],
+  ],
+  [
+    "<popover><popover-trigger><button>A</button><button>B</button></popover-trigger></popover>",
+    ["popover-trigger requires one child"],
+  ],
+  ["<table>Unexpected text</table>", ["table cannot contain markdown"]],
+  [
+    "<button><box><input/></box></button>",
+    ["button cannot contain interactive input"],
+  ],
+  [
+    "<pressable><button>Nested</button></pressable>",
+    ["pressable cannot contain interactive button"],
+  ],
+  [
+    "<table>{#if true}<table-row><table-cell>Ready</table-cell></table-row>{/if}</table>",
+    [],
+  ],
+  ["<svg><text><tspan>SVG text</tspan></text></svg>", []],
+])("checks structural contracts for %s", (source, expected) => {
+  const parser = new DilParser();
+  const batch = parser.append(source, true);
+  expect(compositionErrors(parser.snapshot(), batch.links, primary)).toEqual(
+    expected,
+  );
+  expect(compositionErrors(parser.snapshot(), batch.links, full)).toEqual(
+    expected,
+  );
 });
 it("rejects invalid VM expressions and automatic clipboard actions", async () => {
   const send = vm();
@@ -79,10 +246,62 @@ it("rejects invalid VM expressions and automatic clipboard actions", async () =>
     (await send("evaluate", { source: 'GenUI.copy("automatic")' })).error,
   ).toContain("gesture");
 });
+it.each([
+  ["input", "onChange", "name", "Ada"],
+  ["slider", "onChange", "level", 75],
+  ["checkbox", "onChange", "done", true],
+  ["radio-group", "onChange", "billing", "annual"],
+  ["segmented-control", "onChange", "view", "details"],
+  ["NodeGraph", "onSelect", "selectedId", "db"],
+])(
+  "executes the documented %s.%s callback",
+  async (component, event, binding, argument) => {
+    const example = executableExamples(catalog, "genui.examples.md").find(
+      (entry) =>
+        entry.name.endsWith("Component: " + component) ||
+        (component === "radio-group" &&
+          entry.name.endsWith("Composition: radio-group > radio")),
+    );
+    if (!example) throw new Error("Missing callback example: " + component);
+    const parser = new DilParser();
+    const batch = parser.append(example.source, true);
+    const send = vm();
+    for (const source of batch.declarations)
+      expect((await send("declare", { source })).error).toBeUndefined();
+    const callback = parser.snapshot().find((node) => node.name === component)
+      ?.attributes[event]?.expression;
+    if (!callback)
+      throw new Error("Missing callback: " + component + "." + event);
+    const reply = await send("evaluate", { source: callback });
+    const handle = reply.value;
+    if (!handle || typeof handle !== "object" || !("$dilHandler" in handle))
+      throw new Error("Callback did not compile");
+    expect(
+      (await send("call", { handle: handle.$dilHandler, argument })).error,
+    ).toBeUndefined();
+    expect((await send("evaluate", { source: binding })).value).toBe(argument);
+  },
+);
+it("copies only when a compiled action is called with a gesture", async () => {
+  const send = vm();
+  const reply = await send("evaluate", {
+    source: '() => GenUI.copy("Intentional copy")',
+  });
+  const handle = reply.value;
+  if (!handle || typeof handle !== "object" || !("$dilHandler" in handle))
+    throw new Error("Action did not compile");
+  expect(
+    (await send("call", { handle: handle.$dilHandler, gesture: false })).error,
+  ).toContain("gesture");
+  const result = await send("call", {
+    handle: handle.$dilHandler,
+    gesture: true,
+  });
+  expect(result.error).toBeUndefined();
+  expect(result.copy).toBe("Intentional copy");
+});
 const examples = files.flatMap((file) =>
-  [
-    ...readFileSync("spec/" + file, "utf8").matchAll(/```dil\n([\s\S]*?)```/g),
-  ].map((m, i) => ({ name: file + ":" + i, source: m[1] ?? "" })),
+  executableExamples(readFileSync("spec/" + file, "utf8"), file),
 );
 if (process.env.GENUI_RESPONSE_FILE)
   examples.push({
@@ -93,7 +312,8 @@ for (const example of examples)
   it("validates " + example.name, async () => {
     const parser = new DilParser();
     const batch = parser.append(example.source, true);
-    expect(parser.snapshot().filter((n) => n.status === "error")).toEqual([]);
+    // Syntax errors and unfinished structure, with their source offsets.
+    expect(batch.issues).toEqual([]);
     expect(compositionErrors(parser.snapshot(), batch.links, primary)).toEqual(
       [],
     );
@@ -102,7 +322,7 @@ for (const example of examples)
       expect(
         (await send("declare", { source: declaration })).error,
       ).toBeUndefined();
-    const { api, svgProps } = extractApi();
+    const { api, svgProps } = inventory;
     const walk = async (
       id: number,
       scope: Record<string, unknown>,
@@ -112,9 +332,9 @@ for (const example of examples)
       if (!node) throw new Error("Missing parsed node");
       if (node.kind === "element") {
         expect(
-          api.has(node.name) ||
-            node.name === "svg" ||
-            (svg && SVG_ELEMENTS.has(node.name)),
+          svg
+            ? SVG_ELEMENTS.has(node.name)
+            : api.has(node.name) || node.name === "svg",
           "Unsupported component " + node.name,
         ).toBe(true);
         for (const prop of Object.keys(node.attributes))

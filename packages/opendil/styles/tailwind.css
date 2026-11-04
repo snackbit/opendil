@@ -3,6 +3,9 @@
 @import "@xyflow/react/dist/style.css";
 @import "./tokens.css";
 
+/* Follows the renderer's appearance instead of the operating system or a page-wide class. */
+@custom-variant dil-dark (&:where(.dil-scope[data-theme="dark"], .dil-scope[data-theme="dark"] *));
+
 .dil-scope {
   --background: #ffffff;
   --foreground: var(--dil-text-color);
@@ -59,6 +62,12 @@
   --radius-xl: calc(var(--radius) + 4px);
 }
 @layer base {
+  /* Contains absolutely positioned descendants, such as screen-reader status
+     regions, so they scroll with the renderer inside overflow containers. In the
+     base layer, position utilities passed through className still win. */
+  .dil-scope {
+    position: relative;
+  }
   .dil-scope *,
   .dil-scope *::before,
   .dil-scope *::after {
@@ -71,8 +80,14 @@
   .dil-scope p {
     margin: 0;
   }
+  /* User-agent form colors follow color-scheme, not the renderer tokens. */
+  .dil-scope :is(button, input, select, textarea) {
+    color: inherit;
+    background-color: transparent;
+  }
 }
 .dil-scope {
+  color-scheme: light;
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-dil);
@@ -89,6 +104,7 @@
   font: inherit;
 }
 .dil-scope[data-theme="dark"] {
+  color-scheme: dark;
   --background: #171717;
   --foreground: #fafafa;
   --dil-text-color: #fafafa;
@@ -107,6 +123,11 @@
   --accent-foreground: #fafafa;
   --border: #454545;
   --input: #505050;
+  --dil-success: #5cc59a;
+  --dil-warning: #e2ad55;
+  --dil-success-surface: #1d3a2f;
+  --dil-warning-surface: #3d3020;
+  --dil-danger-surface: #432526;
 }
 .dil-document {
   overflow-wrap: anywhere;
@@ -133,6 +154,30 @@
 }
 .dil-markdown strong {
   font-weight: 600;
+}
+/* The browser's list and quote styles, restated so a host page's CSS reset,
+   such as Tailwind's preflight, does not remove bullets, numbers and indents. */
+.dil-markdown :where(ul, ol) {
+  margin-block: 1em;
+  padding-inline-start: 40px;
+}
+.dil-markdown :where(ul, ol) :where(ul, ol) {
+  margin-block: 0;
+}
+.dil-markdown ul {
+  list-style-type: disc;
+}
+.dil-markdown :where(ul, ol) ul {
+  list-style-type: circle;
+}
+.dil-markdown :where(ul, ol) :where(ul, ol) ul {
+  list-style-type: square;
+}
+.dil-markdown ol {
+  list-style-type: decimal;
+}
+.dil-markdown blockquote {
+  margin: 1em 40px;
 }
 .dil-markdown table {
   width: 100%;
@@ -224,7 +269,6 @@
 }
 .dil-legend-item[data-hidden="true"] {
   opacity: 0.45;
-  text-decoration: line-through;
 }
 .dil-legend-swatch {
   width: 11px;
@@ -234,6 +278,11 @@
 }
 .dil-chart-series {
   transition: opacity 150ms ease;
+}
+/* Pie slice emphasis stays in CSS: re-rendering a Recharts Pie remounts its sectors. */
+.dil-chart-pie:has(.dil-chart-series:hover, .dil-chart-series:focus-visible)
+  .dil-chart-series:not(:hover, :focus-visible) {
+  opacity: 0.625;
 }
 .dil-tooltip {
   z-index: 60;
@@ -248,6 +297,9 @@
 }
 .dil-snap-tooltip {
   pointer-events: none;
+}
+.dil-snap-tooltip [data-emphasized="true"] span {
+  font-weight: 700;
 }
 .dil-code-block textarea {
   font-family: var(--font-mono, monospace);

@@ -13,10 +13,10 @@
   },
   "packageManager": "npm@11.17.0",
   "scripts": {
-    "dev": "npm run build:package && npm run dev -w @opendil/demo",
+    "dev": "npm run build:package && npm run dev -w @opendil/site",
     "build:package": "npm run build -w @snackbit/opendil",
-    "build": "npm run build:package && npm run build -w @opendil/demo",
-    "typecheck": "npm run typecheck -w @opendil/demo && tsc --noEmit && npm run typecheck -w @snackbit/opendil",
+    "build": "npm run build:package && npm run build -w @opendil/site",
+    "typecheck": "npm run typecheck -w @opendil/site && tsc --noEmit && npm run typecheck -w @snackbit/opendil",
     "lint": "eslint . --max-warnings=0 && node scripts/check-structure.mjs",
     "format": "prettier --write .",
     "format:check": "prettier --check .",
@@ -28,13 +28,15 @@
     "check:package": "node scripts/check-package.mjs",
     "check:rebuild": "node scripts/check-rebuild.mjs",
     "check:site": "node scripts/check-site.mjs",
+    "check:links": "npm run check:links -w @opendil/site",
+    "check:examples": "node scripts/check-examples.mjs",
     "changeset": "changeset",
     "version:packages": "changeset version && npm install --package-lock-only --ignore-scripts --no-audit --no-fund",
-    "capture": "node scripts/capture-dil.mjs",
     "capture:readme": "node scripts/capture-readme-demo.mjs"
   },
   "devDependencies": {
     "@changesets/cli": "^2.29.8",
+    "@next/eslint-plugin-next": "16.4.5",
     "@opendil/eslint-config": "*",
     "@opendil/tsconfig": "*",
     "@playwright/test": "1.61.1",
@@ -42,19 +44,27 @@
     "@types/node": "^24.0.0",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
-    "@vitest/coverage-v8": "4.1.0",
+    "@typescript-eslint/parser": "^8.72.1",
+    "@vitest/coverage-v8": "4.1.12",
     "esbuild": "^0.28.2",
     "eslint": "^10.14.0",
-    "eslint-plugin-astro": "^3.2.1",
     "happy-dom": "^21.0.4",
     "postcss": "^8.5.0",
     "prettier": "^3.8.0",
-    "prettier-plugin-astro": "^1.1.2",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "tailwindcss": "^4.1.0",
     "typescript": "^5.9.3",
     "vite": "^8.3.5",
-    "vitest": "4.1.0"
+    "vitest": "4.1.12"
+  },
+  "overrides": {
+    "@typescript-eslint/parser": {
+      "minimatch@^10.0.0": "11.0.4"
+    },
+    "minimatch@^10.0.0": "11.0.4",
+    "monaco-editor": {
+      "dompurify": "3.4.17"
+    }
   }
 }

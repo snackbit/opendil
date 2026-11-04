@@ -2,12 +2,10 @@
   "extends": "@opendil/tsconfig/base.json",
   "compilerOptions": {
     "noEmit": true,
-    "types": ["vite/client", "astro/client", "node"]
+    "types": ["vite/client", "node"],
+    "paths": { "@/*": ["./apps/site/*"] }
   },
   "include": [
-    "apps/**/*.ts",
-    "apps/**/*.tsx",
-    "apps/demo/.astro/types.d.ts",
     "tests/**/*.ts",
     "tests/**/*.tsx",
     "*.config.ts",

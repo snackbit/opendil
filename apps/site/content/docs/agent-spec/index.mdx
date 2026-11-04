@@ -1,0 +1,142 @@
+---
+title: Agent Spec
+description: The instructions that teach a model to write DIL. Load them from the package, choose primary or full, and add your own rules.
+---
+
+The agent spec is a Markdown document that teaches a language model to write DIL, the text format OpenDIL renders. Put it in the system prompt of the model that answers your users. This page shows how to load the spec, which variant to choose, and where your own instructions go. The complete primary spec follows at the end of the page.
+
+## Load the spec from the package
+
+`@snackbit/opendil/agent-spec` exports the spec as strings:
+
+```ts title="lib/system-prompt.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+const product = [
+  "You are the planning assistant in a budgeting app.",
+  "Keep answers short. Label estimates and invented values.",
+  "Use components when the user compares numbers, adjusts a value,",
+  "or follows steps. Otherwise answer in Markdown.",
+].join("\n");
+
+export const systemPrompt = [agentSpec, product].join("\n\n");
+```
+
+Pass `systemPrompt` as the system prompt of your model call. [Prompting and evaluation](/docs/prompting/#structure-the-system-prompt) extends this file with contracts for custom components. [Add OpenDIL to your chat app](/docs/chat-integration/) shows this for the AI SDK, the OpenAI SDK, the Anthropic SDK, and `fetch`.
+
+The entry has three exports:
+
+| Export              | Source file           | Contents             |
+| ------------------- | --------------------- | -------------------- |
+| `agentSpec`         | `genui.agent.md`      | The primary spec     |
+| `agentSpecFull`     | `genui.agent.full.md` | The full spec        |
+| `agentSpecExamples` | `genui.examples.md`   | The examples catalog |
+
+The entry has no imports. It works in Node, Next.js route handlers, and edge runtimes, and your renderer bundle never includes it.
+
+Tools that read files can load the raw Markdown instead. The package exports `@snackbit/opendil/spec/genui.agent.md`, `@snackbit/opendil/spec/genui.agent.full.md`, and `@snackbit/opendil/spec/genui.examples.md`:
+
+```js title="scripts/print-spec.mjs"
+import { readFile } from "node:fs/promises";
+import { fileURLToPath } from "node:url";
+
+const path = fileURLToPath(
+  import.meta.resolve("@snackbit/opendil/spec/genui.agent.md"),
+);
+const spec = await readFile(path, "utf8");
+console.log(`${spec.length} characters from ${path}`);
+```
+
+To paste the spec into a model playground, download [`/agent-spec.md`](/agent-spec.md), [`/agent-spec.full.md`](/agent-spec.full.md), or [`/agent-spec.examples.md`](/agent-spec.examples.md). These files match the version this site documents, which may differ from the version you installed.
+
+## Choose primary or full
+
+| Spec     | Export              | Size        | Use it for                          |
+| -------- | ------------------- | ----------- | ----------------------------------- |
+| Primary  | `agentSpec`         | About 23 KB | The system prompt of most apps      |
+| Full     | `agentSpecFull`     | About 83 KB | Large context budgets, or retrieval |
+| Examples | `agentSpecExamples` | About 25 KB | Few-shot examples, or retrieval     |
+
+At about 4 characters per token, these are roughly 6,000, 21,000, and 6,000 tokens. That is an estimate; your model's tokenizer gives the real count.
+
+- The **primary spec** covers every component, the syntax, and the rules. It is enough for most apps.
+- The **full spec** adds a block for each component, composition, callback, and task, with exact attributes, children, and rules. Each block starts with a heading such as `#### Component: slider` or `#### Task: output-review`.
+- The **examples catalog** has one runnable example per component, SVG element, and common task, under the same kind of headings.
+
+Start with the primary spec. If your model gets specific components wrong, add their full-spec blocks and examples after it. This helper extracts a block by its heading:
+
+````ts title="lib/spec-section.ts"
+import {
+  agentSpecExamples,
+  agentSpecFull,
+} from "@snackbit/opendil/agent-spec";
+
+/** Returns the block under a heading such as "Component: slider". */
+export function specSection(spec: string, heading: string) {
+  const lines = spec.split("\n");
+  const start = lines.indexOf(`#### ${heading}`);
+  if (start === -1) return undefined;
+  let fenced = false;
+  let end = start + 1;
+  for (const line of lines.slice(start + 1)) {
+    if (/^ {0,3}(```|~~~)/.test(line)) fenced = !fenced;
+    else if (!fenced && /^#{1,4} /.test(line)) break;
+    end++;
+  }
+  return lines.slice(start, end).join("\n").trim();
+}
+
+/** Full rules and an example for each named component. */
+export function componentNotes(names: string[]) {
+  return names
+    .flatMap((name) => [
+      specSection(agentSpecFull, `Component: ${name}`),
+      specSection(agentSpecExamples, `Component: ${name}`),
+    ])
+    .filter((section) => section !== undefined)
+    .join("\n\n");
+}
+````
+
+Then append `componentNotes(["Chart", "slider"])` to the system prompt, or return it from a retrieval tool.
+
+## Keep the spec and renderer in step
+
+Each package release contains the spec for that release, unchanged. When you load the spec from the package, every upgrade updates the prompt and the renderer together. The spec has no version number of its own; the package version is its version.
+
+<Callout type="info" title="Load the spec from the package">
+  A copy pasted into your code or a prompt tool does not change when you upgrade. If you keep a copy, replace it after every upgrade, or the model may write DIL that your renderer version handles differently.
+</Callout>
+
+## Add your own instructions
+
+Put the spec first and your instructions after it. The spec is long and the same on every request, so providers that cache prompt prefixes can reuse it. Add:
+
+- your product context, tone, and when to answer with components rather than Markdown;
+- the data the model may use, and how to label invented values;
+- contracts for your own components, if you register any. See [Tell the model about your components](/docs/custom-components/#tell-the-model-about-your-components).
+
+Do not contradict the spec's safety rules, for example by asking for HTML, links that navigate, or network calls. The renderer does not support them, so the answer breaks instead. [Prompting and evaluation](/docs/prompting/) covers prompt structure and testing in detail.
+
+## What the spec covers
+
+The primary spec has seven numbered sections. The full spec and the examples catalog use the same numbering.
+
+1. **Output format and safety**: write DIL directly, close every tag, use only the listed APIs.
+2. **Syntax and parsing**: Markdown, attributes, expressions, state declarations, conditions, and repeats.
+3. **Component API**: text, media, layout, and input components with their attributes and children.
+4. **Specialized components**: what does not exist, such as remote data, links, and embedded apps.
+5. **Visualizations**: images, SVG, `Chart`, `NodeGraph`, `Mermaid`, and the absence of maps.
+6. **Interactivity**: state, callback values, data, and `GenUI.copy`.
+7. **Assets**: the icon names and sizes.
+
+## Primary spec
+
+The rest of this page is the primary spec, exactly as the package ships it. The other two documents have their own pages:
+
+<Cards>
+  <Card title="Full spec" href="/docs/agent-spec/full/" description="Every component's attributes, compositions, callbacks, and task recipes." />
+  <Card title="Examples catalog" href="/docs/agent-spec/examples/" description="Runnable examples for every component and common task." />
+</Cards>
+
+<SpecDocument file="genui.agent.md" />

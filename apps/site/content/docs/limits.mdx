@@ -1,0 +1,138 @@
+---
+title: Limits
+description: "Every size, time, and resource limit in OpenDIL, what readers see when an answer reaches one, and what keeps working."
+---
+
+OpenDIL treats every answer as untrusted input. Its limits keep a single answer from slowing down or breaking your page. When an answer reaches a limit, that answer shows a message, and your app and the other answers keep working.
+
+The limits are bounds, not targets. A typical answer stays far below all of them.
+
+## What happens at a limit
+
+When an answer reaches a limit:
+
+- The answer shows a short message with `role="alert"`. A limit that affects one part, such as a long code block or a large diagram, shows its message in place of that part, and the rest of the answer keeps working. A limit that affects the whole answer shows its message above the answer and stops it.
+- When the whole answer stops, `onError` receives a `DilRenderError`: `kind: "limit"` for the text, node, display, work, reply time, and queued action limits, and `kind: "runtime"` for an action that fails for another reason, such as running out of memory or reaching a clipboard limit. Limits that affect one part only are not reported to `onError`. See [`DilRenderer`](/docs/renderer/) for the error type.
+- What the answer already shows stays readable. When the expression engine stops, the answer's controls stop responding.
+- Other answers on the page are unaffected. Each `DilRenderer` has its own parser, expression engine, and budgets.
+- To try again, render a new `DilRenderer`, for example by giving it a new `key`. A renderer that stopped does not restart.
+
+A component that fails to render shows its error only after the answer finishes streaming. While text still arrives, a failure can be a half-written attribute that the next characters fix.
+
+`onError` itself is bounded. It receives each distinct problem once, at most 20 per answer, followed by one `limit` error that says later problems are not reported. The report that an answer ended early always arrives. Messages are cut to 2,000 characters.
+
+## Text and parsing
+
+| Limit                        | Value                       | What readers see                                                             |
+| ---------------------------- | --------------------------- | ---------------------------------------------------------------------------- |
+| Text length per answer       | 5,000,000 UTF-16 code units | "Message source limit exceeded"                                              |
+| Parsed nodes per answer      | 100,000                     | "Rendering stopped: this message has more parts than the renderer supports." |
+| One Markdown text block      | 65,536 characters           | "Text block exceeds the display limit." in place of that block               |
+| Parser work before it yields | 16,384 code units           | Nothing. Long text is parsed in slices so the parser worker keeps responding |
+
+The node count includes records readers never see, such as declarations, directives, and whitespace between tags. An answer that reaches the node limit keeps what the parser had already applied and is marked complete.
+
+{/* Sources: message-renderer.tsx (5_000_000), isolated-renderer.tsx (5_000_000), frame.tsx (5_000_000); parser/stream-worker.ts (MAX_NODES = 100000, slices of 16384); view/markdown-node.tsx (65536). */}
+
+## Expressions
+
+Every answer evaluates its expressions in a sandboxed JavaScript engine (QuickJS) in a Web Worker, in every rendering mode. These limits apply to each answer's engine.
+
+| Limit                              | Value                                       | What readers see                                          |
+| ---------------------------------- | ------------------------------------------- | --------------------------------------------------------- |
+| Memory                             | 64 MiB heap                                 | The value or action that needed more memory fails         |
+| Stack                              | 64 KiB                                      | The value or action fails, for example on deep recursion  |
+| Work per evaluation or action      | About 2.5 million interpreter steps         | "Execution stopped: this action exceeded its time limit." |
+| Reply time per request             | 1,000 ms (5,000 ms while the engine starts) | "Execution stopped: the action exceeded its time limit."  |
+| Expression source                  | 65,536 characters                           | That value fails to evaluate                              |
+| Encoded result, dependency list    | 524,288 characters each                     | That value fails to evaluate                              |
+| Result nesting depth, array length | 64 levels, 10,000 items                     | That value fails to evaluate                              |
+| Queued actions                     | 256 calls                                   | "Execution stopped: too many actions were requested."     |
+| Pending evaluations                | 1,024                                       | Further values wait until earlier ones finish             |
+| Engine error message               | 2,048 characters                            | Longer messages are cut                                   |
+
+The work limit counts interpreter steps, not elapsed time. The engine checks in about every 10,000 steps and stops an evaluation after more than 256 checks. The same answer therefore stops at the same point on a fast laptop and on a slow phone. OpenDIL 0.1.0 stopped evaluations after 50 ms of elapsed time instead, so a slow device could stop an answer that a fast one finished.
+
+The reply time is a separate safeguard for work that never reaches a check, such as a single long native operation. It measures how long the page waits for the engine's reply.
+
+When a value fails, an interpolated value in text shows "Cannot evaluate this value." When an action fails or reaches the work limit, the whole answer stops with "Execution stopped: …", and its controls stop responding.
+
+{/* Sources: isolation/vm-worker.ts (setMemoryLimit 64 MiB, setMaxStackSize 64 KiB, interrupt handler ++polls > 256, 524288 result and metadata, 2048 error slice); runtime/execution-queue.ts (DEADLINE 1000, STARTUP_DEADLINE 5000, 256 calls, 1024 evaluations); runtime/expressions.ts (65536 source, depth 64, 10000 array items, "interrupted" halts with the time-limit message); git show 4fe66b4 (0.1.0) vm-worker.ts used performance.now() + 50. */}
+
+## Display
+
+The display budget limits how much interface one answer mounts at a time. Each answer has 2,000 units. Mounted components cost 1 unit each, text costs about 1 unit per 64 characters, and data-heavy components cost by size: `Chart` 1 unit per 64 characters of its `content`, `NodeGraph` 1 per 128, and `Mermaid` 50 plus 1 per 16 characters of source. A repeated template costs its items' cost multiplied by the number of items.
+
+| Limit                       | Value                  | What readers see                                             |
+| --------------------------- | ---------------------- | ------------------------------------------------------------ |
+| Display budget              | 2,000 units per answer | "Rendering stopped: this message exceeds the display limit." |
+| Repeated items inside `svg` | 1,000                  | The same display limit message                               |
+| Items before virtualization | More than 100          | Nothing. Only items near the visible area mount              |
+| Iframe height               | 4,000,000 px           | Content below that height is cut off                         |
+
+Virtualization keeps long answers within the budget: items that scroll away unmount and release their units. It applies to more than 100 direct children of the answer or of a `box`, and to `{#each}` blocks with more than 100 items, except inside `svg`. [Long conversations and performance](/docs/performance/#large-answers-and-virtualization) describes how it behaves.
+
+{/* Sources: runtime/render-budget.ts (limit 2000); view/render-limit.tsx; runtime/view-cost.ts; view/markdown-node.tsx (cost length / 64); widgets/primitives/primitive.tsx (Chart /64, NodeGraph /128, Mermaid 50 + /16); view/repeated-nodes.tsx (svg > 1000, > 100 virtualized); view/virtual-flow.tsx (count > 100); isolation/isolated-renderer.tsx (height clamp 4_000_000). */}
+
+## Components
+
+| Limit               | Value                                        | What readers see                                                  |
+| ------------------- | -------------------------------------------- | ----------------------------------------------------------------- |
+| `CodeBlock` source  | 131,072 characters                           | "Code block exceeds the display limit."                           |
+| `CodeBlock` copy    | 65,536 characters                            | "Copy failed" on the copy button                                  |
+| Syntax highlighting | 32,768 characters or 2,000 highlighted spans | Plain, unhighlighted code. Unknown languages are also shown plain |
+| `Mermaid` source    | 8,192 characters                             | "Unsupported or oversized Mermaid source"                         |
+| `Mermaid` edges     | 100                                          | "Diagram is incomplete or invalid"                                |
+| `NodeGraph` content | 200 nodes and 400 edges                      | Extra nodes and edges are left out                                |
+| Color attributes    | Shorter than 128 characters                  | The color is ignored                                              |
+
+Color attributes also must be a valid CSS color and must not contain `url`, `var(`, `;`, `{`, or `}`. Named colors such as `success` always work.
+
+{/* Sources: widgets/code-block.tsx (131072, copy 65536); widgets/code/highlighted-code.tsx (32768, 2000 spans, unregistered grammar); widgets/mermaid-diagram.tsx (8192 checked before rendering; maxEdges 100 makes mermaid.render reject); widgets/graphs/graph-model.ts (slice 200, slice 400); widgets/primitives/attribute-values.ts color(). */}
+
+## Clipboard
+
+An answer can write text to the clipboard with `GenUI.copy(text)`. These limits apply:
+
+| Limit                | Value                                                  | What readers see                                       |
+| -------------------- | ------------------------------------------------------ | ------------------------------------------------------ |
+| Text length          | 65,536 characters                                      | "Execution stopped: Clipboard payload too large"       |
+| Click that allows it | One reader click on a built-in `button` or `pressable` | "Execution stopped: Clipboard requires a user gesture" |
+| Time after the click | 750 ms                                                 | The same message                                       |
+| Feedback             | 2,000 ms                                               | "Copied" or "Copy failed" on the control               |
+
+Each click allows one copy. Screen readers hear "Copied to clipboard." or "Copy failed. Check clipboard permissions." In iframe mode, your page performs the write, and the browser must still report the reader's click as active; otherwise the control shows "Copy failed". The browser can also refuse the write, for example when the reader denied the clipboard permission. [Security](/docs/security/#clipboard) explains the conditions.
+
+{/* Sources: isolation/vm-worker.ts (__copy: gesture required, 65536); runtime/expressions.ts (markGesture 750 ms); message-renderer.tsx (data-dil-action gesture, sr-only status text); isolation/isolated-renderer.tsx (gesture + 750, navigator.userActivation.isActive, 65536); widgets/action-feedback.tsx (2000 ms). */}
+
+## Iframe startup and theme
+
+These limits apply only to the default iframe mode.
+
+| Limit                      | Value                                                 | What readers see or you see                                        |
+| -------------------------- | ----------------------------------------------------- | ------------------------------------------------------------------ |
+| Frame start after it loads | 3,000 ms                                              | "OpenDIL's runtime frame did not start from …" and a console error |
+| `frame.js` fails to load   | At once                                               | The same message                                                   |
+| Frame that never responds  | 20,000 ms                                             | The same message                                                   |
+| Theme tokens               | 256 tokens                                            | Extra tokens are ignored, with a console warning                   |
+| Token names                | `--` followed by 1 to 64 letters, digits, `_`, or `-` | The token is ignored, with a console warning                       |
+| Token values               | 256 characters                                        | The token is ignored, with a console warning                       |
+
+A slow download of `frame.js` is not a failure: `frame.html` tells the renderer every second that it is still loading. Token values also must not load resources or end the declaration. The frame rejects values that contain `url(`, `image(`, `image-set(`, `cross-fade(`, `element(`, `src(`, `expression(`, any of ``; { } \ @ < > ! ` ``, control characters, CSS comments, or unbalanced quotes. Host and Shadow DOM modes apply tokens as written. [Troubleshooting](/docs/troubleshooting/#setup) explains the startup message.
+
+{/* Sources: isolation/frame-startup.ts (READY_AFTER_LOAD_MS 3000, SILENT_FRAME_MS 20000, messages); isolated-renderer.tsx (dil-failed fails at once, dil-loading clears the silent timer); scripts/build.mjs loader pings every 1000 ms; isolation/frame-theme.ts (MAX_TOKENS 256, MAX_VALUE_LENGTH 256, TOKEN_NAME, UNSAFE_VALUE, quote balance). */}
+
+## What is not limited
+
+- **Your custom components.** In host and Shadow DOM modes, the components you register run as ordinary React code in your page. The expression engine's limits do not bound their rendering, effects, or network requests. See [Custom components](/docs/custom-components/#limitations).
+- **Memory for the text.** Each renderer keeps the full text and its parsed nodes until it unmounts, up to the text length limit. Virtualization limits the mounted interface, not this memory.
+- **The number of answers on a page.** OpenDIL sets no limit. Each answer adds its own cost; [Long conversations and performance](/docs/performance/) explains how to keep many answers fast.
+
+## Next steps
+
+<Cards>
+  <Card title="Security" href="/docs/security/" description="What each rendering mode protects and what you must configure." />
+  <Card title="Long conversations and performance" href="/docs/performance/" description="What each answer costs and how virtualization behaves." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/" description="Find an error message and fix its cause." />
+  <Card title="How it works" href="/docs/how-it-works/" description="Follow an answer through the parser, the engine, and the iframe bridge." />
+</Cards>

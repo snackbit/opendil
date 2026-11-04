@@ -11,10 +11,10 @@ export function installShadowStyles(root: ShadowRoot, custom: string) {
   const document = root.ownerDocument;
   let base = sheets.get(document);
   if (!base) {
+    // The renderer scope inside the root sets color-scheme from its appearance.
     base = stylesheet(
       document,
-      ":host{all:initial;display:block;min-width:0;color-scheme:light}" +
-        __DIL_STYLES__,
+      ":host{all:initial;display:block;min-width:0}" + __DIL_STYLES__,
     );
     sheets.set(document, base);
   }

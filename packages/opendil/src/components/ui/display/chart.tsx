@@ -5,9 +5,6 @@ import { cn } from "../../../lib/cn";
 import * as RechartsPrimitive from "recharts";
 import type { TooltipValueType } from "recharts";
 
-// Format: { THEME_NAME: CSS_SELECTOR }
-const THEMES = { light: "", dark: ".dark" } as const;
-
 const INITIAL_DIMENSION = { width: 320, height: 200 } as const;
 type TooltipNameType = number | string;
 
@@ -18,7 +15,7 @@ export type ChartConfig = Record<
     icon?: React.ComponentType;
   } & (
     | { color?: string; theme?: never }
-    | { color?: never; theme: Record<keyof typeof THEMES, string> }
+    | { color?: never; theme: Record<"light" | "dark", string> }
   )
 >;
 
@@ -45,6 +42,7 @@ function ChartContainer({
   config,
   overlay,
   initialDimension = INITIAL_DIMENSION,
+  style,
   ...props
 }: React.ComponentProps<"div"> & {
   config: ChartConfig;
@@ -65,13 +63,13 @@ function ChartContainer({
       <div
         data-slot="chart"
         data-chart={chartId}
+        style={{ ...chartColors(config), ...style }}
         className={cn(
           "flex aspect-video justify-center text-xs [&_.recharts-cartesian-axis-tick_text]:fill-muted-foreground [&_.recharts-cartesian-grid_line[stroke='#ccc']]:stroke-border/50 [&_.recharts-curve.recharts-tooltip-cursor]:stroke-border [&_.recharts-dot[stroke='#fff']]:stroke-transparent [&_.recharts-layer]:outline-hidden [&_.recharts-polar-grid_[stroke='#ccc']]:stroke-border [&_.recharts-radial-bar-background-sector]:fill-muted [&_.recharts-rectangle.recharts-tooltip-cursor]:fill-muted [&_.recharts-reference-line_[stroke='#ccc']]:stroke-border [&_.recharts-sector]:outline-hidden [&_.recharts-sector[stroke='#fff']]:stroke-transparent [&_.recharts-surface]:outline-hidden",
           className,
         )}
         {...props}
       >
-        <ChartStyle id={chartId} config={config} />
         <RechartsPrimitive.ResponsiveContainer
           initialDimension={initialDimension}
         >
@@ -83,43 +81,30 @@ function ChartContainer({
   );
 }
 
-// Series keys and colors can come from documents; only plain tokens may reach the stylesheet.
+// Series keys and colors can come from documents; only plain tokens may become custom properties.
 const CSS_KEY = /^[\w-]+$/;
 const CSS_COLOR = /^(?!.*url\()[#\w\s(),.%-]+$/i;
-const ChartStyle = ({ id, config }: { id: string; config: ChartConfig }) => {
-  const colorConfig = Object.entries(config).filter(
-    ([key, config]) => CSS_KEY.test(key) && (config.theme ?? config.color),
-  );
-
-  if (!colorConfig.length) {
-    return null;
+/**
+ * Series colors are inline custom properties rather than a <style> element, so a
+ * Content Security Policy without style-src 'unsafe-inline' does not block them.
+ * Themed colors resolve through the renderer scope's color-scheme.
+ */
+function chartColors(config: ChartConfig) {
+  const colors: Record<`--color-${string}`, string> = {};
+  for (const [key, item] of Object.entries(config)) {
+    if (!CSS_KEY.test(key)) continue;
+    const values = item.theme
+      ? [item.theme.light, item.theme.dark]
+      : item.color
+        ? [item.color]
+        : [];
+    if (!values.length || !values.every((value) => CSS_COLOR.test(value)))
+      continue;
+    colors[`--color-${key}`] =
+      values.length === 2 ? `light-dark(${values.join(", ")})` : values.join();
   }
-
-  return (
-    <style
-      dangerouslySetInnerHTML={{
-        __html: Object.entries(THEMES)
-          .map(
-            ([theme, prefix]) => `
-${prefix} [data-chart=${id}] {
-${colorConfig
-  .map(([key, itemConfig]) => {
-    const color =
-      itemConfig.theme?.[theme as keyof typeof itemConfig.theme] ??
-      itemConfig.color;
-    return color && CSS_COLOR.test(color)
-      ? `  --color-${key}: ${color};`
-      : null;
-  })
-  .join("\n")}
+  return colors as React.CSSProperties;
 }
-`,
-          )
-          .join("\n"),
-      }}
-    />
-  );
-};
 
 const ChartTooltip = RechartsPrimitive.Tooltip;
 
@@ -137,6 +122,7 @@ function ChartTooltipContent({
   color,
   nameKey,
   labelKey,
+  emphasizedKey,
 }: React.ComponentProps<typeof RechartsPrimitive.Tooltip> &
   React.ComponentProps<"div"> & {
     hideLabel?: boolean;
@@ -144,6 +130,8 @@ function ChartTooltipContent({
     indicator?: "line" | "dot" | "dashed";
     nameKey?: string;
     labelKey?: string;
+    /** Marks the row whose dataKey matches with `data-emphasized="true"` for styling. */
+    emphasizedKey?: string | undefined;
   } & Omit<
     RechartsPrimitive.DefaultTooltipContentProps<
       TooltipValueType,
@@ -214,6 +202,11 @@ function ChartTooltipContent({
             return (
               <div
                 key={index}
+                data-emphasized={
+                  emphasizedKey !== undefined && item.dataKey === emphasizedKey
+                    ? "true"
+                    : undefined
+                }
                 className={cn(
                   "flex w-full flex-wrap items-stretch gap-2 [&>svg]:h-2.5 [&>svg]:w-2.5 [&>svg]:text-muted-foreground",
                   indicator === "dot" && "items-center",
@@ -377,5 +370,4 @@ export {
   ChartTooltipContent,
   ChartLegend,
   ChartLegendContent,
-  ChartStyle,
 };

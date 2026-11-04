@@ -1,0 +1,439 @@
+---
+title: Quickstart
+description: "Install OpenDIL, copy the runtime files, and render a streaming DIL answer in a Next.js or Vite app."
+---
+
+In this quickstart you render a DIL answer in React and stream it in, the same way a model's answer arrives. You need a React 19 app built with Next.js (App Router) or Vite. You do not need a model yet: a timer plays the model's part.
+
+## What you will build
+
+- A pricing card rendered from DIL text, with a slider and a checkbox that work.
+- The same card streaming in 24 characters at a time, usable before it finishes.
+- A runtime setup that also works when your app runs under a base path.
+
+This is the finished card. Drag the slider, or edit the source:
+
+<LiveExample id="pricing" />
+
+## Install
+
+Install the package. React and React DOM 19 are peer dependencies, so your app already provides them.
+
+<Tabs groupId="pm" items={["npm","pnpm","yarn","bun"]} persist>
+<Tab value="npm">
+
+```bash
+npm install @snackbit/opendil
+```
+
+</Tab>
+<Tab value="pnpm">
+
+```bash
+pnpm add @snackbit/opendil
+```
+
+</Tab>
+<Tab value="yarn">
+
+```bash
+yarn add @snackbit/opendil
+```
+
+</Tab>
+<Tab value="bun">
+
+```bash
+bun add @snackbit/opendil
+```
+
+</Tab>
+</Tabs>
+
+## Copy the runtime files
+
+Copy the iframe runtime into your public folder:
+
+<Tabs groupId="pm" items={["npm","pnpm","yarn","bun"]} persist>
+<Tab value="npm">
+
+```bash
+npx opendil copy-assets --out public/opendil
+```
+
+</Tab>
+<Tab value="pnpm">
+
+```bash
+pnpm exec opendil copy-assets --out public/opendil
+```
+
+</Tab>
+<Tab value="yarn">
+
+```bash
+yarn opendil copy-assets --out public/opendil
+```
+
+</Tab>
+<Tab value="bun">
+
+```bash
+bunx opendil copy-assets --out public/opendil
+```
+
+</Tab>
+</Tabs>
+
+The default rendering mode draws each answer in a sandboxed iframe. That iframe loads two runtime files, `frame.html` and `frame.js`, from your app at `/opendil/`. The command copies both, prints the package version it copied from, and writes a small `.opendil-manifest.json` that lets the next copy remove files an older version left behind.
+
+The runtime must come from the same package version as the renderer. Copy it on every install, and keep the generated files out of version control:
+
+```json title="package.json"
+{
+  "scripts": {
+    "postinstall": "opendil copy-assets --out public/opendil"
+  }
+}
+```
+
+```txt title=".gitignore"
+public/opendil/
+```
+
+If the copied runtime's version differs from the installed package, the renderer logs a console warning that asks you to copy it again.
+
+<Callout type="info" title="Only the iframe mode needs these files">
+  Shadow DOM and host modes bundle everything with your app and never load `frame.html`. See [Rendering modes](/docs/rendering-modes/).
+</Callout>
+
+## Render an answer
+
+Save the DIL source of the pricing card as a string in `pricing.ts`, in `app/` for Next.js or `src/` for Vite:
+
+<SourceDisclosure label="pricing.ts">
+
+```ts title="pricing.ts"
+export const pricing = `{@body const [seats, setSeats] = DIL.useState(8)}
+{@body const [annual, setAnnual] = DIL.useState(true)}
+<box border padding={5} radius="xl" gap={4}>
+  <title size="xl">A plan that grows with you</title>
+  <row justify="between">
+    <label>Team members</label>
+    <text>{seats}</text>
+  </row>
+  <slider
+    aria-label="Team members"
+    min={1}
+    max={50}
+    value={seats}
+    onChange={setSeats}
+  />
+  <checkbox checked={annual} onChange={setAnnual} lineThrough={false}>
+    Annual billing · save 20%
+  </checkbox>
+  <divider />
+  <title size="2xl">€{(seats * 29 * (annual ? 0.8 : 1)).toFixed(2)} / month</title>
+  <caption>{seats} seats · €29 per seat{annual ? " · annual discount applied" : ""}</caption>
+  <button onClick={() => GenUI.copy(JSON.stringify({ seats, annual }))}>Copy configuration</button>
+</box>`;
+```
+
+</SourceDisclosure>
+
+Then render it with `DilRenderer` and import the stylesheet once:
+
+<Tabs groupId="framework" items={["Next.js","Vite"]} persist>
+<Tab value="Next.js">
+
+```tsx title="app/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { pricing } from "./pricing";
+
+export function Answer() {
+  return <DilRenderer text={pricing} />;
+}
+```
+
+```tsx title="app/page.tsx"
+import { Answer } from "./answer";
+
+export default function Page() {
+  return (
+    <main>
+      <Answer />
+    </main>
+  );
+}
+```
+
+`DilRenderer` is a Client Component. Your own components that hold state, such as the one in the next step, need `"use client"` too.
+
+</Tab>
+<Tab value="Vite">
+
+```tsx title="src/answer.tsx"
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { pricing } from "./pricing";
+
+export function Answer() {
+  return <DilRenderer text={pricing} />;
+}
+```
+
+```tsx title="src/App.tsx"
+import { Answer } from "./answer";
+
+export default function App() {
+  return (
+    <main>
+      <Answer />
+    </main>
+  );
+}
+```
+
+</Tab>
+</Tabs>
+
+Open the page and drag the slider. The total updates because the answer holds its own state. Its expressions, such as `seats * 29`, run in a sandboxed JavaScript engine in a Web Worker, never as JavaScript in your page.
+
+## Stream the answer
+
+A model sends its answer a few characters at a time. This component imitates that with a timer and lets you replay the stream. Save it next to `answer.tsx`:
+
+```tsx title="streaming-answer.tsx"
+"use client";
+import { useEffect, useState } from "react";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { pricing } from "./pricing";
+
+export function StreamingAnswer() {
+  const [run, setRun] = useState(0);
+  const [length, setLength] = useState(0);
+  const streaming = length < pricing.length;
+
+  // Reveal 24 more characters every 50 ms, like a model streaming tokens.
+  useEffect(() => {
+    if (!streaming) return;
+    const timer = setInterval(
+      () => setLength((n) => Math.min(n + 24, pricing.length)),
+      50,
+    );
+    return () => clearInterval(timer);
+  }, [streaming]);
+
+  return (
+    <div>
+      <DilRenderer
+        key={run}
+        text={pricing.slice(0, length)}
+        isStreaming={streaming}
+      />
+      <button
+        type="button"
+        onClick={() => {
+          setLength(0);
+          setRun((n) => n + 1);
+        }}
+      >
+        Replay
+      </button>
+    </div>
+  );
+}
+```
+
+Render `<StreamingAnswer />` in place of `<Answer />`. The card builds up while the text arrives, and the slider works as soon as its tag is complete. Every streaming answer follows three rules:
+
+1. **Pass all the text received so far.** `text` is append-only: each update must start with the previous text.
+2. **Set `isStreaming={false}` when the answer is complete.** The renderer then finishes the answer and stops its parser.
+3. **Give each answer its own `key`.** A new key starts a new answer, which is why Replay sets the length back to zero and changes the key in the same update. A renderer whose text shrinks, or grows after it finished, shows an error instead.
+
+[Streaming](/docs/streaming/) covers fading in new content, following the stream, and update frequency.
+
+## Send the frame's security header
+
+The answer already renders: the renderer puts every frame in an opaque-origin sandbox. Before you ship, also serve `frame.html` with this response header. It keeps the sandbox when someone opens the file directly, and it lets only your own pages embed it:
+
+```http
+Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'
+```
+
+<Tabs groupId="framework" items={["Next.js","Vite"]} persist>
+<Tab value="Next.js">
+
+```ts title="next.config.ts"
+import type { NextConfig } from "next";
+
+const nextConfig: NextConfig = {
+  async headers() {
+    return [
+      {
+        source: "/opendil/frame.html",
+        headers: [
+          {
+            key: "Content-Security-Policy",
+            value: "sandbox allow-scripts; frame-ancestors 'self'",
+          },
+        ],
+      },
+    ];
+  },
+};
+
+export default nextConfig;
+```
+
+`headers()` does not run for a static export (`output: "export"`); set the header on your [hosting provider](/docs/rendering-modes/#set-the-header-on-your-hosting-provider) instead.
+
+</Tab>
+<Tab value="Vite">
+
+Vite has no per-file header option. This plugin sets the header in `vite` and `vite preview`:
+
+```ts title="vite.config.ts"
+import react from "@vitejs/plugin-react";
+import { defineConfig, type Connect, type Plugin } from "vite";
+
+const frameHeader: Connect.NextHandleFunction = (request, response, next) => {
+  if (request.url?.split("?")[0]?.endsWith("/opendil/frame.html"))
+    response.setHeader(
+      "Content-Security-Policy",
+      "sandbox allow-scripts; frame-ancestors 'self'",
+    );
+  next();
+};
+
+// Sends the frame header from `vite` and `vite preview`.
+function opendilFrameHeader(): Plugin {
+  return {
+    name: "opendil-frame-header",
+    configureServer: (server) => void server.middlewares.use(frameHeader),
+    configurePreviewServer: (server) =>
+      void server.middlewares.use(frameHeader),
+  };
+}
+
+export default defineConfig({
+  plugins: [react(), opendilFrameHeader()],
+});
+```
+
+`vite build` writes static files, so in production your web server or [hosting provider](/docs/rendering-modes/#set-the-header-on-your-hosting-provider) sends the header.
+
+</Tab>
+</Tabs>
+
+[Send the frame header](/docs/rendering-modes/#send-the-frame-header) in Rendering modes covers runtime files on another origin, such as a CDN, and header rules for nginx, Netlify, and Vercel.
+
+<Callout type="warn" title="Do not apply your app's own CSP to the runtime files">
+  If your app sends a Content Security Policy header on every route, exclude `/opendil/frame.html` and `/opendil/frame.js`. A second policy can block the frame's own workers. [Rendering modes](/docs/rendering-modes/#set-a-content-security-policy) shows the directives each mode needs.
+</Callout>
+
+## Teach your model DIL
+
+The agent spec, the instructions that teach a model to write DIL, ships with the package. Put it first in your system prompt:
+
+```ts title="lib/system-prompt.ts"
+import { agentSpec } from "@snackbit/opendil/agent-spec";
+
+export const systemPrompt = [
+  agentSpec,
+  "You are the assistant in a pricing app. Keep answers short.",
+].join("\n\n");
+```
+
+`@snackbit/opendil/agent-spec` has no imports, so it loads in route handlers and edge runtimes. [Add OpenDIL to your chat app](/docs/chat-integration/) passes this prompt to the AI SDK, OpenAI, Anthropic, or a plain `fetch` backend, and renders the streamed answers.
+
+## Check your setup
+
+- The pricing card appears, and the slider changes the total.
+- In your browser's network panel, `/opendil/frame.html` loads with status 200 and the `Content-Security-Policy` header from above.
+- The console shows no OpenDIL errors or warnings.
+
+If the answer shows "OpenDIL's runtime frame did not start from …", the browser did not get the runtime from that URL. Copy the runtime again and check `runtimeBaseUrl`, described next. [Troubleshooting](/docs/troubleshooting/#setup) lists more setup problems.
+
+## Set the runtime path for a base path or subfolder
+
+The iframe loads the runtime from `runtimeBaseUrl`, which defaults to `/opendil/`. When your app runs under a base path, include it. Shadow DOM and host modes ignore this prop.
+
+<Tabs groupId="framework" items={["Next.js","Vite"]} persist>
+<Tab value="Next.js">
+
+Next.js does not add `basePath` to plain strings. Expose the base path to the browser and prefix it yourself:
+
+```ts title="next.config.ts"
+import type { NextConfig } from "next";
+
+const basePath = "/chat";
+
+const nextConfig: NextConfig = {
+  basePath,
+  env: { NEXT_PUBLIC_BASE_PATH: basePath },
+};
+
+export default nextConfig;
+```
+
+```tsx title="app/answer.tsx"
+"use client";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { pricing } from "./pricing";
+
+export function Answer() {
+  return (
+    <DilRenderer
+      text={pricing}
+      runtimeBaseUrl={`${process.env.NEXT_PUBLIC_BASE_PATH}/opendil/`}
+    />
+  );
+}
+```
+
+Keep the `headers()` rule from above in the same config. Next.js adds the base path to header `source` paths itself.
+
+</Tab>
+<Tab value="Vite">
+
+Vite exposes its `base` option as `import.meta.env.BASE_URL`, which ends with a slash:
+
+```tsx title="src/answer.tsx"
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+import { pricing } from "./pricing";
+
+export function Answer() {
+  return (
+    <DilRenderer
+      text={pricing}
+      runtimeBaseUrl={`${import.meta.env.BASE_URL}opendil/`}
+    />
+  );
+}
+```
+
+</Tab>
+</Tabs>
+
+## Recap
+
+- `npm install @snackbit/opendil`, then `opendil copy-assets` on every install for the default iframe mode.
+- Serve `frame.html` with `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`.
+- `DilRenderer` takes all the text received so far and `isStreaming`.
+- A new answer gets a new `key`.
+- The agent spec comes from `@snackbit/opendil/agent-spec`.
+
+## Next steps
+
+<Cards>
+  <Card title="Add OpenDIL to your chat app" href="/docs/chat-integration/" description="Stream real answers with the AI SDK, OpenAI, Anthropic, or fetch." />
+  <Card title="Streaming" href="/docs/streaming/" description="Fade in new content, follow the stream, and control update frequency." />
+  <Card title="Rendering modes" href="/docs/rendering-modes/" description="Choose iframe, Shadow DOM, or host rendering and set up CSP." />
+  <Card title="DIL tour" href="/docs/language/" description="Learn the language your model writes." />
+</Cards>

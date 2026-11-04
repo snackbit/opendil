@@ -61,8 +61,7 @@ export function VirtualFlow({
       ":" +
       instance;
   const allowance = useContext(RenderAllowance);
-  const environment = useRendererEnvironment();
-  const viewport = environment.viewport;
+  const { viewport } = useRendererEnvironment();
   const group = useId();
   const container = useRef<HTMLElement | null>(null);
   const table = useContext(TableScope) === "body";
@@ -72,20 +71,25 @@ export function VirtualFlow({
   const [margin, setMargin] = useState(0);
   const [pinned, setPinned] = useState<number | null>(null);
   const [overlay, setOverlay] = useState<number | null>(null);
+  // Positions are measured from the renderer's top, so layout outside it
+  // never shifts them. Content above this flow inside the renderer can.
   useLayoutEffect(() => {
     const update = () =>
       setMargin(
-        (container.current?.getBoundingClientRect().top ?? 0) + window.scrollY,
+        (container.current?.getBoundingClientRect().top ?? 0) -
+          (viewport ? viewport.origin() : -window.scrollY),
       );
     update();
     const observer = new ResizeObserver(update);
     observer.observe(window.document.body);
     window.addEventListener("resize", update);
+    const unsubscribe = viewport?.subscribe(update);
     return () => {
       observer.disconnect();
       window.removeEventListener("resize", update);
+      unsubscribe?.();
     };
-  }, [enabled]);
+  }, [enabled, viewport]);
   const getItemKey = useCallback(
     (index: number) =>
       itemKey ? itemKey(index) : (childIds?.get(index) ?? index),
@@ -102,38 +106,38 @@ export function VirtualFlow({
       ].sort((a, b) => a - b),
     [pinned, overlay],
   );
+  // The renderer supplies its scroller's visible area: a host page, a scroll
+  // container, or the part of an iframe its host reports as visible.
   const virtualizer = useWindowVirtualizer({
-    ...(viewport && environment.scrollTo
+    ...(viewport
       ? {
           initialOffset: () => viewport.offset,
           scrollToFn: (offset, { adjustments }) =>
-            environment.scrollTo?.(offset + (adjustments ?? 0)),
+            viewport.scrollTo(offset + (adjustments ?? 0)),
           observeElementRect: (_instance, callback) => {
-            const view = viewport;
             const emit = () =>
-              callback({ width: view.width, height: view.height });
+              callback({ width: viewport.width, height: viewport.height });
             emit();
-            view.listeners.add(emit);
-            return () => view.listeners.delete(emit);
+            return viewport.subscribe(emit);
           },
           observeElementOffset: (_instance, callback) => {
-            const view = viewport;
-            let previous = view.offset;
+            let previous = viewport.offset;
             let timer: ReturnType<typeof setTimeout> | undefined;
             const emit = () => {
-              const changed = previous !== view.offset;
-              previous = view.offset;
-              callback(view.offset, changed);
+              const offset = viewport.offset;
+              const changed = previous !== offset;
+              previous = offset;
+              callback(offset, changed);
               if (changed) {
                 clearTimeout(timer);
-                timer = setTimeout(() => callback(view.offset, false), 150);
+                timer = setTimeout(() => callback(viewport.offset, false), 150);
               }
             };
             emit();
-            view.listeners.add(emit);
+            const unsubscribe = viewport.subscribe(emit);
             return () => {
               clearTimeout(timer);
-              view.listeners.delete(emit);
+              unsubscribe();
             };
           },
         }

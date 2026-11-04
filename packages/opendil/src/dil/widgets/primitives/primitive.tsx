@@ -47,6 +47,8 @@ import {
 import { DilTableRow, TableScope } from "../../view/table-context";
 import { NodeGraph } from "../graphs/node-graph";
 import { RenderLimit } from "../../view/render-limit";
+import { useReportProblem } from "../../view/render-boundary";
+import { UNSHOWN_PART_MESSAGE } from "../../render-error";
 import { useCustomization } from "../../customization";
 import { CustomComponent } from "../../custom-component";
 import { cn } from "../../../lib/cn";
@@ -121,7 +123,7 @@ export function Primitive({
         slots={customization.slots?.[node.name] ?? {}}
         ready={
           interactive &&
-          node.status === "ready" &&
+          node.status !== "streaming" &&
           !document.engine.stopped &&
           !document.renderLimited
         }
@@ -132,7 +134,7 @@ export function Primitive({
     );
   const ready =
     interactive &&
-    node.status === "ready" &&
+    node.status !== "streaming" &&
     !document.engine.stopped &&
     !document.renderLimited;
   const valueSource = node.attributes.value?.expression ?? "";
@@ -244,11 +246,11 @@ export function Primitive({
             color: color(attributes.color),
             backgroundColor:
               attributes.color === "success"
-                ? "#e5f5ee"
+                ? "var(--dil-success-surface)"
                 : attributes.color === "warning"
-                  ? "#fff2d9"
+                  ? "var(--dil-warning-surface)"
                   : attributes.color === "danger"
-                    ? "#fee8e8"
+                    ? "var(--dil-danger-surface)"
                     : undefined,
           }}
           className={cn(
@@ -348,7 +350,8 @@ export function Primitive({
           align={attributes.align === "end" ? "end" : "center"}
           className="w-auto max-w-[calc(100vw-2rem)]"
         >
-          {children}
+          {/* Stacks inline children such as consecutive <text> lines. */}
+          <div className="dil-flow gap-2">{children}</div>
         </PopoverContent>
       );
     case "carousel":
@@ -384,13 +387,28 @@ export function Primitive({
         </TableCell>
       );
     default:
-      return (
-        <div
-          role="alert"
-          className="rounded border border-destructive/30 p-3 text-sm text-destructive"
-        >
-          Unsupported DIL component: {node.name}
-        </div>
-      );
+      return <UnsupportedComponent node={node} document={document} />;
   }
+}
+/** Readers see generic wording; the host learns which name is missing. */
+function UnsupportedComponent({
+  node,
+  document,
+}: {
+  node: DilNode;
+  document: DilDocument;
+}) {
+  useReportProblem(document, {
+    kind: "syntax",
+    message: `<${node.name}> is neither a stock DIL component nor one passed in the components prop.`,
+    offset: node.offset,
+  });
+  return (
+    <div
+      role="alert"
+      className="rounded border border-destructive/30 p-3 text-sm text-destructive"
+    >
+      {UNSHOWN_PART_MESSAGE}
+    </div>
+  );
 }

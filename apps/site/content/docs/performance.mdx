@@ -1,0 +1,303 @@
+---
+title: Long conversations and performance
+description: "Keep chats with many interactive answers fast: what each answer costs, virtualization, update cadence, and how to measure."
+---
+
+Each answer is a small application: it has its own parser, often its own JavaScript engine, and in iframe mode its own page inside an iframe. This page explains what an answer costs while it is on screen, and how to keep conversations with hundreds of answers, or answers with thousands of items, fast.
+
+## What you will learn
+
+- What each mounted answer costs in each rendering mode.
+- Which habits keep a long chat fast.
+- How virtualization handles large answers, including inside a scrolling message list.
+- How to measure your own app.
+
+## What each answer costs
+
+Every `DilRenderer` runs its own pipeline: a parser in a Web Worker and, when the answer needs one, an expression engine, a sandboxed JavaScript engine (QuickJS) in a second Web Worker. Answers share nothing except the code your page has loaded.
+
+| Resource              | Iframe mode (default)                                          | Host and Shadow DOM modes              |
+| --------------------- | -------------------------------------------------------------- | -------------------------------------- |
+| Iframe                | One sandboxed iframe per answer                                | None; components render in your page   |
+| Runtime code          | Its own copy of `frame.js`, parsed and run in each iframe      | The page's code, shared by all answers |
+| Parser worker         | One, from mount until the final text is applied                | The same                               |
+| Expression engine     | One, from the first expression, state, or action until unmount | The same                               |
+| Text and parsed nodes | Kept in memory until unmount                                   | The same                               |
+
+Two details keep finished answers cheap:
+
+- The parser worker stops once the renderer has applied the final text, that is, after you set `isStreaming={false}`. An answer that never finishes keeps its parser running.
+- An answer of plain Markdown never starts an expression engine. A finished Markdown answer runs no workers at all; a finished interactive answer keeps one, its expression engine.
+
+{/* Measured with a Playwright harness against packages/opendil/dist (page.on("worker") and worker "close" events), 2026-11-04: plain 3 created / 0 alive after finish; interactive 6 created / 3 alive, in iframe, shadow, and host modes. Sources: message-renderer.tsx (parser.dispose() when the last batch is complete), runtime/expressions.ts (runtime started by the first job). */}
+
+### Code your app downloads
+
+The iframe mode needs only a small bridge in your bundle. The rest of the runtime, including React, is in `frame.js` (about 8 MB, or 2.5 MB gzip). The browser downloads it once and reuses it for every answer, but each iframe parses and runs its own copy, so in iframe mode each mounted answer costs one JavaScript realm on top of its workers. In a Vite app that uses only the iframe mode, the entry chunk is 234 kB (73 kB gzip), of which React is 219 kB (68 kB gzip).
+
+Host and Shadow DOM modes need the parser, the expression engine, and the components in your page. That code is a separate chunk that loads the first time your page renders `mode="host"` or `mode="shadow"`. Until it has loaded, the first such answer renders nothing. To start the download early, call `preloadHostRenderer()`; see [Preload host and Shadow DOM code](/docs/rendering-modes/#preload-host-and-shadow-dom-code).
+
+{/* Sources: .changeset/iframe-runtime-dx.md (234 kB / 73 kB gzip, React 219 kB / 68 kB gzip; lazy chunk; preloadHostRenderer); dil-renderer.tsx (loadStyledRenderer, Suspense fallback null). frame.js measured from packages/opendil/dist/runtime on 2026-11-04: 8,067,823 bytes, 2,525,384 bytes with gzip -9. Re-measure before each release. */}
+
+## Keep long chats fast
+
+A chat that keeps every answer mounted pays for all of them. These habits keep that cost low.
+
+### Give every answer a stable key
+
+Render one `DilRenderer` per answer with a `key` that stays the same for the life of that answer, such as the message ID. A new key remounts the renderer: it parses the whole text again and resets the answer's state, such as slider positions and typed text. A regenerated answer is a new answer, so give it a new key.
+
+### Finish every answer
+
+Set `isStreaming` to `false` when the stream ends, is stopped, or fails. Only then does the parser worker stop. [Chat integration](/docs/chat-integration/#finish-each-answer-at-the-right-time) shows the mapping for each SDK.
+
+### Keep props stable
+
+Wrap your message component in `memo`, so earlier answers do not render again while the latest one streams:
+
+```tsx title="components/assistant-message.tsx"
+"use client";
+import { memo } from "react";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+export interface AssistantMessageProps {
+  text: string;
+  isStreaming: boolean;
+  isLatest: boolean;
+}
+
+export const AssistantMessage = memo(function AssistantMessage({
+  text,
+  isStreaming,
+  isLatest,
+}: AssistantMessageProps) {
+  return (
+    <DilRenderer
+      text={text}
+      isStreaming={isStreaming}
+      showStatus={false}
+      autoScroll={isLatest}
+    />
+  );
+});
+```
+
+```tsx title="components/message-list.tsx"
+"use client";
+import { AssistantMessage } from "./assistant-message";
+
+export interface Message {
+  id: string;
+  text: string;
+  isStreaming: boolean;
+}
+
+export function MessageList({ messages }: { messages: Message[] }) {
+  return messages.map((message, index) => (
+    <AssistantMessage
+      key={message.id}
+      text={message.text}
+      isStreaming={message.isStreaming}
+      isLatest={index === messages.length - 1}
+    />
+  ));
+}
+```
+
+In host and Shadow DOM modes, also keep `components`, `componentConfig`, `classNames`, `slots`, `onInput`, `onCommit`, and `onError` stable. Define registries and class maps at module scope, and wrap callbacks in `useCallback`. A new object or function on every render makes the answer's components render again. The iframe mode compares `tokens` by content and reads its callbacks when it needs them, so new objects there cost little.
+
+### Follow only the latest answer
+
+Pass `autoScroll` to the answer that is streaming, not to every answer, as `isLatest` does above. See [Follow the stream](/docs/streaming/#follow-the-stream).
+
+### Update the screen less often
+
+On slow devices or very fast streams, set `updateInterval={100}` to update the screen at most ten times per second. See [Control how often the screen updates](/docs/streaming/#control-how-often-the-screen-updates).
+
+### Mount old answers when they scroll into view
+
+When you restore a conversation with hundreds of answers, mounting them all at once starts an iframe and a parser for each one (only a parser in host and Shadow DOM modes). You can delay each answer until it nears the visible area. This is a pattern for your app, not a package feature:
+
+```tsx title="components/mount-when-visible.tsx"
+"use client";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type ReactNode,
+  type RefObject,
+} from "react";
+
+export interface MountWhenVisibleProps {
+  children: ReactNode;
+  /** Height to reserve until the answer mounts, in pixels. */
+  estimatedHeight: number;
+  /** A ref to your scrolling message list. Omit it when the page scrolls. */
+  root?: RefObject<Element | null>;
+}
+
+export function MountWhenVisible({
+  children,
+  estimatedHeight,
+  root,
+}: MountWhenVisibleProps) {
+  const placeholder = useRef<HTMLDivElement>(null);
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const element = placeholder.current;
+    if (visible || !element) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) setVisible(true);
+      },
+      { root: root?.current ?? null, rootMargin: "1000px 0px" },
+    );
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [visible, root]);
+  if (visible) return children;
+  return <div ref={placeholder} style={{ height: estimatedHeight }} />;
+}
+```
+
+Wrap each restored answer in it. In a scrolling message list, pass the list's ref, the same one you pass to `scrollContainer`:
+
+```tsx
+<MountWhenVisible estimatedHeight={240} root={listRef}>
+  <AssistantMessage
+    text={message.text}
+    isStreaming={message.isStreaming}
+    isLatest={false}
+  />
+</MountWhenVisible>
+```
+
+Once mounted, an answer stays mounted, so readers keep what they changed in it. The placeholder's height is a guess, so the scrollbar can move when real answers replace placeholders.
+
+<Callout type="warn" title="Unmounting an answer discards its state">
+  If you also unmount answers that scroll away, each one starts over when it
+  mounts again: inputs, sliders, and selections return to their initial values.
+  Only unmount answers when readers cannot have changed them, or replace them
+  with your own static summary.
+</Callout>
+
+## Large answers and virtualization
+
+A single answer can hold thousands of items. The renderer then mounts only the items near the visible area. This is virtualization: items that scroll away unmount, and items that scroll into view mount.
+
+Virtualization starts when:
+
+- the answer, or a `box` inside it, has more than 100 direct children; or
+- an `{#each}` block has more than 100 items.
+
+Table rows from an `{#each}` block are virtualized too; rows written out one by one are not. Content inside `svg` is never virtualized, and a single `Chart`, `NodeGraph`, `Mermaid` diagram, or `svg` is never split.
+
+Here is a table with 5,000 rows. Scroll through it, press an **Inspect** button, and scroll back:
+
+<LiveExample id="long-table" />
+
+How it behaves:
+
+- **Size estimates.** Each item that has not been measured yet takes 140 px. Five more items mount above and below the visible area. When an item mounts, its real height replaces the estimate, so positions further down can shift.
+- **Tables.** Tables keep native rows. The renderer inserts empty spacer rows instead of wrapping rows in other elements.
+- **Pinned items.** An item that holds keyboard focus, or that anchors an open popover or menu, stays mounted while it is out of view.
+- **State.** Values from `DIL.useState` and unsaved `CodeBlock` edits survive when an item unmounts. React state inside your own [custom components](/docs/custom-components/#limitations) does not.
+- **Memory.** Virtualization limits the mounted interface, not memory. The full text and its parsed nodes stay in memory while the renderer is mounted.
+
+### Name the scroll container
+
+Virtualization and `autoScroll` follow whatever scrolls the answer: the page, or a message list with `overflow-y: auto`. By default, each renderer finds the nearest ancestor that scrolls vertically and has more content than fits, and uses the window when there is none. In iframe mode, your page reports to the frame which part of it is visible.
+
+When detection picks the wrong element, for example a wrapper that scrolls only at some screen sizes, pass `scrollContainer` with a ref to your message list, or `"window"` to always use the page. [Follow inside a scrolling message list](/docs/streaming/#follow-inside-a-scrolling-message-list) shows a complete chat pane.
+
+{/* Sources: view/virtual-flow.tsx (count > 100, estimateSize 140, overscan 5, pinned focus, aria-expanded overlay, spacer rows in tables); view/node-children.tsx and node-view.tsx (flows for the root and box); view/repeated-nodes.tsx (> 100 items, svg excluded, 1000 svg cap); view/scroll-options.ts and .changeset/scroll-container-support.md (scrollContainer "auto" | "window" | element | ref); runtime/document.ts drafts and widgets/code-block.tsx (state and code drafts survive offscreen unmounts). */}
+
+## Limits that protect the page
+
+Each answer has fixed limits on text length, display size, and expression work. An answer that reaches one shows a message and stops; your page and other answers keep working. A display budget of 2,000 units per answer, for example, stops an answer that tries to mount too much interface at once, while virtualized items count only while they are mounted. [Limits](/docs/limits/) lists every value and what readers see.
+
+## Measure your app
+
+Measure a production build. In development, React's Strict Mode runs each renderer's setup twice, so you see extra workers start and stop.
+
+### Time how fast text reaches the screen
+
+`onInput` fires when the renderer forwards new text, and `onCommit` fires after it applies parsed text. The time between them is how long readers wait for new text. Record it as a performance measure:
+
+```tsx title="components/measured-answer.tsx"
+"use client";
+import { useRef } from "react";
+import { DilRenderer } from "@snackbit/opendil";
+import "@snackbit/opendil/styles.css";
+
+export function MeasuredAnswer(props: { text: string; isStreaming: boolean }) {
+  const waitingSince = useRef<number | null>(null);
+  return (
+    <DilRenderer
+      text={props.text}
+      isStreaming={props.isStreaming}
+      onInput={() => {
+        waitingSince.current ??= performance.now();
+      }}
+      onCommit={({ complete }) => {
+        if (waitingSince.current === null) return;
+        performance.measure(complete ? "opendil final" : "opendil update", {
+          start: waitingSince.current,
+        });
+        waitingSince.current = null;
+      }}
+    />
+  );
+}
+```
+
+The measures appear in the Timings track of your browser's Performance panel. Record a profile while an answer streams, then look for long tasks on the main thread. The parser and the expression engine run in workers, so their work shows up on separate threads. `onCommit` does not mean the browser has painted, or that charts have finished drawing.
+
+### Count workers in a test
+
+Playwright reports each worker a page starts, including workers inside the iframes:
+
+```ts title="e2e/workers.spec.ts"
+import { expect, test, type Page } from "@playwright/test";
+
+function countWorkers(page: Page) {
+  let started = 0;
+  let running = 0;
+  page.on("worker", (worker) => {
+    started++;
+    running++;
+    worker.on("close", () => running--);
+  });
+  return { started: () => started, running: () => running };
+}
+
+const answers = 5; // finished answers on the page
+const interactive = 3; // answers among them with state or actions
+
+test("finished answers release their parser workers", async ({ page }) => {
+  const workers = countWorkers(page);
+  await page.goto("/chat/saved-conversation");
+  // Every answer starts a parser first.
+  await expect.poll(workers.started).toBeGreaterThanOrEqual(answers);
+  await expect.poll(workers.running).toBeLessThanOrEqual(interactive);
+});
+```
+
+Replace the URL with a page of yours that shows finished answers. Set `answers` to the number of answers on it, and `interactive` to the number of those that have state or actions. The test first waits until every answer has started its parser, so it fails when nothing renders.
+
+## Recap
+
+- Each answer has its own parser worker until it finishes, and its own expression engine once it needs one. Iframe mode adds one iframe per answer.
+- Stable keys, `memo`, stable props, and `isStreaming={false}` at the end keep long chats cheap.
+- Above 100 items, the renderer virtualizes, in the page or in a scrolling message list. Name the list with `scrollContainer` if detection picks the wrong element.
+- Virtualization limits the mounted interface, not memory.
+
+## Next steps
+
+<Cards>
+  <Card title="Streaming" href="/docs/streaming/" description="Pass growing text, follow the stream, and set the update cadence." />
+  <Card title="Limits" href="/docs/limits/" description="Every size, work, and display limit with its exact value." />
+  <Card title="How it works" href="/docs/how-it-works/" description="Follow an answer through the parser, the engine, and the iframe bridge." />
+  <Card title="Troubleshooting" href="/docs/troubleshooting/" description="Fix scrolling, streaming, and setup problems by symptom." />
+</Cards>

@@ -8,191 +8,128 @@
 [![CI](https://github.com/snackbit/opendil/actions/workflows/ci.yml/badge.svg)](https://github.com/snackbit/opendil/actions/workflows/ci.yml)
 [![License](https://img.shields.io/badge/license-Apache--2.0-5e4cff)](https://github.com/snackbit/opendil/blob/main/LICENSE)
 
-[Website](https://opendil.com/) · [Playground](https://opendil.com/demo/) · [Docs](https://opendil.com/docs/getting-started/) · [Agent Spec](https://opendil.com/agent-spec/)
+[Docs](https://opendil.com/docs/) · [Quickstart](https://opendil.com/docs/getting-started/) · [Playground](https://opendil.com/demo/) · [Agent spec](https://opendil.com/docs/agent-spec/)
 
 <img src="https://raw.githubusercontent.com/snackbit/opendil/main/docs/dil-assets/streaming-demo.gif" width="880" alt="DIL source streams in on the left while a budget planner builds up on the right. After the stream ends, the team slider moves from 8 to 18, annual billing is switched on, and the total and chart update." />
 
 </div>
 
-OpenDIL is a React renderer for DIL (Dynamic Interface Language): Markdown with components, charts, form controls, and a little reactive state. A language model writes DIL as plain text. Your app passes along whatever has arrived so far, and OpenDIL turns it into an interface people can use before the answer is finished.
+OpenDIL is a React renderer for DIL (Dynamic Interface Language): Markdown mixed with component tags, a little state, and expressions. A model writes DIL as plain text, your app passes along what has arrived so far, and readers can use the sliders, charts, and buttons before the answer finishes.
 
-We started OpenDIL after experimenting with ChatGPT's generative UI and wanting the same thing in our own products. It is an independent project with its own documented dialect.
+OpenDIL never calls your model provider. It works with any client that streams text, including the Vercel AI SDK, the OpenAI and Anthropic SDKs, and plain `fetch`.
 
-## Quick start
+## Quickstart
 
-### 1. Install
+Install the package and copy the iframe runtime into your public folder:
 
 ```sh
-npm install @snackbit/opendil react react-dom
+npm install @snackbit/opendil
 npx opendil copy-assets --out public/opendil
 ```
 
-The second command copies the sandboxed runtime that the default iframe mode loads from `/opendil/`. Skip it if you only use host or Shadow DOM mode.
+The default rendering mode draws each answer in a sandboxed iframe that loads `frame.html` and `frame.js` from `/opendil/`. Copy them again on every install (a `postinstall` script works), and serve `frame.html` with the header described in the [Quickstart](https://opendil.com/docs/getting-started/#send-the-frames-security-header) before you ship.
 
-### 2. Teach your model DIL
+Put the agent spec first in your system prompt:
 
-Put the [Agent Spec](https://opendil.com/agent-spec/) in your system prompt. It covers the syntax, the stock components, and the output rules that keep documents safe to render. The source lives in [`spec/genui.agent.md`](https://github.com/snackbit/opendil/blob/main/spec/genui.agent.md).
+```ts
+import { agentSpec } from "@snackbit/opendil/agent-spec";
 
-### 3. Render the stream
+export const systemPrompt = [
+  agentSpec,
+  "You are the assistant in a pricing app. Keep answers short.",
+].join("\n\n");
+```
+
+Render each assistant message with `DilRenderer`:
 
 ```tsx
+"use client";
 import { DilRenderer } from "@snackbit/opendil";
 import "@snackbit/opendil/styles.css";
 
-type AnswerProps = { id: string; text: string; streaming: boolean };
+type Message = { id: string; role: "user" | "assistant"; text: string };
 
-export function Answer({ id, text, streaming }: AnswerProps) {
-  return (
-    <DilRenderer key={id} text={text} isStreaming={streaming} autoScroll />
+export function Messages(props: { messages: Message[]; streaming: boolean }) {
+  const { messages, streaming } = props;
+  return messages.map((message, index) =>
+    message.role === "user" ? (
+      <p key={message.id}>{message.text}</p>
+    ) : (
+      <DilRenderer
+        key={message.id}
+        text={message.text}
+        isStreaming={streaming && index === messages.length - 1}
+        showStatus={false}
+      />
+    ),
   );
 }
 ```
 
-Pass the full text received so far on every update and set `isStreaming={false}` after the last chunk. A new `key` starts a new document. OpenDIL never talks to your model provider, so it works with any client that streams text.
+Three rules apply to every streamed answer:
+
+1. Pass all the text received so far. `text` only grows.
+2. Set `isStreaming={false}` when the answer is complete.
+3. Give each answer its own `key`. A new key starts a new answer.
+
+## Integrating OpenDIL
+
+An integration has two halves, one on each side of your existing chat.
+
+**Teach the model DIL.** The agent spec is a Markdown document that teaches a model the syntax, the stock components, and the output rules. It ships in the package, so the prompt always matches your renderer version. `@snackbit/opendil/agent-spec` exports three strings: `agentSpec` (the primary spec, about 23 KB), `agentSpecFull` (about 83 KB, with a block per component and task), and `agentSpecExamples` (a runnable example per component). The same files are exported as Markdown under `@snackbit/opendil/spec/`, and the source lives in [`spec/`](https://github.com/snackbit/opendil/tree/main/spec).
+
+- [Agent spec](https://opendil.com/docs/agent-spec/): load the spec, choose primary or full, and add your own rules.
+- [Prompting and evaluation](https://opendil.com/docs/prompting/): decide when the model should use UI, supply data, and test generated answers.
+
+**Render the stream in React.** `DilRenderer` takes the text received so far and whether more may arrive. Your app keeps its transport, message storage, and chat interface.
+
+- [Add OpenDIL to your chat app](https://opendil.com/docs/chat-integration/): server routes and client code for the AI SDK, OpenAI, Anthropic, and `fetch` with server-sent events, including stop, retry, and "Jump to latest".
+- [Streaming](https://opendil.com/docs/streaming/): fade in new content, follow the stream, and control update frequency.
+- [`DilRenderer` reference](https://opendil.com/docs/renderer/): every prop, the ref handle, and the types.
+
+Two example apps show a complete integration:
+
+- [`examples/next-ai-sdk`](https://github.com/snackbit/opendil/tree/main/examples/next-ai-sdk): Next.js with the Vercel AI SDK.
+- [`examples/vite-sse`](https://github.com/snackbit/opendil/tree/main/examples/vite-sse): Vite with a server that streams server-sent events.
 
 ## What DIL looks like
 
 ```jsx
-{@body const [seats, setSeats] = DIL.useState(8)}
-{@body const [annual, setAnnual] = DIL.useState(true)}
-<box border padding={5} radius="xl" gap={4}>
-  <title size="xl">A plan that grows with you</title>
-  <row justify="between">
-    <label>Team members</label>
-    <text>{seats}</text>
-  </row>
-  <slider
-    aria-label="Team members"
-    min={1}
-    max={50}
-    value={seats}
-    onChange={setSeats}
-  />
-  <checkbox checked={annual} onChange={setAnnual} lineThrough={false}>
-    Annual billing · save 20%
-  </checkbox>
-  <divider />
-  <title size="2xl">€{(seats * 29 * (annual ? 0.8 : 1)).toFixed(2)} / month</title>
-  <caption>{seats} seats · €29 per seat{annual ? " · annual discount applied" : ""}</caption>
-  <button onClick={() => GenUI.copy(JSON.stringify({ seats, annual }))}>Copy configuration</button>
+{@body const [count,setCount] = DIL.useState(0)}
+<box border padding={4} gap={3}>
+  <title>Hello from DIL</title>
+  <button onClick={() => setCount(count + 1)}>Clicked {count} times</button>
 </box>
 ```
 
-<img src="https://raw.githubusercontent.com/snackbit/opendil/main/apps/demo/src/site/assets/pricing.png" width="520" alt="The rendered pricing card: a team member slider set to 8, annual billing checked, and a total of €185.60 per month." />
-
-The slider and checkbox change document state, and the price recomputes from it. Expressions such as `seats * 29` run in a QuickJS WebAssembly worker with memory and execution limits. They never run as JavaScript in your page.
-
-## Why OpenDIL
-
-### Usable while it streams
-
-OpenDIL parses the partial document on every update. Text, charts, and controls appear as soon as their source is complete enough, so a reader can drag a slider while the model is still writing the paragraph below it. Unfinished tags don't produce guessed-size skeletons, and a control keeps its place on screen while it becomes ready.
-
-### Plain text a model can write
-
-DIL reads like Markdown mixed with JSX, two formats models already produce well. A document needs no schema or tool call, and it can hold its own state, derived values, conditional views, and repeated content.
-
-### Sandboxed by default
-
-The default renderer draws stock components inside an opaque-origin iframe with a strict Content Security Policy and no network access. When you need your own React components, switch to host or Shadow DOM mode and decide what you trust.
-
-### Built for long answers
-
-Repeated content and large flows are virtualized, and active inputs keep their values while they scroll out of view. Our benchmark fixture renders 5,000 cards from about 2.4 MB of DIL.
-
-## Components
-
-| Group                                                     | Includes                                                                  |
-| --------------------------------------------------------- | ------------------------------------------------------------------------- |
-| [Text](https://opendil.com/docs/components/text/)         | Typography, captions, icons, and status badges                            |
-| [Layout](https://opendil.com/docs/components/layout/)     | Boxes, rows, and responsive grids                                         |
-| [Inputs](https://opendil.com/docs/components/inputs/)     | Text inputs, sliders, checkboxes, and radio groups                        |
-| [Actions](https://opendil.com/docs/components/actions/)   | Buttons, pressable cards, segmented controls, and conditional navigation  |
-| [Charts](https://opendil.com/docs/components/charts/)     | Line, bar, pie, and scatter charts with hover detail and series selection |
-| [Tables](https://opendil.com/docs/components/tables/)     | Native tables and virtualized repeated rows                               |
-| [Code](https://opendil.com/docs/components/code/)         | Highlighted source with editing, wrapping, and copy                       |
-| [Diagrams](https://opendil.com/docs/components/diagrams/) | React Flow graphs, Mermaid diagrams, and SVG                              |
-| [Media](https://opendil.com/docs/components/media/)       | Offline illustrations and an image carousel                               |
-| [Overlays](https://opendil.com/docs/components/overlays/) | Popovers with keyboard support, collision handling, and focus restoration |
+Markdown carries the prose. Tags such as `<box>`, `<slider>`, and `<Chart>` become components, `{@body …}` declares state and derived values, and `{#if}` and `{#each}` show content conditionally or repeat it. The [DIL tour](https://opendil.com/docs/language/) covers the language, and the [component pages](https://opendil.com/docs/components/text/) list every stock component.
 
 ## Rendering modes
 
-| Mode                   | Rendering boundary                        | Your own React components       |
-| ---------------------- | ----------------------------------------- | ------------------------------- |
-| `"isolated"` (default) | Sandboxed iframe without network access   | Requires a custom runtime build |
-| `"shadow"`             | Shadow DOM scopes markup and styles       | Supported                       |
-| `"host"`               | Renderer-scoped styles in your page's DOM | Supported                       |
+| Mode                 | Where it renders                        | Custom components | Setup                                 |
+| -------------------- | --------------------------------------- | ----------------- | ------------------------------------- |
+| `isolated` (default) | A sandboxed iframe with no origin       | No                | Runtime files and one response header |
+| `shadow`             | A shadow root in your page              | Yes               | Two CSP directives, if you send a CSP |
+| `host`               | Your page's DOM, in a `.dil-scope` root | Yes               | Two CSP directives, if you send a CSP |
 
-All three modes keep DIL expressions in bounded QuickJS workers. Shadow DOM shares your page's JavaScript privileges, so use host and Shadow DOM mode only with documents and components you trust. The [isolation guide](https://opendil.com/docs/isolation/) covers the details.
+Start with the default. Switch to Shadow DOM or host mode when you need [custom components](https://opendil.com/docs/custom-components/) or your own classes on built-in ones. [Rendering modes](https://opendil.com/docs/rendering-modes/) covers headers, base paths, and Content Security Policy for each mode, and [Theming](https://opendil.com/docs/theming/) covers light and dark appearance and design tokens.
 
-## Bring your own components
+## Security
 
-In host or Shadow DOM mode you can register components for new tags or replace stock ones:
+OpenDIL treats every answer as untrusted input. In every mode, expressions run in QuickJS, a JavaScript engine compiled to WebAssembly, inside a Web Worker with memory and work limits; your page never evaluates them. The default iframe mode also keeps the answer away from your page, its storage, and the network, while Shadow DOM and host modes render in your page's origin and are a styling boundary, not a security boundary. [Security](https://opendil.com/docs/security/) describes the threat model and what you must configure. Report vulnerabilities as described in [SECURITY.md](https://github.com/snackbit/opendil/blob/main/SECURITY.md).
 
-```tsx
-import { DilRenderer, type DilComponentProps } from "@snackbit/opendil";
-import "@snackbit/opendil/styles.css";
+## Requirements
 
-function Callout({
-  children,
-  className,
-  config,
-  presentationRef,
-}: DilComponentProps) {
-  return (
-    <aside ref={presentationRef} className={className}>
-      <strong>{String(config.label ?? "Note")}</strong>
-      {children}
-    </aside>
-  );
-}
+- React 19. `react` and `react-dom` `^19.0.0` are peer dependencies.
+- A bundler that reads package `exports` and CSS imports, such as Next.js or Vite. The package is ESM only.
+- A browser with Web Workers, WebAssembly, and sandboxed iframes. Shadow DOM mode also needs constructable stylesheets.
+- Node.js 22 or newer for the `opendil` command.
 
-// Keep the registry at module scope so React doesn't remount your components.
-const components = { Callout };
+[Package and CLI](https://opendil.com/docs/package/) lists the entry points, stylesheets, and bundle sizes. [Limits](https://opendil.com/docs/limits/) lists what DIL and the stock renderer do not do.
 
-export function Preview() {
-  return (
-    <DilRenderer
-      mode="host"
-      text="<Callout>Your application owns this component.</Callout>"
-      components={components}
-      componentConfig={{ Callout: { label: "From our design system" } }}
-      tokens={{ "--primary": "#156f55", "--radius": "1rem" }}
-    />
-  );
-}
-```
+## Contributing
 
-Components receive evaluated attributes, so validate the values you accept and don't spread them onto DOM elements. Theming works through `appearance`, CSS variables in `tokens`, and per-tag `classNames`. Tailwind v4 projects can import `@snackbit/opendil/tailwind.css` instead of the compiled stylesheet. See [Customization](https://opendil.com/docs/customization/overview/).
-
-## Streaming options
-
-| Prop                | Default     | Effect                                                                         |
-| ------------------- | ----------- | ------------------------------------------------------------------------------ |
-| `progressiveReveal` | `false`     | Fades new blocks in sequence. `true` uses a 50 ms stagger and 180 ms fade.     |
-| `updateInterval`    | `"instant"` | Pass milliseconds to batch presentation updates. User input stays immediate.   |
-| `autoScroll`        | `false`     | Follows the stream until the reader scrolls. Accepts `behavior` and `padding`. |
-| `onFollowChange`    |             | Reports whether the renderer is following, for a "Jump to latest" button.      |
-
-Call `resumeAutoScroll()` on the renderer ref to start following again. The [renderer reference](https://opendil.com/docs/renderer/) lists every prop.
-
-## Limits
-
-DIL is a bounded document language. It doesn't compile arbitrary JSX or TypeScript, and the stock renderer has no maps, live weather, product search, or file export. Image components show offline illustrations; register a host component if you want to connect an image service.
-
-OpenDIL needs React 19 and a browser with Web Workers, WebAssembly, and sandboxed iframes. Shadow DOM mode also needs constructable stylesheets (`adoptedStyleSheets`). The `opendil` asset CLI needs Node 22 or newer.
-
-## Development
-
-```sh
-npm ci
-npm run build
-npm run check      # format, lint, typecheck, unit tests with coverage
-npx playwright install chromium
-npm run test:e2e
-```
-
-`npm run dev` rebuilds the package and starts the site on port 5173. The publishable renderer lives in `packages/opendil` and the website, playground, and docs in `apps/demo`. [CONTRIBUTING.md](https://github.com/snackbit/opendil/blob/main/CONTRIBUTING.md) covers the remaining checks and the release process. Report vulnerabilities as described in [SECURITY.md](https://github.com/snackbit/opendil/blob/main/SECURITY.md).
+See [CONTRIBUTING.md](https://github.com/snackbit/opendil/blob/main/CONTRIBUTING.md) for the repository layout, checks, and release process.
 
 ## License
 

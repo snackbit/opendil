@@ -68,6 +68,7 @@ it("retains action-flood and transport failure guards", () => {
     queue.mutate({ type: "call", payload: {} });
   expect(failure).toHaveBeenCalledWith(
     expect.stringContaining("too many actions"),
+    "limit",
   );
   queue.stop();
   const broken = new ExecutionQueue(
@@ -78,6 +79,32 @@ it("retains action-flood and transport failure guards", () => {
     failure,
   );
   broken.evaluate("one", {});
-  expect(failure).toHaveBeenCalledWith("Message execution worker failed.");
+  expect(failure).toHaveBeenCalledWith(
+    "Message execution worker failed.",
+    "runtime",
+  );
   broken.stop();
+});
+it("gives jobs sent before the runtime first answers time to start it", () => {
+  vi.useFakeTimers();
+  const post = vi.fn(),
+    failure = vi.fn();
+  const queue = new ExecutionQueue(post, () => {}, failure);
+  queue.evaluate("cold", {});
+  vi.advanceTimersByTime(4999);
+  expect(failure).not.toHaveBeenCalled();
+  queue.reply({ id: 1 });
+  queue.evaluate("warm", {});
+  vi.advanceTimersByTime(999);
+  expect(failure).not.toHaveBeenCalled();
+  vi.advanceTimersByTime(1);
+  expect(failure).toHaveBeenCalledWith(
+    "Execution stopped: the action exceeded its time limit.",
+    "limit",
+  );
+  const stalled = vi.fn();
+  new ExecutionQueue(post, () => {}, stalled).evaluate("never", {});
+  vi.advanceTimersByTime(5000);
+  expect(stalled).toHaveBeenCalledOnce();
+  queue.stop();
 });

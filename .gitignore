@@ -1,14 +1,15 @@
 node_modules/
 public/dil-runtime/
 .next/
-**/.astro/
+.next-*/
+.source/
 next-env.d.ts
 *.tsbuildinfo
 coverage/
 playwright-report/
 test-results/
 dist/
-apps/demo/public/opendil/
+apps/site/public/opendil/
 .tmp/
 *.tgz
 # Local research captures are not redistributed.

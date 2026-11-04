@@ -1,0 +1,15 @@
+{
+  "title": "Components",
+  "pages": [
+    "layout",
+    "text",
+    "inputs",
+    "actions",
+    "charts",
+    "tables",
+    "code",
+    "diagrams",
+    "media",
+    "overlays"
+  ]
+}
