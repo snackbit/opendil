@@ -5,7 +5,10 @@ import { HighlightedCode } from "./code/highlighted-code";
 import { Button } from "../../components/ui/controls/button";
 import { Tooltip } from "../../components/ui/overlays/tooltip";
 import { Copy, Check, WrapText } from "lucide-react";
-import { useRendererEnvironment } from "../renderer-environment";
+import {
+  useRendererEnvironment,
+  writeClipboard,
+} from "../renderer-environment";
 import type { DilDocument } from "../runtime/document";
 
 export interface CodeBlockProps {
@@ -49,12 +52,7 @@ export function CodeBlock({
         ? Promise.resolve(false)
         : copyText
           ? copyText(current)
-          : navigator.clipboard
-            ? navigator.clipboard.writeText(current).then(
-                () => true,
-                () => false,
-              )
-            : Promise.resolve(false);
+          : writeClipboard(current);
     void action.then(
       (ok) => setCopyStatus(ok ? "copied" : "failed"),
       () => setCopyStatus("failed"),

@@ -2,6 +2,7 @@ import "@fontsource-variable/space-grotesk";
 import "@fontsource-variable/inter";
 import "@fontsource/ibm-plex-mono/400.css";
 import "@fontsource/ibm-plex-mono/500.css";
+import { Analytics } from "@vercel/analytics/next";
 import type { Metadata } from "next";
 import type { ReactNode } from "react";
 import { SiteProvider } from "@/components/site/provider";
@@ -28,6 +29,8 @@ export default function RootLayout({ children }: { children: ReactNode }) {
           </div>
           <SiteFooter />
         </SiteProvider>
+        {/* Vercel serves the analytics script only on its deployments; other builds would 404 it. */}
+        {process.env.VERCEL ? <Analytics /> : null}
       </body>
     </html>
   );

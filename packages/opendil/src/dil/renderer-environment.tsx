@@ -29,6 +29,23 @@ export interface RendererEnvironment {
   onCommit?: (detail: RendererMetrics) => void;
   onError?: (error: DilRenderError) => void;
 }
+/**
+ * Writes to the system clipboard. Resolves false instead of throwing where the API is
+ * missing (insecure contexts such as a plain-HTTP LAN host) or the write is refused.
+ * Called only from user actions, so it never runs during server rendering.
+ */
+export function writeClipboard(text: string): Promise<boolean> {
+  const clipboard = navigator.clipboard as Clipboard | undefined;
+  if (!clipboard) return Promise.resolve(false);
+  try {
+    return clipboard.writeText(text).then(
+      () => true,
+      () => false,
+    );
+  } catch {
+    return Promise.resolve(false);
+  }
+}
 export const RendererEnvironmentContext = createContext<RendererEnvironment>(
   {},
 );

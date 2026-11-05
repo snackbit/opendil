@@ -5,6 +5,7 @@ import { createStore } from "zustand/vanilla";
 import { afterEach, expect, it, vi } from "vitest";
 import { ActionReceipt } from "../../../packages/opendil/src/dil/runtime/action-receipt";
 import type { DocumentStatus } from "../../../packages/opendil/src/dil/runtime/document";
+import { writeClipboard } from "../../../packages/opendil/src/dil/renderer-environment";
 import {
   useActionFeedback,
   type ActionFeedback,
@@ -58,4 +59,29 @@ it("reports a failed copy and ignores actions without a receipt", () => {
   act(() => latest().track(new ActionReceipt(7)));
   act(() => status.setState({ clipboard: { intent: 7, ok: false } }));
   expect(latest().feedback).toBe("failed");
+});
+it("turns every clipboard write into an outcome instead of an exception", async () => {
+  const clipboard = (writeText: (text: string) => Promise<void>) =>
+    vi.spyOn(navigator, "clipboard", "get").mockReturnValue({
+      writeText,
+    } as unknown as Clipboard);
+  try {
+    // Insecure contexts, such as a plain-HTTP LAN host, have no Clipboard API.
+    vi.spyOn(navigator, "clipboard", "get").mockReturnValue(
+      undefined as unknown as Clipboard,
+    );
+    await expect(writeClipboard("a")).resolves.toBe(false);
+    const write = vi.fn(() => Promise.resolve());
+    clipboard(write);
+    await expect(writeClipboard("b")).resolves.toBe(true);
+    expect(write).toHaveBeenCalledWith("b");
+    clipboard(() => Promise.reject(new DOMException("Denied")));
+    await expect(writeClipboard("c")).resolves.toBe(false);
+    clipboard(() => {
+      throw new TypeError("Illegal invocation");
+    });
+    await expect(writeClipboard("d")).resolves.toBe(false);
+  } finally {
+    vi.restoreAllMocks();
+  }
 });

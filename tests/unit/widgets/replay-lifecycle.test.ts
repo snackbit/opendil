@@ -147,7 +147,7 @@ it("keeps content during preparation, pauses without catch-up, and replays a cac
   await click("Replay");
   expect(workers).toHaveLength(2);
 });
-it("ignores cancelled and malformed results and leaves usable content on worker failure", async () => {
+it("ignores cancelled and malformed results and keeps the content on an invalid reply", async () => {
   await act(() => root.render(createElement(Probe)));
   await click("Replay");
   const cancelled = workers[0];
@@ -161,16 +161,73 @@ it("ignores cancelled and malformed results and leaves usable content on worker 
     "Could not prepare",
   );
   await click("Replay");
-  await act(() => workers[2]?.onerror?.());
-  expect(text()).toBe(source);
-  await click("Replay");
-  const abandoned = workers[3];
+  const abandoned = workers[2];
   await click("Reset");
   await act(() => abandoned?.onerror?.());
   expect(text()).toBe(source);
-  await click("Replay");
-  await act(() => workers[4]?.reply(null));
+  await act(() => vi.advanceTimersByTime(10000));
   expect(text()).toBe(source);
+  await click("Replay");
+  await act(() => workers[3]?.reply(null));
+  expect(text()).toBe(source);
+});
+it("streams by approximate tokens when the worker errors, hangs or cannot start", async () => {
+  await act(() => root.render(createElement(Probe)));
+  const streams = async () => {
+    expect(text()).toBe("");
+    expect(mount.querySelector('[role="status"]')?.textContent).toBe(
+      "Streaming",
+    );
+    await paint(100);
+    expect(text()?.length).toBeGreaterThan(0);
+    expect(source.startsWith(text() ?? "-")).toBe(true);
+    await click("Reset");
+  };
+  await click("Replay");
+  await act(() => workers[0]?.onerror?.());
+  expect(workers[0]?.terminated).toBe(true);
+  await streams();
+  await click("Replay");
+  expect(mount.querySelector('[role="status"]')?.textContent).toBe("Preparing");
+  await act(() => vi.advanceTimersByTime(5000));
+  expect(workers[1]?.terminated).toBe(true);
+  await streams();
+  vi.stubGlobal(
+    "Worker",
+    class {
+      constructor() {
+        throw new Error("Workers are unavailable");
+      }
+    },
+  );
+  await click("Replay");
+  await streams();
+  expect(mount.querySelector('[role="alert"]')?.textContent).toBe("");
+});
+it("replays known offsets without a tokenizer worker", async () => {
+  function Known() {
+    const replay = useReplay(source, "showcase", 150, tokenOffsets(source));
+    return createElement(
+      "div",
+      null,
+      createElement("pre", null, source.slice(0, replay.offset)),
+      createElement("button", { onClick: replay.replay }, "Replay"),
+      createElement(
+        "button",
+        { onClick: () => replay.reset(source.length) },
+        "Reset",
+      ),
+    );
+  }
+  await act(() => root.render(createElement(Known)));
+  await click("Replay");
+  expect(workers).toHaveLength(0);
+  await paint(100);
+  expect(text()).toBe("word ".repeat(15).trimEnd());
+  await click("Reset");
+  await click("Replay");
+  expect(workers).toHaveLength(0);
+  expect(text()).toBe("");
 });
 it("uses explicitly selected character stress profiles and skips hidden time", async () => {
   history.replaceState(null, "", "/?benchmark=1");

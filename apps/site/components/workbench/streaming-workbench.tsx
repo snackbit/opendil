@@ -15,6 +15,8 @@ export interface StreamingWorkbenchProps {
   outputRef?: Ref<HTMLDivElement>;
   rootRef?: Ref<HTMLDivElement>;
   scrollPadding?: number;
+  /** Extra class on the root, e.g. the landing hero's narrow-screen page-scroll layout. */
+  className?: string;
 }
 
 /** The homepage's bounded source/preview workbench, shared by editable demos. */
@@ -29,9 +31,13 @@ export function StreamingWorkbench({
   outputRef,
   rootRef,
   scrollPadding = 0,
+  className,
 }: StreamingWorkbenchProps) {
   return (
-    <div className="od-stream-demo" ref={rootRef}>
+    <div
+      className={className ? `od-stream-demo ${className}` : "od-stream-demo"}
+      ref={rootRef}
+    >
       <div className="od-hero-demo-toolbar">
         <div className="od-demo-caption">
           <i />

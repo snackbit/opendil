@@ -1,10 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ReplayClock, stressChunk, type StressSpeed } from "./replay-delivery";
+import {
+  approximateOffsets,
+  ReplayClock,
+  stressChunk,
+  type StressSpeed,
+} from "./replay-delivery";
 import { DEMO_TOKEN_RATE } from "./defaults";
+/** A worker that iOS kills silently never answers; replay then paces by approximate tokens. */
+const WORKER_TIMEOUT_MS = 5000;
+/**
+ * Replays `source` token by token. `knownOffsets` (exact offsets computed ahead of time)
+ * skip the tokenizer worker; otherwise the worker prepares them on the first replay.
+ */
 export function useReplay(
   source: string,
   dataset: string,
   initialRate = DEMO_TOKEN_RATE,
+  knownOffsets?: Uint32Array,
 ) {
   const [offset, setOffset] = useState(source.length);
   const [running, setRunning] = useState(false);
@@ -19,8 +31,10 @@ export function useReplay(
   const cache = useRef<{ source: string; offsets: Uint32Array } | null>(null);
   const worker = useRef<Worker | null>(null);
   const clock = useRef<ReplayClock | null>(null);
+  const timeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
   const complete = offset >= source.length;
   const cancel = useCallback(() => {
+    clearTimeout(timeout.current);
     worker.current?.terminate();
     worker.current = null;
     setPreparing(false);
@@ -32,25 +46,47 @@ export function useReplay(
     setRunning(true);
     setError("");
   }, [tokensPerSecond]);
+  const begin = useCallback(
+    (offsets: Uint32Array) => {
+      cache.current = { source, offsets };
+      start();
+    },
+    [source, start],
+  );
   const replay = useCallback(() => {
     if (benchmark || cache.current?.source === source) {
       start();
       return;
     }
     cancel();
+    if (knownOffsets) {
+      begin(knownOffsets);
+      return;
+    }
+    let instance: Worker;
+    try {
+      instance = new Worker(new URL("./tokenize.worker.ts", import.meta.url), {
+        type: "module",
+      });
+    } catch {
+      begin(approximateOffsets(source));
+      return;
+    }
     setPreparing(true);
     setError("");
-    const instance = new Worker(
-      new URL("./tokenize.worker.ts", import.meta.url),
-      { type: "module" },
-    );
     worker.current = instance;
     const failed = () => {
       if (worker.current !== instance) return;
       cancel();
       setError("Could not prepare replay. Try Replay stream again.");
     };
-    instance.onerror = failed;
+    const approximate = () => {
+      if (worker.current !== instance) return;
+      cancel();
+      begin(approximateOffsets(source));
+    };
+    instance.onerror = approximate;
+    timeout.current = setTimeout(approximate, WORKER_TIMEOUT_MS);
     instance.onmessage = (event: MessageEvent<unknown>) => {
       if (worker.current !== instance) return;
       const data = event.data;
@@ -63,12 +99,11 @@ export function useReplay(
         failed();
         return;
       }
-      cache.current = { source, offsets: data.offsets };
       cancel();
-      start();
+      begin(data.offsets);
     };
     instance.postMessage(source);
-  }, [benchmark, source, start, cancel]);
+  }, [benchmark, source, start, cancel, begin, knownOffsets]);
   const reset = useCallback(
     (length: number) => {
       cancel();
@@ -88,7 +123,7 @@ export function useReplay(
     setRunning(false);
   }, [cancel, source.length]);
   const pause = useCallback(() => setRunning((value) => !value), []);
-  useEffect(() => () => worker.current?.terminate(), []);
+  useEffect(() => cancel, [cancel]);
   useEffect(() => {
     const now = performance.now();
     if (!running || document.hidden) clock.current?.rebase(now);

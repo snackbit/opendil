@@ -308,6 +308,58 @@ test("the landing preview follows its own pane and yields immediately to the whe
     .poll(() => pane.evaluate((element) => element.scrollTop))
     .toBe(0);
 });
+test.describe("on a narrow touch screen", () => {
+  test.use({ viewport: { width: 390, height: 844 }, hasTouch: true });
+  test("the landing preview streams, replays and leaves vertical scrolling to the page", async ({
+    page,
+  }) => {
+    await page.goto("./");
+    const demo = page.locator(".od-hero-workbench");
+    await demo.scrollIntoViewIfNeeded();
+    const progress = page.getByRole("progressbar", {
+      name: "Demo source received",
+    });
+    const received = async () =>
+      Number(await progress.getAttribute("aria-valuenow"));
+    await expect.poll(received).toBeGreaterThan(0);
+    await page.getByRole("button", { name: "Finish", exact: true }).click();
+    await expect.poll(received).toBe(100);
+    await page.getByRole("button", { name: "Replay", exact: true }).click();
+    await expect.poll(received).toBeLessThan(100);
+    const restarted = await received();
+    await expect.poll(received).toBeGreaterThan(restarted);
+    await page.getByRole("button", { name: "Finish", exact: true }).click();
+    const output = page.getByLabel("Streaming preview", { exact: true });
+    await expect(
+      output.locator(".recharts-bar-rectangle").first(),
+    ).toBeVisible();
+    // The preview grows with its content instead of trapping swipes in its own scroller.
+    expect(
+      await output.evaluate(
+        (element) => element.scrollHeight - element.clientHeight,
+      ),
+    ).toBeLessThanOrEqual(1);
+    // Touches over the source reach the page until a tap unlocks the editor.
+    const code = page.locator(".od-hero-code");
+    await code.scrollIntoViewIfNeeded();
+    const editorReceivesTouches = () =>
+      code.evaluate((element) => {
+        const box = element.getBoundingClientRect();
+        const hit = document.elementFromPoint(
+          box.left + box.width / 2,
+          box.top + box.height / 2,
+        );
+        return Boolean(hit?.closest(".monaco-editor"));
+      });
+    expect(await editorReceivesTouches()).toBe(false);
+    await expect(code.getByText("Tap to scroll code")).toBeVisible();
+    await code.tap();
+    expect(await editorReceivesTouches()).toBe(true);
+    await expect(code.getByText("Tap to scroll code")).toBeHidden();
+    await output.tap({ position: { x: 8, y: 8 } });
+    expect(await editorReceivesTouches()).toBe(false);
+  });
+});
 test.describe("without JavaScript", () => {
   test.use({ javaScriptEnabled: false });
   test("the prerendered landing shows the example source instead of the renderer", async ({

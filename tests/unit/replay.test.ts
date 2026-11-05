@@ -2,6 +2,9 @@ import { expect, it } from "vitest";
 import { encode } from "gpt-tokenizer/encoding/o200k_base";
 import { tokenOffsets } from "../../apps/site/components/playback/token-index";
 import {
+  approximateOffsets,
+  packOffsets,
+  unpackOffsets,
   ReplayClock,
   ratePosition,
   positionRate,
@@ -25,6 +28,38 @@ it.each([
     expect(offset).toBeGreaterThanOrEqual(previous);
     expect(source.slice(0, offset)).not.toMatch(/[\uD800-\uDBFF]$/);
     previous = offset;
+  }
+});
+it.each([
+  "",
+  "A streamed document\n<box>hello</box>",
+  "﻿日本語 🧑🏽‍💻 café\r\n<|endoftext|>",
+  "  indented    words_and_123 numbers!!",
+  "bad\ud800string",
+])("approximates exact, Unicode-safe source prefixes: %s", (source) => {
+  const offsets = approximateOffsets(source);
+  expect(offsets[0]).toBe(0);
+  expect(offsets.at(-1)).toBe(source.length);
+  for (let index = 1; index < offsets.length; index++) {
+    const offset = offsets[index] ?? 0;
+    expect(offset).toBeGreaterThan(offsets[index - 1] ?? 0);
+    expect(offset - (offsets[index - 1] ?? 0)).toBeLessThanOrEqual(6);
+    if (offset < source.length)
+      expect(source.slice(0, offset)).not.toMatch(/[\uD800-\uDBFF]$/);
+  }
+});
+it("approximates about one token per four characters of prose", () => {
+  const source =
+    "Approximate pacing keeps a replay moving when tokenizing fails.";
+  const count = approximateOffsets(source).length - 1;
+  const exact = encode(source).length;
+  expect(count).toBeGreaterThanOrEqual(exact);
+  expect(count).toBeLessThanOrEqual(exact * 2);
+});
+it("packs token offsets losslessly, including long whitespace tokens", () => {
+  for (const source of ["", "word ".repeat(30), " ".repeat(200) + "x"]) {
+    const offsets = tokenOffsets(source);
+    expect(unpackOffsets(packOffsets(offsets))).toEqual(offsets);
   }
 });
 it("rejects sources that cannot survive tokenizer Unicode encoding losslessly", () => {
