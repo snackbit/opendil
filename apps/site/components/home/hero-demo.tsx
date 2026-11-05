@@ -1,6 +1,7 @@
 "use client";
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { DEMO_TOKEN_RATE } from "@/components/playback/defaults";
+import { unpackOffsets } from "@/components/playback/replay-delivery";
 import { DemoRenderer } from "@/components/playback/demo-renderer";
 import { DemoSettings } from "@/components/playback/demo-settings";
 import { PlaybackControls } from "@/components/playback/playback-controls";
@@ -16,6 +17,7 @@ import {
   type ExampleDefinition,
 } from "@/lib/examples/catalog";
 import type { HeroExample } from "./hero-examples";
+import { TouchUnlock } from "./touch-unlock";
 
 export interface HeroDemoProps {
   /** Source and token count for every featured example, keyed by id. */
@@ -38,6 +40,7 @@ export function HeroDemo({ examples }: HeroDemoProps) {
       key={example.id}
       example={example}
       source={entry.source}
+      offsets={entry.offsets}
       examples={examples}
       onExample={setId}
       initialRate={rate}
@@ -49,6 +52,7 @@ export function HeroDemo({ examples }: HeroDemoProps) {
 function StreamingExample({
   example,
   source,
+  offsets,
   examples,
   onExample,
   initialRate,
@@ -56,12 +60,14 @@ function StreamingExample({
 }: {
   example: ExampleDefinition;
   source: string;
+  offsets: string;
   examples: Readonly<Record<string, HeroExample>>;
   onExample: (id: string) => void;
   initialRate: number;
   onRate: (rate: number) => void;
 }) {
-  const replay = useReplay(source, example.id, initialRate);
+  const known = useMemo(() => unpackOffsets(offsets), [offsets]);
+  const replay = useReplay(source, example.id, initialRate, known);
   const options = useDemoOptions();
   const appearance = useSiteTheme();
   const detail = useCallback(
@@ -141,6 +147,7 @@ function StreamingExample({
   );
   return (
     <StreamingWorkbench
+      className="od-hero-workbench"
       rootRef={root}
       outputRef={output}
       scrollPadding={options.scrollPadding}
@@ -183,15 +190,17 @@ function StreamingExample({
         </>
       }
       source={
-        <SourceEditor
-          key={run}
-          value={source}
-          readOnly
-          appearance="subtle"
-          generatedLength={received}
-          followTail
-          label="Incoming DIL source"
-        />
+        <TouchUnlock>
+          <SourceEditor
+            key={run}
+            value={source}
+            readOnly
+            appearance="subtle"
+            generatedLength={received}
+            followTail
+            label="Incoming DIL source"
+          />
+        </TouchUnlock>
       }
       preview={
         <DemoRenderer

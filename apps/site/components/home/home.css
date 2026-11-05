@@ -366,6 +366,66 @@
     flex-direction: column;
     padding-block: 48px;
   }
+  /* Narrow screens: the page is the hero's only vertical scroller. The source shrinks
+     to a short tail of the incoming stream, the preview grows with its content (wide
+     content still scrolls sideways), and the minimum height keeps Replay and Reset
+     from collapsing the page. */
+  .od-stream-demo.od-hero-workbench .od-hero-demo {
+    grid-template-rows: 200px auto;
+    height: auto;
+  }
+  .od-hero-workbench .od-hero-output {
+    height: auto;
+    max-height: none;
+    min-height: 360px;
+    overflow-x: auto;
+    overscroll-behavior: auto;
+  }
+  .od-hero-demo-fallback {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: 200px 360px;
+    height: auto;
+  }
+  .od-hero-demo-fallback pre {
+    overflow: hidden;
+  }
+}
+/* The hero source fills its pane; see touch-unlock.tsx. */
+.od-touch-unlock {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+.od-touch-unlock-hint {
+  display: none;
+}
+/* Touch swipes over the locked source scroll the page; a tap unlocks the editor. */
+@media (max-width: 767px) and (pointer: coarse) {
+  .od-touch-unlock:not([data-unlocked]) .monaco-editor {
+    pointer-events: none;
+  }
+  .od-touch-unlock:not([data-unlocked]) .od-touch-unlock-hint {
+    display: block;
+    position: absolute;
+    right: 8px;
+    bottom: 8px;
+    padding: 2px 8px;
+    border: 1px solid var(--od-border);
+    border-radius: 999px;
+    background: var(--od-surface);
+    color: var(--od-text-secondary);
+    font: 11px var(--od-font-code);
+    pointer-events: none;
+  }
+  .od-touch-unlock[data-unlocked]::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border: 2px solid var(--od-link);
+    pointer-events: none;
+  }
 }
 @media (max-width: 639px) {
   .od-hero {
