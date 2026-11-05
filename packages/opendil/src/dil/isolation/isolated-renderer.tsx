@@ -9,7 +9,7 @@ import {
   type Ref,
 } from "react";
 import type { DilRendererHandle } from "../renderer-handle";
-import type { RendererMetrics } from "../renderer-environment";
+import { writeClipboard, type RendererMetrics } from "../renderer-environment";
 import {
   deliverError,
   ProblemReports,
@@ -264,19 +264,21 @@ export function IsolatedRenderer({
       }
       if (data.type === "gesture") gesture = performance.now() + 750;
       if (data.type === "reading") pauseFollow();
-      if (
-        data.type === "copy" &&
-        "text" in data &&
-        typeof data.text === "string" &&
-        data.text.length <= 65536 &&
-        navigator.userActivation.isActive &&
-        performance.now() < gesture
-      ) {
-        gesture = 0;
-        void navigator.clipboard
-          .writeText(data.text)
-          .then(() => reply.postMessage({ type: "copy-result", ok: true }))
-          .catch(() => reply.postMessage({ type: "copy-result", ok: false }));
+      if (data.type === "copy" && "text" in data) {
+        // Browsers without User Activation (Safari before 16.4) rely on the gesture window alone.
+        const activation = (
+          navigator as { userActivation?: { isActive: boolean } }
+        ).userActivation;
+        const allowed =
+          typeof data.text === "string" &&
+          data.text.length <= 65536 &&
+          (activation?.isActive ?? true) &&
+          performance.now() < gesture;
+        if (allowed) gesture = 0;
+        // A refused request answers at once instead of leaving the frame to time out.
+        void (
+          allowed ? writeClipboard(String(data.text)) : Promise.resolve(false)
+        ).then((ok) => reply.postMessage({ type: "copy-result", ok }));
       }
       if ("detail" in data && data.detail && typeof data.detail === "object") {
         const detail = data.detail;

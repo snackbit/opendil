@@ -19,6 +19,7 @@ import { RenderBoundary } from "./view/render-boundary";
 import {
   RendererEnvironmentContext,
   useRendererEnvironment,
+  writeClipboard,
 } from "./renderer-environment";
 import { useProgressiveReveal } from "./view/progressive-reveal";
 import { RevealContext } from "./view/reveal/presentation";
@@ -219,15 +220,16 @@ export function MessageRenderer({
       const text = detail.text;
       const intent = detail.intent;
       const action = environmentRef.current.copy;
-      const result = action
-        ? action(text)
-        : navigator.clipboard.writeText(text).then(
-            () => true,
-            () => false,
-          );
-      void result.then((ok) =>
-        document.status.setState({ clipboard: { intent, ok } }),
-      );
+      const report = (ok: boolean) =>
+        document.status.setState({ clipboard: { intent, ok } });
+      // Every request ends in a visible outcome, even when a host copy hook throws.
+      let result: Promise<boolean>;
+      try {
+        result = action ? action(text) : writeClipboard(text);
+      } catch {
+        result = Promise.resolve(false);
+      }
+      void result.then(report, () => report(false));
     };
     document.engine.events.addEventListener("dil:copy", copy);
     const parser = startInlineWorker(__DIL_PARSER_WORKER__, {

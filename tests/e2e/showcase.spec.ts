@@ -184,6 +184,30 @@ test("renders the source and wires the showcase controls", async ({
   expect(errors).toEqual([]);
 });
 
+test("reports a failed copy where the Clipboard API is unavailable", async ({
+  page,
+}) => {
+  // Insecure contexts, such as a plain-HTTP LAN host, have no navigator.clipboard.
+  await page.addInitScript(() => {
+    Object.defineProperty(Navigator.prototype, "clipboard", {
+      get: () => undefined,
+    });
+  });
+  const errors: string[] = [];
+  page.on("pageerror", (error) => errors.push(error.message));
+  // The playground showcase in iframe mode.
+  await openShowcase(page);
+  const ui = dilPage(page);
+  await ui.getByRole("button", { name: "Copy configuration" }).click();
+  await expect(ui.locator(".dil-tooltip")).toContainText("Copy failed");
+  // The landing preview in its default shadow mode.
+  await page.goto("./");
+  await page.getByRole("button", { name: "Finish", exact: true }).click();
+  const hero = page.locator(".od-hero-output");
+  await hero.getByRole("button", { name: "Copy configuration" }).click();
+  await expect(hero.locator(".dil-tooltip")).toContainText("Copy failed");
+  expect(errors).toEqual([]);
+});
 test("renders the showcase on mobile and handles an image failure locally", async ({
   page,
 }) => {
