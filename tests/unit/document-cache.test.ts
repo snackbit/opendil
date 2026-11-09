@@ -286,6 +286,11 @@ it("ends the hold when the renderer's width changes, as the held height no longe
   vi.mocked(HTMLElement.prototype.getBoundingClientRect).mockRestore();
   layOut(480, 300);
   observers.forEach((notify) => notify());
+  expect(renderer?.dataset.dilHeld).toBe("true");
+  await act(
+    () =>
+      new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+  );
   expect(renderer?.dataset.dilHeld).toBeUndefined();
   expect(renderer?.style.height).toBe("");
 });

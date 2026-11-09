@@ -407,11 +407,12 @@ test("host mode keeps Markdown lists under a page CSS reset and themes status ba
   await replaceSource(
     page,
     source,
-    '1. First\n2. Second\n\n- Bullet\n  - Nested\n\n> Tip: quoted\n\n<badge color="success">Healthy</badge>',
+    '4. Fourth\n5. Fifth\n\n- Bullet\n  - Nested\n\n> Tip: quoted\n\n<badge color="success">Healthy</badge>',
   );
   await source.press("ControlOrMeta+Enter");
   const ui = page.locator('[data-dil-mode="host"]').first();
   const ordered = ui.locator(".dil-markdown ol").first();
+  await expect(ordered).toHaveAttribute("start", "4");
   await expect(ordered).toHaveCSS("list-style-type", "decimal");
   await expect(ordered).toHaveCSS("padding-left", "40px");
   const bullets = ui.locator(".dil-markdown ul").first();

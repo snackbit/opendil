@@ -70,6 +70,7 @@ export function useSettledSignal(
     // this width; the ones that change render again before the first paint.
     document.heights.width.setState({ width: width() });
     let frame = 0;
+    let releaseFrame = 0;
     let settled = false;
     let finished = false;
     let unwatch = () => {};
@@ -78,6 +79,8 @@ export function useSettledSignal(
       resize: ResizeObserver | undefined;
     } | null = null;
     function release() {
+      cancelAnimationFrame(releaseFrame);
+      releaseFrame = 0;
       if (!held || !element) return;
       clearTimeout(held.timer);
       held.resize?.disconnect();
@@ -139,7 +142,10 @@ export function useSettledSignal(
       const resize =
         typeof ResizeObserver === "function"
           ? new ResizeObserver(() => {
-              if (width() !== heldWidth) release();
+              // Releasing the height lock changes the observed element's size.
+              // Defer that write until ResizeObserver has finished delivery.
+              if (width() !== heldWidth && !releaseFrame)
+                releaseFrame = requestAnimationFrame(release);
             })
           : undefined;
       held = {

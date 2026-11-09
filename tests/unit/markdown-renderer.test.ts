@@ -85,6 +85,18 @@ afterEach(async () => {
 });
 
 describe("MarkdownRenderer", () => {
+  it("preserves ordered lists that start after one", () => {
+    const html = renderToStaticMarkup(
+      createElement(MarkdownRenderer, { text: "4. Fourth\n5. Fifth" }),
+    );
+    const dom = document.createElement("div");
+    dom.innerHTML = html;
+    expect(dom.querySelector("ol")?.start).toBe(4);
+    expect(
+      [...dom.querySelectorAll("li")].map((item) => item.textContent),
+    ).toEqual(["Fourth", "Fifth"]);
+  });
+
   it("renders Markdown with stock defaults: inert links, no images, literal DIL", () => {
     const html = renderToStaticMarkup(
       createElement(MarkdownRenderer, { text: DOCUMENT }),
@@ -444,6 +456,31 @@ describe("Markdown overrides in DIL prose", () => {
     uninstall = installInlineWorkers();
   });
   afterEach(() => uninstall());
+  it("keeps numbered titles distinct inside carousel cards", async () => {
+    await preloadHostRenderer();
+    await act(() =>
+      root.render(
+        createElement(DilRenderer, {
+          mode: "host",
+          showStatus: false,
+          text: "<carousel><carousel-item><box><title>1. Explore</title></box></carousel-item><carousel-item><box><title>2. Adjust</title></box></carousel-item><carousel-item><box><title>3. Review</title></box></carousel-item></carousel>",
+        }),
+      ),
+    );
+    await vi.waitFor(
+      () =>
+        expect(
+          mount.querySelectorAll('[data-d-component="title"]'),
+        ).toHaveLength(3),
+      { timeout: 5000 },
+    );
+    expect(
+      [...mount.querySelectorAll('[data-d-component="title"] ol')].map((list) =>
+        list.getAttribute("start"),
+      ),
+    ).toEqual([null, "2", "3"]);
+  });
+
   it("substitutes expressions in every heading level and keeps them out of URLs", async () => {
     await act(() =>
       root.render(

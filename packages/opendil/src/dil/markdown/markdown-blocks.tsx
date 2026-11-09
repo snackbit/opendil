@@ -73,6 +73,7 @@ const BlockContext = createContext({ offset: 0, streaming: false });
 type MarkdownProps = ExtraProps & {
   children?: ReactNode;
   className?: string | undefined;
+  start?: number | undefined;
 };
 function usePresentation(
   tag: string,
@@ -96,12 +97,12 @@ function usePresentation(
   );
 }
 function element(tag: string, reveal: boolean) {
-  return function MarkdownElement({ children, node }: MarkdownProps) {
+  return function MarkdownElement({ children, node, start }: MarkdownProps) {
     const scope = useScope();
     const ref = usePresentation(tag, reveal, node);
     return createElement(
       tag === "p" && scope.inline ? "span" : tag,
-      { ref },
+      { ref, ...(tag === "ol" ? { start } : {}) },
       scope.substitute(children),
     );
   };
