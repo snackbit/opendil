@@ -62,21 +62,33 @@ it("evicts inactive callback results and releases their worker handles", async (
     onmessage: ((event: { data: unknown }) => void) | null = null;
     onerror: (() => void) | null = null;
     private stopped = false;
-    postMessage(message: { id: number; type: string; handles?: number[] }) {
-      if (message.type === "release") released.push(...(message.handles ?? []));
+    private handle = 0;
+    postMessage(message: {
+      id: number;
+      type: string;
+      steps?: Array<{ type: string; handles?: number[] }>;
+      evaluations?: Array<{ key: string }>;
+    }) {
+      for (const step of message.steps ?? [])
+        if (step.type === "release") released.push(...(step.handles ?? []));
+      const results = (message.evaluations ?? []).map(({ key }) => {
+        const handle = ++this.handle;
+        return {
+          key,
+          value: { $dilHandler: handle },
+          handles: [handle],
+          dependencies: [],
+          revision: 0,
+        };
+      });
       queueMicrotask(() => {
         if (!this.stopped)
           this.onmessage?.({
-            data:
-              message.type === "evaluate"
-                ? {
-                    id: message.id,
-                    value: { $dilHandler: message.id },
-                    handles: [message.id],
-                    dependencies: [],
-                    revision: 0,
-                  }
-                : { id: message.id },
+            data: {
+              id: message.id,
+              steps: (message.steps ?? []).map(() => ({})),
+              results,
+            },
           });
       });
     }
@@ -118,6 +130,14 @@ function create() {
   engines.push(engine);
   return engine;
 }
+/** A batch reply's result for an unscoped expression. */
+function result(source: string, fields: Record<string, unknown>) {
+  return { key: JSON.stringify([source, {}]), revision: 0, ...fields };
+}
+/** Evaluations leave in a microtask; their worker starts with the first. */
+const dispatched = () => Promise.resolve();
+/** Non-urgent results publish with the next frame, or its timer fallback. */
+const published = () => new Promise((resolve) => setTimeout(resolve, 60));
 it("publishes action-driven binding refreshes immediately even with slow streaming presentation", async () => {
   const scheduler = new PresentationScheduler();
   scheduler.configure(60000);
@@ -177,6 +197,7 @@ it("invalidates state dependencies without waking unrelated expressions", async 
   engine.declare("const [n,setN]=DIL.useState(1)");
   expect(await value(engine, "n * 2")).toBe(2);
   expect(await value(engine, "40 + 2")).toBe(42);
+  await published();
   const signature = engine.signature(["40 + 2"], {}, engine.store.getState());
   const setter = await value(engine, "setN");
   if (typeof setter !== "function") throw new Error("Missing setter");
@@ -215,6 +236,7 @@ it("tracks conditional dependencies as their branches change", async () => {
   const flag = await value(engine, "setFlag");
   if (typeof right !== "function" || typeof flag !== "function")
     throw new Error("Missing actions");
+  await published();
   const signature = engine.signature(
     ["flag ? left : right"],
     {},
@@ -246,14 +268,11 @@ it("discards a delayed evaluation invalidated by a newer interaction", async () 
   let held: { data: unknown } | undefined;
   let newer = false;
   facade.onmessage = (event) => {
-    const data = event.data;
+    const data = event.data as {
+      results?: Array<{ value?: unknown; revision?: number }>;
+    };
     if (
-      data &&
-      typeof data === "object" &&
-      "value" in data &&
-      data.value === 1 &&
-      "revision" in data &&
-      data.revision === 1
+      data.results?.some((entry) => entry.value === 1 && entry.revision === 1)
     ) {
       held = event;
       return;
@@ -325,10 +344,10 @@ it("fails closed on a malformed declaration and remains isolated from other inst
   const broken = create(),
     healthy = create();
   broken.declare("let unsupported=1");
-  await expect(value(broken, "1")).rejects.toThrow();
-  expect(await value(healthy, "2")).toBe(2);
+  await expect(value(broken, "(1)")).rejects.toThrow();
+  expect(await value(healthy, "(2)")).toBe(2);
   broken.dispose();
-  expect(() => broken.evaluate("3")).toThrow("disposed");
+  expect(() => broken.evaluate("(3)")).toThrow("disposed");
 });
 it("applies syntax batches without remapping existing children or replaying stale revisions", async () => {
   const doc = new DilDocument();
@@ -378,13 +397,16 @@ it("reports presentation limits once and keeps opaque nested callback IDs as dat
   doc.reportRenderLimit();
   doc.reportRenderLimit();
   await Promise.resolve();
-  expect(doc.status.getState().error).toContain("display limit");
+  expect(doc.status.getState().error).toMatchObject({
+    code: "render-budget",
+    message: expect.stringContaining("display limit"),
+  });
   const result = await value(create(), "({toJSON:{$dilHandler:0},value:1})");
   expect(JSON.stringify(result)).toBe('{"toJSON":{"$dilHandler":0},"value":1}');
 });
 it("rejects oversized expressions, arrays and deeply nested results without poisoning the renderer", async () => {
   const engine = create();
-  expect(() => engine.evaluate("1".repeat(65537))).toThrow("source limit");
+  expect(() => engine.evaluate("x".repeat(65537))).toThrow("source limit");
   await expect(value(engine, "Array(10001).fill(1)")).rejects.toThrow(
     "structural limits",
   );
@@ -416,41 +438,43 @@ it("rejects unknown parents and lazily reuses node stores across updates", () =>
 it("ignores stale transport replies and reports worker failures", async () => {
   const engine = create();
   // The first job starts the worker.
-  expect(() => engine.evaluate("1")).toThrow("Waiting");
+  expect(() => engine.evaluate("(1)")).toThrow("Waiting");
+  await dispatched();
   const facade = facades.at(-1);
   facade?.onmessage?.({ data: { id: 999, value: "stale" } });
-  expect(await value(engine, "1")).toBe(1);
+  expect(await value(engine, "(1)")).toBe(1);
   facade?.onerror?.();
-  expect(() => engine.evaluate("2")).toThrow("worker failed");
+  expect(() => engine.evaluate("(2)")).toThrow("worker failed");
 });
 it("applies backpressure rather than poisoning legitimate evaluation bursts", () => {
   const engine = create();
   for (let i = 0; i < 400; i++)
-    expect(() => engine.evaluate(String(i))).toThrow("Waiting");
+    expect(() => engine.evaluate(`(${i})`)).toThrow("Waiting");
   engine.dispose();
 });
 it("cancels unmounted demand and keeps a bounded transport window", async () => {
   const engine = create();
   const release = engine.retain(
-    Array.from({ length: 1100 }, (_, index) => String(index)),
+    Array.from({ length: 1100 }, (_, index) => `(${index})`),
   );
   expect(engine.stats.evaluations).toBeLessThanOrEqual(4);
   expect(engine.stats.queued).toBeLessThanOrEqual(1024);
   release();
   expect(engine.stats.queued).toBe(0);
   await vi.waitFor(() => expect(engine.stats.inFlight).toBe(0));
-  expect(() => engine.read("1099")).toThrow("Waiting");
+  expect(() => engine.read("(1099)")).toThrow("Waiting");
   expect(await value(engine, "2+2")).toBe(4);
 });
-it("terminates a stalled dispatched transport", () => {
+it("terminates a stalled dispatched transport", async () => {
   vi.useFakeTimers();
   const stalled = create();
-  expect(() => stalled.evaluate("1")).toThrow("Waiting");
+  expect(() => stalled.evaluate("(1)")).toThrow("Waiting");
+  await dispatched();
   vi.advanceTimersByTime(5001);
-  expect(() => stalled.evaluate("2")).toThrow("time limit");
+  expect(() => stalled.evaluate("(2)")).toThrow("time limit");
   vi.useRealTimers();
 });
-it("attributes a clipboard request to the action that made it", () => {
+it("attributes a clipboard request to the action that made it", async () => {
   const engine = create();
   const copies: unknown[] = [];
   engine.events.addEventListener("dil:copy", (event) => {
@@ -458,7 +482,12 @@ it("attributes a clipboard request to the action that made it", () => {
   });
   const reply = (data: unknown) => facades.at(-1)?.onmessage?.({ data });
   expect(() => engine.evaluate("handler")).toThrow("Waiting");
-  reply({ id: 1, value: { $dilHandler: 0 }, handles: [0], copy: "ignored" });
+  await dispatched();
+  reply({
+    id: 1,
+    results: [result("handler", { value: { $dilHandler: 0 }, handles: [0] })],
+    copy: "ignored",
+  });
   expect(copies).toEqual([]);
   const handler = engine.read("handler");
   if (typeof handler !== "function") throw new Error("Missing handler");
@@ -467,21 +496,30 @@ it("attributes a clipboard request to the action that made it", () => {
   reply({ id: 2, copy: "configuration" });
   expect(copies).toEqual([{ text: "configuration", intent: receipt.revision }]);
 });
-it("ignores malformed reply fields and halts on a fatal runtime report", () => {
+it("ignores malformed reply fields and halts on a fatal runtime report", async () => {
   const engine = create();
   const reply = (data: unknown) => facades.at(-1)?.onmessage?.({ data });
-  expect(() => engine.evaluate("1")).toThrow("Waiting");
-  reply({ id: 1, value: 7, handles: "12", dependencies: 5, bindings: {} });
-  expect(engine.evaluate("1")).toBe(7);
+  expect(() => engine.evaluate("(1)")).toThrow("Waiting");
+  await dispatched();
+  reply({
+    id: 1,
+    results: [
+      result("(1)", { value: 7, handles: "12", dependencies: 5, bindings: {} }),
+      { key: 5, value: 8 },
+      "malformed",
+    ],
+  });
+  expect(engine.evaluate("(1)")).toBe(7);
   expect(engine.stats.handles).toBe(0);
-  expect(() => engine.evaluate("2")).toThrow("Waiting");
+  expect(() => engine.evaluate("(2)")).toThrow("Waiting");
+  await dispatched();
   reply({ id: 2, fatal: "Maximum call stack size exceeded" });
   expect(engine.stopped).toBe(true);
-  expect(() => engine.evaluate("3")).toThrow(
+  expect(() => engine.evaluate("(3)")).toThrow(
     "Execution stopped: Maximum call stack size exceeded",
   );
 });
-it("lets one trusted activation authorize only one action", () => {
+it("lets one trusted activation authorize only one action", async () => {
   const posted: Record<string, unknown>[] = [];
   const workers: RecordingWorker[] = [];
   class RecordingWorker {
@@ -499,7 +537,11 @@ it("lets one trusted activation authorize only one action", () => {
   const engine = create();
   const reply = (data: unknown) => workers[0]?.onmessage?.({ data });
   expect(() => engine.evaluate("handler")).toThrow("Waiting");
-  reply({ id: 1, value: { $dilHandler: 0 }, handles: [0] });
+  await dispatched();
+  reply({
+    id: 1,
+    results: [result("handler", { value: { $dilHandler: 0 }, handles: [0] })],
+  });
   const handler = engine.read("handler");
   if (typeof handler !== "function") throw new Error("Missing handler");
   engine.markGesture();
@@ -514,7 +556,7 @@ it("reports an execution failure at the declaration boundary", async () => {
   const doc = new DilDocument();
   engines.push(doc.engine);
   doc.engine.declare("let unsupported=1");
-  await expect(value(doc.engine, "1")).rejects.toThrow();
+  await expect(value(doc.engine, "(1)")).rejects.toThrow();
   const parser = new DilParser();
   doc.apply(parser.append("{@body const later=1}", true));
   expect(doc.status.getState().error).toBeTruthy();

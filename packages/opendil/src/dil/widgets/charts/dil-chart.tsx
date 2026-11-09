@@ -1,5 +1,13 @@
 "use client";
-import { useCallback, useState, useMemo, type FocusEvent } from "react";
+import {
+  useCallback,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type FocusEvent,
+} from "react";
 import {
   BarChart,
   CartesianGrid,
@@ -17,6 +25,7 @@ import {
 } from "../../../components/ui/display/chart";
 import { record, text } from "../primitives/attribute-values";
 import { ChartLegend } from "./chart-legend";
+import { chartTable, registerChartCopy } from "../../serialize/chart-copy";
 import { ChartPie } from "./chart-pie";
 import { ChartSeries } from "./chart-series";
 import { SnapCursor } from "./snap-cursor";
@@ -31,13 +40,25 @@ export interface DilChartProps {
   content: unknown;
   presentationRef?: ((element: HTMLElement | null) => void) | undefined;
 }
-const PALETTE = [
-  "var(--chart-1)",
-  "var(--chart-2)",
-  "var(--chart-3)",
-  "var(--chart-4)",
-  "var(--chart-5)",
+// --dil-chart-N lets a host color charts without redefining the shadcn
+// --chart-N variables its own components read; the stock colors apply when
+// neither is set, as under theme="inherit" on a page without them. Eight
+// slots let a host palette of up to eight colors map one to one before
+// series repeat colors.
+const STOCK_CHART_COLORS = [
+  "#6580d9",
+  "#47a98a",
+  "#d4a458",
+  "#ac81cc",
+  "#d78675",
+  "#4ea3c4",
+  "#c77aa0",
+  "#8f9b52",
 ];
+const PALETTE = STOCK_CHART_COLORS.map(
+  (color, index) =>
+    `var(--dil-chart-${index + 1}, var(--chart-${index + 1}, ${color}))`,
+);
 function palette(index: number) {
   return PALETTE[index % PALETTE.length] ?? "var(--chart-1)";
 }
@@ -158,6 +179,11 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
       {...(stockActive ? {} : { active: false, cursor: false })}
     />
   );
+  const title = text(data.title);
+  const description = text(data.description);
+  const descriptionId = useId();
+  const xLabel = text(data.xLabel);
+  const yLabel = text(data.yLabel);
   const axes = (
     <>
       <CartesianGrid vertical={false} />
@@ -166,6 +192,12 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
         type={type === "scatter" ? "number" : "category"}
         tickLine={false}
         axisLine={false}
+        {...(xLabel
+          ? {
+              height: 44,
+              label: { value: xLabel, position: "insideBottom", offset: 0 },
+            }
+          : {})}
       />
       <YAxis
         {...(type === "scatter"
@@ -173,10 +205,52 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
           : {})}
         tickLine={false}
         axisLine={false}
-        width={45}
+        width={yLabel ? 64 : 45}
+        {...(yLabel
+          ? {
+              label: {
+                value: yLabel,
+                angle: -90,
+                position: "insideLeft",
+                style: { textAnchor: "middle" },
+              },
+            }
+          : {})}
       />
       {stockTooltip}
     </>
+  );
+  const columns =
+    type === "pie"
+      ? [
+          { key: text(data.nameKey), label: text(data.nameKey) },
+          { key: text(data.valueKey), label: text(data.valueKey) },
+        ]
+      : [
+          { key: text(data.xKey), label: xLabel || text(data.xKey) },
+          ...series
+            .filter((item) => !selection.hidden.has(text(item.dataKey)))
+            .map((item) => ({
+              key: text(item.dataKey),
+              label: text(item.label, text(item.dataKey)),
+            })),
+        ];
+  // Copies of the answer read the data the chart shows now: series and
+  // slices hidden through the legend are left out.
+  const shownRows = type === "pie" ? slices.map((slice) => slice.row) : rows;
+  const latest = useRef({ columns, rows: shownRows });
+  useLayoutEffect(() => {
+    latest.current = { columns, rows: shownRows };
+  });
+  const attach = useCallback(
+    (element: HTMLDivElement | null) => {
+      presentationRef?.(element);
+      if (element)
+        registerChartCopy(element, () =>
+          chartTable(latest.current.columns, latest.current.rows),
+        );
+    },
+    [presentationRef],
   );
   const cursor = (
     <SnapCursor
@@ -228,14 +302,30 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
     );
   return (
     <div
-      ref={presentationRef}
+      ref={attach}
       role="group"
-      aria-label={type + " chart"}
+      aria-label={title || type + " chart"}
+      {...(description ? { "aria-describedby": descriptionId } : {})}
       data-chart-type={type}
       data-points={rows.length}
+      data-dil-copy="chart"
       onFocus={focusIn}
       onBlur={focusOut}
     >
+      {title && (
+        <p data-dil-chart-title="" className="mb-1 text-sm font-semibold">
+          {title}
+        </p>
+      )}
+      {description && (
+        <p
+          id={descriptionId}
+          data-dil-chart-description=""
+          className="mb-2 text-xs text-muted-foreground"
+        >
+          {description}
+        </p>
+      )}
       <ChartContainer
         config={config}
         overlay={

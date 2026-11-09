@@ -1,4 +1,4 @@
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 // Any provider with an OpenAI-compatible Chat Completions endpoint works.
 const baseUrl = process.env.LLM_BASE_URL ?? "https://api.openai.com/v1";

@@ -1,6 +1,6 @@
 import { useCallback } from "react";
 import type { DilComponentProps } from "@snackbit/opendil";
-import { Button } from "@snackbit/opendil/ui";
+import { Button } from "@snackbit/opendil/lib";
 
 function Callout({
   children,

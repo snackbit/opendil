@@ -340,7 +340,7 @@ export default defineConfig({
 The agent spec, the instructions that teach a model to write DIL, ships with the package. Put it first in your system prompt:
 
 ```ts title="lib/system-prompt.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 export const systemPrompt = [
   agentSpec,
@@ -348,7 +348,7 @@ export const systemPrompt = [
 ].join("\n\n");
 ```
 
-`@snackbit/opendil/agent-spec` has no imports, so it loads in route handlers and edge runtimes. [Add OpenDIL to your chat app](/docs/chat-integration/) passes this prompt to the AI SDK, OpenAI, Anthropic, or a plain `fetch` backend, and renders the streamed answers.
+The agent spec and text helpers of `@snackbit/opendil/lib` carry no client directive and read no DOM, so they load in route handlers and edge runtimes. [Add OpenDIL to your chat app](/docs/chat-integration/) passes this prompt to the AI SDK, OpenAI, Anthropic, or a plain `fetch` backend, and renders the streamed answers.
 
 ## Check your setup
 
@@ -427,7 +427,7 @@ export function Answer() {
 - Serve `frame.html` with `Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'`.
 - `DilRenderer` takes all the text received so far and `isStreaming`.
 - A new answer gets a new `key`.
-- The agent spec comes from `@snackbit/opendil/agent-spec`.
+- The agent spec comes from `@snackbit/opendil/lib`.
 
 ## Next steps
 

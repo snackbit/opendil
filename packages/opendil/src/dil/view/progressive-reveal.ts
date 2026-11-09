@@ -7,11 +7,18 @@ import { RevealController } from "./reveal/controller";
 export function revealDelay(index: number, staggerMs = 50) {
   return Math.min(index * staggerMs, staggerMs * 6);
 }
+/**
+ * `progressiveReveal` is the host's opt-in. Blocks reveal only while the
+ * renderer streams, and only from `revealFrom`, the source offset the text
+ * had reached when the renderer mounted.
+ */
 export function useProgressiveReveal(
   root: RefObject<HTMLElement | null>,
   options: ProgressiveReveal,
   document: DilDocument | null,
-  viewport?: RendererViewport,
+  viewport: RendererViewport | undefined,
+  streaming: boolean,
+  revealFrom: number,
 ) {
   const timing = revealTiming(options);
   const stagger = timing?.staggerMs,
@@ -29,13 +36,20 @@ export function useProgressiveReveal(
       ),
     [document, viewport],
   );
-  useLayoutEffect(() => {
-    controller.configure(
+  const configured = useMemo(
+    () =>
       stagger === undefined || duration === undefined
         ? null
         : { staggerMs: stagger, durationMs: duration },
-    );
-  }, [controller, stagger, duration]);
+    [stagger, duration],
+  );
+  controller.prime(configured, streaming, revealFrom);
+  useLayoutEffect(() => {
+    controller.configure(configured);
+  }, [controller, configured]);
+  useLayoutEffect(() => {
+    controller.setStreaming(streaming);
+  }, [controller, streaming]);
   useLayoutEffect(() => {
     if (!root.current || !document) return;
     return controller.start();

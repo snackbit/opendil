@@ -7,7 +7,7 @@ import {
   TabsContent,
   TabsList,
   TabsTrigger,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import {
   DemoRenderer,
   type RenderMode,

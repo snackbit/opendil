@@ -1,6 +1,6 @@
 import "./playback.css";
 import { Check, Pause, Play, RotateCcw } from "lucide-react";
-import { Button } from "@snackbit/opendil/ui";
+import { Button } from "@snackbit/opendil/lib";
 import { HeroRate } from "./hero-rate";
 
 export interface PlaybackControlsProps {

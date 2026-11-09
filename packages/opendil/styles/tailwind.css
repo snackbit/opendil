@@ -6,7 +6,9 @@
 /* Follows the renderer's appearance instead of the operating system or a page-wide class. */
 @custom-variant dil-dark (&:where(.dil-scope[data-theme="dark"], .dil-scope[data-theme="dark"] *));
 
-.dil-scope {
+/* Shared design variables; theme="inherit" takes them from the host page.
+   :where() keeps the specificity of .dil-scope, so host class overrides still win. */
+.dil-scope:where(:not([data-dil-theme="inherit"])) {
   --background: #ffffff;
   --foreground: var(--dil-text-color);
   --card: #ffffff;
@@ -86,13 +88,22 @@
     background-color: transparent;
   }
 }
+/* Layout and typography tokens (--dil-font-size, --dil-heading-1-size, ...) are
+   read with fallbacks rather than declared on the scope, so a host can set them
+   on any ancestor, such as a surface with a data-* view attribute. */
 .dil-scope {
   color-scheme: light;
-  background: var(--background);
   color: var(--foreground);
   font-family: var(--font-dil);
-  font-size: 15px;
-  line-height: 1.65;
+  /* Unset tokens leave an inheriting renderer on the host's type size. */
+  font-size: var(--dil-font-size);
+  line-height: var(--dil-line-height);
+}
+/* An inheriting renderer sits on the host's surface and typography. */
+.dil-scope:where(:not([data-dil-theme="inherit"])) {
+  background: var(--background);
+  font-size: var(--dil-font-size, 15px);
+  line-height: var(--dil-line-height, 1.65);
 }
 .dil-scope button:not(:disabled),
 .dil-scope [role="button"]:not([aria-disabled="true"]) {
@@ -105,10 +116,17 @@
 }
 .dil-scope[data-theme="dark"] {
   color-scheme: dark;
-  --background: #171717;
-  --foreground: #fafafa;
   --dil-text-color: #fafafa;
   --dil-muted-text-color: #b5b5b5;
+  --dil-success: #5cc59a;
+  --dil-warning: #e2ad55;
+  --dil-success-surface: #1d3a2f;
+  --dil-warning-surface: #3d3020;
+  --dil-danger-surface: #432526;
+}
+.dil-scope[data-theme="dark"]:where(:not([data-dil-theme="inherit"])) {
+  --background: #171717;
+  --foreground: #fafafa;
   --card: #202020;
   --card-foreground: #fafafa;
   --popover: #202020;
@@ -123,11 +141,6 @@
   --accent-foreground: #fafafa;
   --border: #454545;
   --input: #505050;
-  --dil-success: #5cc59a;
-  --dil-warning: #e2ad55;
-  --dil-success-surface: #1d3a2f;
-  --dil-warning-surface: #3d3020;
-  --dil-danger-surface: #432526;
 }
 .dil-document {
   overflow-wrap: anywhere;
@@ -139,18 +152,22 @@
   margin: 0;
 }
 .dil-markdown h1 {
-  font-size: 1.8rem;
-  font-weight: 650;
+  font-size: var(--dil-heading-1-size, 1.8rem);
+  font-weight: var(--dil-heading-weight, 650);
   line-height: 1.25;
   margin: 0 0 8px;
-  letter-spacing: -0.035em;
+  letter-spacing: var(--dil-heading-1-tracking, -0.035em);
 }
 .dil-markdown h2 {
-  font-size: 1.25rem;
-  font-weight: 650;
+  font-size: var(--dil-heading-2-size, 1.25rem);
+  font-weight: var(--dil-heading-weight, 650);
   line-height: 1.4;
   margin: 24px 0 4px;
-  letter-spacing: -0.02em;
+  letter-spacing: var(--dil-heading-2-tracking, -0.02em);
+}
+.dil-markdown :where(code, pre),
+.dil-code-block pre {
+  font-family: var(--dil-font-mono, var(--font-mono, monospace));
 }
 .dil-markdown strong {
   font-weight: 600;
@@ -158,8 +175,8 @@
 /* The browser's list and quote styles, restated so a host page's CSS reset,
    such as Tailwind's preflight, does not remove bullets, numbers and indents. */
 .dil-markdown :where(ul, ol) {
-  margin-block: 1em;
-  padding-inline-start: 40px;
+  margin-block: var(--dil-list-margin, 1em);
+  padding-inline-start: var(--dil-list-indent, 40px);
 }
 .dil-markdown :where(ul, ol) :where(ul, ol) {
   margin-block: 0;
@@ -177,29 +194,38 @@
   list-style-type: decimal;
 }
 .dil-markdown blockquote {
-  margin: 1em 40px;
+  margin: var(--dil-quote-margin, 1em 40px);
+  padding-inline-start: var(--dil-quote-padding, 0);
+  border-inline-start: var(--dil-quote-border, 0 solid);
+  color: var(--dil-quote-color, inherit);
 }
 .dil-markdown table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 14px;
+  font-size: var(--dil-table-font-size, 14px);
 }
 .dil-markdown th,
 .dil-markdown td {
-  padding: 10px 12px;
+  padding: var(--dil-table-cell-padding, 10px 12px);
   text-align: left;
-  border-bottom: 1px solid var(--border);
+  border-bottom: var(--dil-table-row-border, 1px solid var(--border));
+  border-inline: var(--dil-table-column-border, 0 solid);
 }
-.dil-markdown pre {
+.dil-markdown th {
+  background: var(--dil-table-header-background, transparent);
+}
+/* A pre from a host code override; stock fences render in .dil-code-block. */
+.dil-markdown pre:not(.dil-code-view, .dil-code-highlight) {
   overflow-x: auto;
-  padding: 16px;
-  background: var(--muted);
-  border-radius: 8px;
+  padding: var(--dil-code-padding, 16px);
+  background: var(--dil-code-background, var(--muted));
+  border-radius: var(--dil-code-radius, 8px);
 }
 .dil-flow {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  /* Virtualized flows space their items with the same token. */
+  gap: var(--dil-item-gap, 12px);
   min-width: 0;
 }
 .dil-layout {
@@ -301,29 +327,39 @@
 .dil-snap-tooltip [data-emphasized="true"] span {
   font-weight: 700;
 }
-.dil-code-block textarea {
-  font-family: var(--font-mono, monospace);
-  font-size: var(--text-xs, 0.75rem);
-  line-height: 1.6;
-  white-space: pre;
-  overflow-wrap: normal;
-  overflow-x: auto;
+/* Markdown fences and CodeBlock share this frame, so one set of code tokens
+   restyles both, as a terminal theme does. */
+.dil-code-block {
+  border: var(--dil-code-border, 1px solid var(--border));
+  border-radius: var(--dil-code-radius, var(--radius));
+  background: var(
+    --dil-code-background,
+    color-mix(in oklab, var(--muted) 50%, transparent)
+  );
 }
-.dil-code-editor {
-  position: relative;
-}
-.dil-code-editor textarea,
-.dil-code-editor .dil-code-highlight {
+/* One metric source for shown code and for both layers of the code editor,
+   whose highlighted text must sit exactly under the textarea's own. */
+.dil-code-view,
+.dil-code-editor :is(.dil-code-input, .dil-code-highlight) {
+  box-sizing: border-box;
   margin: 0;
-  padding: 12px;
-  font-family: var(--font-mono, monospace);
-  font-size: 12px;
-  line-height: 1.6;
+  border: 0 solid;
+  padding: var(--dil-code-padding, 16px);
+  font-family: var(--dil-font-mono, var(--font-mono, monospace));
+  font-size: var(--dil-code-font-size, 0.75rem);
+  font-weight: 400;
+  font-style: normal;
+  line-height: var(--dil-code-line-height, 2);
   letter-spacing: normal;
-  tab-size: 2;
+  word-spacing: normal;
+  text-indent: 0;
+  tab-size: var(--dil-code-tab-size, 2);
   white-space: pre;
   overflow-wrap: normal;
   word-break: normal;
+}
+.dil-code-editor {
+  position: relative;
 }
 .dil-code-editor .dil-code-highlight {
   position: absolute;
@@ -337,11 +373,28 @@
   letter-spacing: inherit;
   tab-size: inherit;
 }
-.dil-code-editor textarea {
+.dil-code-editor .dil-code-input {
   position: relative;
+  display: block;
+  width: 100%;
+  min-width: 0;
+  /* The editor sizes itself to the code; only long lines scroll. */
+  overflow-x: auto;
+  overflow-y: hidden;
+  resize: none;
+  border-radius: 0;
+  box-shadow: none;
+  outline: none;
   color: transparent;
   caret-color: var(--foreground);
   background: transparent;
+}
+.dil-code-editor .dil-code-input:focus-visible {
+  box-shadow: inset 0 0 0 2px
+    color-mix(in oklab, var(--ring, var(--primary)) 50%, transparent);
+}
+.dil-code-editor .dil-code-input:disabled {
+  cursor: not-allowed;
 }
 .dil-code-editor textarea::selection {
   color: transparent;
@@ -380,7 +433,7 @@
   .dil-code-editor .dil-code-highlight {
     visibility: hidden;
   }
-  .dil-code-editor textarea {
+  .dil-code-editor .dil-code-input {
     color: CanvasText;
     caret-color: CanvasText;
   }

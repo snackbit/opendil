@@ -25,6 +25,7 @@ export interface DilNode {
 /** A parse problem reported to the host once, with its source offset. */
 export interface ParseIssue {
   kind: "syntax" | "incomplete";
+  code: "malformed-syntax" | "unfinished-structure";
   message: string;
   offset: number;
 }

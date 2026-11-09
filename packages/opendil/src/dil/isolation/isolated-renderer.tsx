@@ -102,7 +102,12 @@ export function IsolatedRenderer({
     onFollowChange,
     scroller,
   );
-  useImperativeHandle(ref, () => ({ resumeAutoScroll: resume }), [resume]);
+  // The document lives in an opaque-origin frame, which the page cannot read.
+  useImperativeHandle(
+    ref,
+    () => ({ resumeAutoScroll: resume, serialize: () => null }),
+    [resume],
+  );
   const port = useRef<MessagePort | null>(null);
   const latest = useRef({
     text,
@@ -112,7 +117,7 @@ export function IsolatedRenderer({
     updateInterval,
   });
   const latestTheme = useRef(theme);
-  const sentLength = useRef(0);
+  const sentText = useRef("");
   // Sized to the reported content height; nothing is reserved before it arrives.
   const [height, setHeight] = useState(0);
   const [error, setError] = useState("");
@@ -130,22 +135,23 @@ export function IsolatedRenderer({
       updateInterval,
     };
     if (text.length > 5_000_000) return;
-    if (port.current && text.length < sentLength.current) {
+    // Only appending is supported: anything else would corrupt the parsed tree.
+    if (port.current && !text.startsWith(sentText.current)) {
       queueMicrotask(() =>
         setError("Start a new message instance before replacing its source."),
       );
       return;
     }
-    if (port.current && text.length >= sentLength.current) {
+    if (port.current) {
       port.current.postMessage({
         type: "source",
-        suffix: text.slice(sentLength.current),
+        suffix: text.slice(sentText.current.length),
         isStreaming,
         showStatus,
         progressiveReveal,
         updateInterval,
       });
-      sentLength.current = text.length;
+      sentText.current = text;
     }
   }, [text, isStreaming, showStatus, progressiveReveal, updateInterval]);
   // The src whose frame document has announced itself. When the effect runs
@@ -209,7 +215,7 @@ export function IsolatedRenderer({
         progressiveReveal: latest.current.progressiveReveal,
         updateInterval: latest.current.updateInterval,
       });
-      sentLength.current = latest.current.text.length;
+      sentText.current = latest.current.text;
       viewport?.report();
     };
     const fromFrame = (event: MessageEvent) => {
@@ -320,14 +326,24 @@ export function IsolatedRenderer({
   const oversized = text.length > 5_000_000;
   // Errors found outside the frame reach onError once each, like the frame's own.
   useEffect(() => {
-    if (error) report({ kind: "source", message: error });
+    if (error)
+      report({ kind: "source", code: "source-replaced", message: error });
   }, [error, report]);
   useEffect(() => {
     if (oversized)
-      report({ kind: "limit", message: "Message source limit exceeded" });
+      report({
+        kind: "limit",
+        code: "source-limit",
+        message: "Message source limit exceeded",
+      });
   }, [oversized, report]);
   useEffect(() => {
-    if (startupFailure) report({ kind: "runtime", message: startupFailure });
+    if (startupFailure)
+      report({
+        kind: "runtime",
+        code: "frame-startup-failed",
+        message: startupFailure,
+      });
   }, [startupFailure, report]);
   const alert =
     error ||

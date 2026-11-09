@@ -61,3 +61,96 @@ it.each(["default", "destructive", "outline", "secondary", "ghost", "link"])(
     ).toBe(true);
   },
 );
+it("leaves shared design variables to the host page under theme=inherit", () => {
+  const inherited = [
+    "--background",
+    "--foreground",
+    "--primary",
+    "--border",
+    "--radius",
+    "--chart-1",
+    "--font-dil",
+  ];
+  const defined = (selector: string) => {
+    const names = new Set<string>();
+    postcss.parse(css).walkRules((rule) => {
+      if (rule.selectors.some((name) => name === selector))
+        rule.walkDecls((declaration) => {
+          names.add(declaration.prop);
+        });
+    });
+    return names;
+  };
+  const always = defined(".dil-scope");
+  for (const name of inherited) expect(always.has(name), name).toBe(false);
+  // :where() keeps the stock rules at .dil-scope specificity, so a host class
+  // on the root (className) still overrides them as it did before.
+  const scoped = defined('.dil-scope:where(:not([data-dil-theme="inherit"]))');
+  for (const name of inherited) expect(scoped.has(name), name).toBe(true);
+  expect(
+    defined(
+      '.dil-scope[data-theme="dark"]:where(:not([data-dil-theme="inherit"]))',
+    ).has("--background"),
+  ).toBe(true);
+  // OpenDIL's own knobs keep their defaults in both themes.
+  expect(always.has("--dil-control-radius")).toBe(true);
+});
+it("reads layout and typography tokens without declaring them, so any ancestor can set them", () => {
+  const tokens = [
+    "--dil-font-size",
+    "--dil-line-height",
+    "--dil-font-mono",
+    "--dil-item-gap",
+    "--dil-heading-1-size",
+    "--dil-heading-2-size",
+    "--dil-heading-weight",
+    "--dil-list-indent",
+    "--dil-quote-border",
+    "--dil-table-font-size",
+    "--dil-table-cell-padding",
+    "--dil-table-row-border",
+    "--dil-table-column-border",
+    "--dil-table-header-background",
+    "--dil-code-background",
+    "--dil-code-padding",
+    "--dil-code-radius",
+    "--dil-code-border",
+    "--dil-code-font-size",
+    "--dil-code-line-height",
+    "--dil-chart-1",
+  ];
+  const declared = new Set<string>();
+  postcss.parse(css).walkDecls((declaration) => {
+    declared.add(declaration.prop);
+  });
+  for (const token of tokens) {
+    expect(declared.has(token), token).toBe(false);
+    if (token !== "--dil-chart-1") expect(css, token).toContain(`var(${token}`);
+  }
+  expect(declarations(".dil-flow")).toMatch(
+    /gap:\s*var\(--dil-item-gap, 12px\)/,
+  );
+  // Markdown fences render in the CodeBlock frame, so the code tokens restyle both.
+  expect(declarations(".dil-code-block")).toMatch(
+    /background:\s*var\(\s*--dil-code-background,/,
+  );
+  expect(declarations(".dil-code-block")).toMatch(
+    /border:\s*var\(--dil-code-border, 1px solid var\(--border\)\)/,
+  );
+  expect(declarations(".dil-code-view")).toMatch(
+    /padding:\s*var\(--dil-code-padding, 16px\)/,
+  );
+  // A host that sets code to its text size can match its line height too.
+  expect(declarations(".dil-code-view")).toMatch(
+    /line-height:\s*var\(--dil-code-line-height, 2\)/,
+  );
+});
+it("styles stock toggle groups by class, so host primitives keep their own styles", () => {
+  expect(css).not.toContain('[data-slot="toggle-group"]');
+  expect(declarations(".dil-toggle-group")).toMatch(
+    /border-radius:\s*var\(--dil-control-radius\)/,
+  );
+  expect(declarations(".dil-toggle-group-item")).toMatch(
+    /border-radius:\s*var\(--dil-item-radius\)/,
+  );
+});

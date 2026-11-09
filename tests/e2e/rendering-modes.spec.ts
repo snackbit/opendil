@@ -192,6 +192,9 @@ test("scroll behavior and ahead padding update following without undoing a manua
   await openShowcase(page, "?benchmark=1");
   await page.getByRole("button", { name: "Replay", exact: true }).click();
   const ui = page.frameLocator("iframe");
+  // The finished document can still be mounted right after the click; wait
+  // for the replayed one, so the chart below is the stream's, not the old copy's.
+  await expect(ui.locator('[data-complete="false"]')).toBeAttached();
   await expect(
     ui.getByText("Categorical bar chart", { exact: true }),
   ).toBeAttached();

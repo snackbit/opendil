@@ -125,7 +125,7 @@ Your component builds the URL itself, so the model cannot point the page at an a
 The agent spec tells the model that `AsyncImage` is only a placeholder. Append a contract after the spec, in the spec's own notation, so the model knows it now shows real images:
 
 ```ts title="lib/dil-instructions.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 const hostComponents = `## Host components
 

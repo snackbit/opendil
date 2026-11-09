@@ -37,16 +37,16 @@
       "types": "./dist/types/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./lib": {
+      "types": "./dist/types/lib.d.ts",
+      "default": "./dist/lib.js"
+    },
     "./styles.css": "./dist/styles.css",
     "./tailwind.css": "./styles/tailwind.css",
     "./package.json": "./package.json",
-    "./ui": {
-      "types": "./dist/types/ui.d.ts",
-      "import": "./dist/ui.js"
-    },
-    "./agent-spec": {
-      "types": "./dist/types/agent-spec.d.ts",
-      "default": "./dist/agent-spec.js"
+    "./testing": {
+      "types": "./dist/types/testing.d.ts",
+      "import": "./dist/testing.js"
     },
     "./spec/genui.agent.md": "./dist/spec/genui.agent.md",
     "./spec/genui.agent.full.md": "./dist/spec/genui.agent.full.md",
@@ -78,9 +78,10 @@
     "embla-carousel-react": "^8.6.0",
     "lowlight": "3.3.0",
     "lucide-react": "^0.468.0",
+    "mdast-util-to-string": "^4.0.0",
     "mermaid": "^12.2.0",
     "quickjs-emscripten": "^0.32.0",
-    "radix-ui": "^1.8.1",
+    "radix-ui": "^1.4.3",
     "react-markdown": "^10.1.0",
     "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",

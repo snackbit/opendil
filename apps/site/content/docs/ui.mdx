@@ -3,11 +3,11 @@ title: React UI exports
 description: "Use OpenDIL's React primitives, such as Button, Select, Tabs, and UiScope, in your app and in custom components."
 ---
 
-`@snackbit/opendil/ui` exports the React components that OpenDIL's built-in components are made of, styled like generated answers. Use them for app controls next to answers, such as a toolbar, and inside your [custom components](/docs/custom-components/). They are React components, not DIL tags: a model can use one only through a custom component you register that wraps it.
+`@snackbit/opendil/lib` exports the React components that OpenDIL's built-in components are made of, styled like generated answers. Use them for app controls next to answers, such as a toolbar, and inside your [custom components](/docs/custom-components/). They are React components, not DIL tags: a model can use one only through a custom component you register that wraps it.
 
 ```tsx title="components/answer-toolbar.tsx"
 "use client";
-import { Button, Tooltip, UiScope } from "@snackbit/opendil/ui";
+import { Button, Tooltip, UiScope } from "@snackbit/opendil/lib";
 import "@snackbit/opendil/styles.css";
 
 interface AnswerToolbarProps {
@@ -102,7 +102,7 @@ import {
   SelectValue,
   SelectViewport,
   UiScope,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import "@snackbit/opendil/styles.css";
 
 const models = [
@@ -162,7 +162,7 @@ import {
   SelectTrigger,
   SelectValue,
   SelectViewport,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 
 function readOptions(value: unknown) {
   if (!Array.isArray(value)) return [];

@@ -7,10 +7,10 @@ The agent spec is a Markdown document that teaches a language model to write DIL
 
 ## Load the spec from the package
 
-`@snackbit/opendil/agent-spec` exports the spec as strings:
+`@snackbit/opendil/lib` exports the spec as strings:
 
 ```ts title="lib/system-prompt.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 const product = [
   "You are the planning assistant in a budgeting app.",
@@ -69,7 +69,7 @@ Start with the primary spec. If your model gets specific components wrong, add t
 import {
   agentSpecExamples,
   agentSpecFull,
-} from "@snackbit/opendil/agent-spec";
+} from "@snackbit/opendil/lib";
 
 /** Returns the block under a heading such as "Component: slider". */
 export function specSection(spec: string, heading: string) {

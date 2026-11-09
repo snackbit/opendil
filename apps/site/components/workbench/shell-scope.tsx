@@ -1,6 +1,6 @@
 import "@/components/playback/playback.css";
 import type { ComponentProps, ReactNode } from "react";
-import { ToggleGroup, UiScope } from "@snackbit/opendil/ui";
+import { ToggleGroup, UiScope } from "@snackbit/opendil/lib";
 const tokens = {
   "--background": "var(--od-surface)",
   "--foreground": "var(--od-text)",

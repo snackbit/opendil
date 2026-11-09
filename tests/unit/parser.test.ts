@@ -77,7 +77,9 @@ describe("DIL incremental parsing", () => {
     expect(failed).toHaveLength(1);
     // Readers see generic wording; the offset travels with the issue.
     expect(failed[0]?.error).toBe(message);
-    expect(batch.issues).toEqual([{ kind: "syntax", message, offset: 7 }]);
+    expect(batch.issues).toEqual([
+      { kind: "syntax", code: "malformed-syntax", message, offset: 7 },
+    ]);
   });
   it.each([
     ["<box", "the opening tag <box at character 0"],
@@ -92,6 +94,7 @@ describe("DIL incremental parsing", () => {
     expect(batch.issues).toEqual([
       {
         kind: "incomplete",
+        code: "unfinished-structure",
         message: `The document ended before it was finished. Unfinished: ${detail}.`,
         offset: 0,
       },

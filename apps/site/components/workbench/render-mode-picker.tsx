@@ -9,7 +9,7 @@ import {
   SelectItem,
   SelectItemIndicator,
   SelectItemText,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import { Check, ChevronDown } from "lucide-react";
 import type { RenderMode } from "@/components/playback/demo-renderer";
 

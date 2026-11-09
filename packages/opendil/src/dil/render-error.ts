@@ -1,3 +1,5 @@
+import type { ComponentType } from "react";
+
 /**
  * What went wrong:
  * - `incomplete`: the document was finalized with unfinished structure, for
@@ -15,12 +17,56 @@
  */
 export type DilRenderErrorKind =
   "incomplete" | "syntax" | "runtime" | "limit" | "source";
+/**
+ * Stable reason within a kind, for host diagnostics and error handling.
+ * `unclassified` is the only generic code: an iframe runtime copied from an
+ * earlier release reports errors without one.
+ */
+export type DilRenderErrorCode =
+  | "unknown-component"
+  | "malformed-syntax"
+  | "unfinished-structure"
+  | "expression-failed"
+  | "attributes-failed"
+  | "component-render-failed"
+  | "parser-crashed"
+  | "parser-node-limit"
+  | "runtime-crashed"
+  | "frame-startup-failed"
+  | "source-limit"
+  | "source-replaced"
+  | "source-after-final"
+  | "display-limit"
+  | "render-budget"
+  | "execution-timeout"
+  | "action-limit"
+  | "worker-blocked-policy"
+  | "wasm-blocked"
+  | "problem-limit"
+  | "declaration-failed"
+  | "unclassified";
 export interface DilRenderError {
   kind: DilRenderErrorKind;
+  code: DilRenderErrorCode;
   /** Developer-facing description. Readers see shorter wording. */
   message: string;
   /** Position in `text`, in UTF-16 code units, when the error has one. */
   offset?: number;
+}
+export interface DilProblemProps {
+  /**
+   * `document` replaces the document alert and the note that a response ended
+   * early. `part` replaces the generic wording for one part, which can sit
+   * inside inline text, so render phrasing content such as a span.
+   */
+  scope: "document" | "part";
+  error: DilRenderError;
+}
+export interface DilDiagnostics {
+  /** Log problems with `console.warn`. Defaults to true. */
+  console?: boolean;
+  /** Renders problems instead of OpenDIL's generic reader-facing wording. */
+  Problem?: ComponentType<DilProblemProps>;
 }
 /** Reader-facing wording for a part of the message that cannot be shown. */
 export const UNSHOWN_PART_MESSAGE =
@@ -32,6 +78,30 @@ const KINDS: ReadonlySet<string> = new Set<DilRenderErrorKind>([
   "runtime",
   "limit",
   "source",
+]);
+const CODES: ReadonlySet<string> = new Set<DilRenderErrorCode>([
+  "unknown-component",
+  "malformed-syntax",
+  "unfinished-structure",
+  "expression-failed",
+  "attributes-failed",
+  "component-render-failed",
+  "parser-crashed",
+  "parser-node-limit",
+  "runtime-crashed",
+  "frame-startup-failed",
+  "source-limit",
+  "source-replaced",
+  "source-after-final",
+  "display-limit",
+  "render-budget",
+  "execution-timeout",
+  "action-limit",
+  "worker-blocked-policy",
+  "wasm-blocked",
+  "problem-limit",
+  "declaration-failed",
+  "unclassified",
 ]);
 const MAX_MESSAGE = 2000;
 /** Problems reported for one message before the rest are summarized. */
@@ -59,12 +129,16 @@ export class ProblemReports {
       this.ended = true;
       return error;
     }
-    const key = `${error.offset ?? ""}:${error.message}`;
+    const key = `${error.offset ?? ""}:${error.code}:${error.message}`;
     if (this.count > MAX_REPORTED_PROBLEMS || this.seen.has(key))
       return undefined;
     this.count++;
     if (this.count > MAX_REPORTED_PROBLEMS)
-      return { kind: "limit", message: UNREPORTED_PROBLEMS };
+      return {
+        kind: "limit",
+        code: "problem-limit",
+        message: UNREPORTED_PROBLEMS,
+      };
     this.seen.add(key);
     return error;
   }
@@ -90,11 +164,16 @@ export function deliverError(
 /** Validates an error received from the iframe runtime. */
 export function readRenderError(value: unknown): DilRenderError | undefined {
   if (!value || typeof value !== "object") return undefined;
-  const { kind, message, offset } = value as Record<string, unknown>;
+  const { kind, code, message, offset } = value as Record<string, unknown>;
   if (typeof kind !== "string" || !KINDS.has(kind)) return undefined;
   if (typeof message !== "string") return undefined;
   const error: DilRenderError = {
     kind: kind as DilRenderErrorKind,
+    // A frame copied from an earlier release sends no code.
+    code:
+      typeof code === "string" && CODES.has(code)
+        ? (code as DilRenderErrorCode)
+        : "unclassified",
     message: message.slice(0, MAX_MESSAGE),
   };
   if (offset === undefined) return error;

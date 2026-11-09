@@ -117,6 +117,33 @@ test("the runtime frame starts only inside an opaque-origin sandbox", async ({
    */
   expect(ready.hostReachesFrame).toBe(false);
 });
+test("a failed expression runtime settles a document with unresolved attributes", async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    // Fail the worker boundary while preserving the renderer's startup handling.
+    Object.defineProperty(window, "Worker", {
+      configurable: true,
+      value: class {
+        constructor() {
+          throw new Error("Worker blocked");
+        }
+      },
+    });
+  });
+  await page.goto("demo/deployment/");
+  await page
+    .getByRole("button", { name: "Demo settings", exact: true })
+    .click();
+  await page.getByRole("radio", { name: "Host DOM", exact: true }).click();
+  await closeSettings(page);
+  const editor = page.getByRole("textbox", { name: "DIL source", exact: true });
+  await replaceSource(page, editor, "<box width={1+1}>Content</box>");
+  const output = page.locator('.od-hero-output [data-dil-mode="host"]').first();
+  await expect(output.getByRole("alert")).toContainText(/runtime|worker/i);
+  await expect(output.locator('[data-dil-settled="true"]')).toHaveCount(1);
+  await expect(output.locator("[data-dil-held]")).toHaveCount(0);
+});
 test("typing cannot write the clipboard; activating a document button can", async ({
   page,
   context,
@@ -181,7 +208,12 @@ test("QuickJS bounds deep recursion in a browser worker and fails closed otherwi
         nested,
         "1+1",
       ]),
-      failed: await run([`JSON.stringify(${nested})`, "1+1"]),
+      // Whether 3,000 levels exhaust the host stack depends on how far the
+      // process has tiered up the shared QuickJS WebAssembly; 6,000 always do.
+      failed: await run([
+        "JSON.stringify((()=>{let a=[];for(let i=0;i<6000;i++)a=[a];return a})())",
+        "1+1",
+      ]),
     };
   }, vm);
   for (const reply of replies.bounded.slice(0, 9)) {

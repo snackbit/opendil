@@ -57,6 +57,7 @@ export function finishOpen(
       : unfinished.map(describe).join(", ");
   return {
     kind: "incomplete",
+    code: "unfinished-structure",
     message: `The document ended before it was finished. Unfinished: ${list}.`,
     offset: first.offset,
   };

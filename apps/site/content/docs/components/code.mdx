@@ -11,11 +11,11 @@ Code in an answer is shown, never run.
 
 An answer can show code in three ways:
 
-- **Inline code spans** (single backticks) and **Markdown fences** display their contents literally. Braces, tags, and directives inside them are not parsed as DIL and never evaluate. Fences show plain text without syntax highlighting.
+- **Inline code spans** (single backticks) and **Markdown fences** display their contents literally. Braces, tags, and directives inside them are not parsed as DIL and never evaluate. Fences show in the `CodeBlock` frame, with syntax highlighting, a language label, word wrap, and copy.
 - A fence with the language `mermaid` draws a diagram instead of showing code. See [Diagrams and SVG](/docs/components/diagrams/#mermaid).
-- **`CodeBlock`** adds syntax highlighting, a word wrap toggle, a copy button, and optional editing.
+- **`CodeBlock`** looks the same and adds optional editing.
 
-Use a fence for a short snippet in prose. Use `CodeBlock` when the reader will copy or adjust the code.
+Use a fence for code in prose. Use `CodeBlock` when the reader will adjust the code, or when the code contains a fence.
 
 ## `CodeBlock`
 
@@ -36,11 +36,11 @@ console.log(message);
 
 `CodeBlock` reads everything between its tags literally, up to the exact closing `</CodeBlock>`. Write the code directly as children; there is no `source`, `value`, or `onChange` attribute. If the code itself contains `</CodeBlock>`, use a Markdown fence instead.
 
-With `editable`, the reader can change the code. The edits are a local draft: the answer cannot read them, nothing runs them, and they survive while the block scrolls out of view and back. The copy button copies the current draft.
+With `editable`, the reader can change the code in an editor as tall as the code, with the same code tokens as shown code. The edits are a local draft: the answer cannot read them, nothing runs them, and they survive while the block scrolls out of view and back. The copy button copies the current draft.
 
 **Languages:** `language` selects highlighting from the common language set of highlight.js, through lowlight. It includes `javascript` (`js`), `typescript` (`ts`), `json`, `css`, `html`, `bash` (`sh`), `python` (`py`), `sql`, `yaml`, `go`, `rust`, `java`, and more. An unknown language shows plain text. Very large blocks also fall back to plain text or show "Code block exceeds the display limit."; for the thresholds, see [Component limits](/docs/limits/#components).
 
-**Accessibility:** the wrap and copy buttons are labeled "Word wrap" and "Copy code", reachable with the keyboard, and show tooltips. After a copy, screen readers hear "Code copied."; a failed copy shows "Could not copy code. Check clipboard permissions." The editor is labeled "Code editor".
+**Accessibility:** the wrap and copy buttons are labeled "Word wrap" and "Copy code", reachable with the keyboard, and show tooltips. After a copy, screen readers hear "Code copied."; a failed copy shows "Could not copy code. Check clipboard permissions.", and code longer than 65,536 characters shows "Code is longer than 65,536 characters, too long to copy." The editor is labeled "Code editor".
 
 **Styling:** set the highlighting colors with the tokens `--dil-code-keyword`, `--dil-code-string`, `--dil-code-number`, and `--dil-code-title`. Each has a light and a dark default. See [Theming](/docs/theming/). `classNames` does not apply to `CodeBlock`.
 

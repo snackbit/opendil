@@ -118,16 +118,31 @@ try {
     staging + "/runtime/frame.html",
     `<!doctype html><html><head><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="${csp}"><meta name="referrer" content="no-referrer"><style>${css.replaceAll("</style", "<\\/style")}</style></head><body style="margin:0"><div id="root"></div><script>${loader}</script></body></html>`,
   );
-  await build({
+  const external = Object.keys(
+    JSON.parse(await readFile("package.json", "utf8")).dependencies,
+  ).concat(["react", "react-dom", "react/jsx-runtime"]);
+  // Each area of the lib entry is its own module, so a bundler that sees an
+  // app use only Button skips the Markdown renderer and its highlighter.
+  const clientAreas = {
+    "lib-ui": "src/entries/ui.ts",
+    "lib-markdown": "src/entries/markdown.ts",
+    "lib-serialize": "src/entries/serialize.ts",
+  };
+  const client = await build({
     ...options,
     write: true,
     format: "esm",
     splitting: true,
-    entryPoints: ["src/index.ts", "src/ui.ts"],
+    metafile: true,
+    // Every entry with React code builds together, so they share contexts and
+    // other module state through common chunks.
+    entryPoints: {
+      index: "src/index.ts",
+      testing: "src/testing.ts",
+      ...clientAreas,
+    },
     outdir: staging,
-    external: Object.keys(
-      JSON.parse(await readFile("package.json", "utf8")).dependencies,
-    ).concat(["react", "react-dom", "react/jsx-runtime"]),
+    external,
     define,
     banner: { js: '"use client";' },
   });
@@ -137,15 +152,33 @@ try {
     specs[name] = await readFile("../../spec/" + file, "utf8");
     await writeFile(staging + "/spec/" + file, specs[name]);
   }
-  // A separate, dependency-free entry keeps the specs out of browser renderer bundles.
-  await build({
+  // Text extraction, export helpers and the specs run on servers too: no
+  // React, workers, module state, or client directive.
+  const neutral = await build({
+    ...options,
+    write: true,
+    platform: "neutral",
+    format: "esm",
+    splitting: true,
+    metafile: true,
+    entryPoints: {
+      "lib-text": "src/entries/text.ts",
+      "lib-export": "src/entries/export.ts",
+    },
+    outdir: staging,
+    external,
+  });
+  // The specs, unminified: each string stays a JSON literal on one line, and
+  // the module has no imports, so edge runtimes load it too.
+  const spec = await build({
     ...options,
     write: true,
     platform: "neutral",
     format: "esm",
     minify: false,
-    entryPoints: ["src/agent-spec.ts"],
-    outfile: staging + "/agent-spec.js",
+    metafile: true,
+    entryPoints: { "lib-agent-spec": "src/entries/agent-spec.ts" },
+    outdir: staging,
     define: Object.fromEntries(
       Object.entries(specs).map(([name, text]) => [
         "__DIL_AGENT_SPEC_" + name + "__",
@@ -153,6 +186,25 @@ try {
       ]),
     ),
   });
+  // src/lib.ts is the declaration source; this module re-exports each area
+  // by name, which bundlers resolve without loading the unused areas.
+  const reexports = [];
+  for (const { metafile } of [client, neutral, spec])
+    for (const [file, output] of Object.entries(metafile.outputs)) {
+      const name = file.slice(staging.length + 1);
+      if (/^lib-[\w-]+\.js$/.test(name) && output.entryPoint)
+        reexports.push([
+          name,
+          `export { ${[...output.exports].sort().join(", ")} } from "./${name}";`,
+        ]);
+    }
+  await writeFile(
+    staging + "/lib.js",
+    reexports
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([, line]) => line)
+      .join("\n") + "\n",
+  );
   await copyFile("../../LICENSE", "LICENSE");
   await copyFile("../../README.md", "README.md");
   await copyFile("../../THIRD_PARTY_NOTICES.md", "THIRD_PARTY_NOTICES.md");

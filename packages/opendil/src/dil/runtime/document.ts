@@ -5,11 +5,14 @@ import { ExpressionEngine, EvaluationPending, type Scope } from "./expressions";
 import { RenderBudget } from "./render-budget";
 import { PresentationHistory } from "./presentation-history";
 import { PresentationScheduler } from "./presentation-scheduler";
+import { WidgetHeights } from "../widget-heights";
+import type { DilSnapshot } from "../document-cache";
 import {
   deliverError,
   ProblemReports,
   UNREPORTED_PROBLEMS,
   type DilRenderError,
+  type DilRenderErrorCode,
 } from "../render-error";
 
 export interface NodeState {
@@ -22,9 +25,14 @@ export interface DocumentStatus {
   incomplete: boolean;
   revision: number;
   scanned: number;
-  error: string;
+  /** The document-level failure, shown above the content. */
+  error: DilRenderError | null;
+  /** The report of unfinished structure when an incomplete document was finalized. */
+  ending: DilRenderError | null;
   /** Latest clipboard outcome, keyed by the intent of the action that requested it. */
   clipboard: { intent: number; ok: boolean } | null;
+  /** Mounted action controls, which can request clipboard writes. */
+  actions: number;
 }
 function presentable(node: DilNode) {
   return (
@@ -35,6 +43,27 @@ function presentable(node: DilNode) {
 }
 export class DilDocument {
   readonly updates = new PresentationScheduler();
+  /** Mounted widget roots by node id, measured for a snapshot. */
+  readonly widgets = new Map<number, HTMLElement>();
+  /** Measured widget heights, held by the placeholders of loading widgets. */
+  heights = new WidgetHeights();
+  /**
+   * The renderer showing this document committed it. Charts and graphs that
+   * appear after that, with values, take turns to mount.
+   */
+  presented = false;
+  /**
+   * Its first commit shows results recorded elsewhere, from a snapshot or
+   * another renderer, until it settles.
+   */
+  seeded = false;
+  /** A renderer saw it settle; a later renderer adopts its final layout. */
+  settledOnce = false;
+  /**
+   * The snapshot this document reported when it first settled: its first
+   * evaluation. Widgets that lay out later report it again with their heights.
+   */
+  snapshot: DilSnapshot | undefined;
   readonly presentation = new PresentationHistory();
   readonly renderBudget = new RenderBudget();
   renderLimited = false;
@@ -45,6 +74,7 @@ export class DilDocument {
       this.engine.halt(
         "Rendering stopped: this message exceeds the display limit.",
         "limit",
+        "render-budget",
       ),
     );
   }
@@ -52,14 +82,28 @@ export class DilDocument {
   private readonly stores = new Map<number, StoreApi<NodeState>>();
   private readonly parents = new Map<number, number>();
   private readonly flows = new Map<number, StoreApi<ChildList>>();
-  readonly status = createStore<DocumentStatus>(() => ({
+  private statusStore = createStore<DocumentStatus>(() => ({
     complete: false,
     incomplete: false,
     revision: 0,
     scanned: 0,
-    error: "",
+    error: null,
+    ending: null,
     clipboard: null,
+    actions: 0,
   }));
+  get status(): StoreApi<DocumentStatus> {
+    return this.statusStore;
+  }
+  /**
+   * Makes the current status the store's initial state, which server
+   * rendering and hydration read. Only before anything subscribes, as for a
+   * document parsed during its first render.
+   */
+  settle() {
+    const state = this.statusStore.getState();
+    this.statusStore = createStore<DocumentStatus>(() => state);
+  }
   readonly engine: ExpressionEngine;
   readonly drafts = new Map<string, string>();
   private readonly reports = new ProblemReports();
@@ -68,21 +112,50 @@ export class DilDocument {
    * Problems readers see only generic wording for are also logged.
    */
   onError: ((error: DilRenderError) => void) | undefined;
+  /** Whether reported problems are also logged; hosts can turn this off. */
+  console = true;
+  /**
+   * Reports made before the host listens, as while parsing during a first
+   * render. The runtime waits too, so a render React discards starts no worker.
+   */
+  private held: DilRenderError[] | null = null;
+  hold() {
+    this.held ??= [];
+    this.engine.hold();
+  }
+  /** Delivers held reports in order, then starts queued runtime work. */
+  release() {
+    const held = this.held ?? [];
+    this.held = null;
+    for (const problem of held) this.report(problem);
+    this.engine.release();
+  }
   report(problem: DilRenderError) {
+    if (this.held) {
+      this.held.push(problem);
+      return;
+    }
     const error = this.reports.take(problem);
     if (!error) return;
     // An incomplete report already lists each unfinished construct's position.
-    if (error.kind !== "incomplete" && error.offset !== undefined)
+    if (
+      this.console &&
+      error.kind !== "incomplete" &&
+      error.offset !== undefined
+    )
       console.warn(
         `OpenDIL: ${error.message} (at character ${error.offset} of the message source)`,
       );
-    if (error.kind === "incomplete" || error.message === UNREPORTED_PROBLEMS)
+    if (
+      this.console &&
+      (error.kind === "incomplete" || error.message === UNREPORTED_PROBLEMS)
+    )
       console.warn("OpenDIL: " + error.message);
     deliverError(this.onError, error);
   }
   /** Shows a document-level alert and reports it. */
   fail(error: DilRenderError) {
-    this.status.setState({ error: error.message });
+    this.status.setState({ error });
     this.report(error);
   }
   constructor() {
@@ -99,6 +172,10 @@ export class DilDocument {
         this.fail({
           kind:
             "kind" in detail && detail.kind === "limit" ? "limit" : "runtime",
+          code:
+            "code" in detail && typeof detail.code === "string"
+              ? (detail.code as DilRenderErrorCode)
+              : "runtime-crashed",
           message: detail.message,
         });
     });
@@ -126,6 +203,7 @@ export class DilDocument {
       } catch (error) {
         this.fail({
           kind: "runtime",
+          code: "declaration-failed",
           message:
             error instanceof Error ? error.message : "Invalid declaration",
         });
@@ -185,14 +263,15 @@ export class DilDocument {
       const flow = this.flows.get(id);
       if (flow) flow.setState(this.presentedChildren(id), true);
     }
-    const incomplete = batch.issues.some(
-      (issue) => issue.kind === "incomplete",
-    );
+    const ending =
+      batch.issues.find((issue) => issue.kind === "incomplete") ??
+      this.status.getState().ending;
     this.status.setState({
       revision: batch.revision,
       scanned: batch.scanned,
       complete: batch.complete,
-      incomplete: this.status.getState().incomplete || incomplete,
+      incomplete: ending !== null,
+      ending,
     });
     for (const issue of batch.issues) this.report(issue);
   }

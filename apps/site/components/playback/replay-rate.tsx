@@ -5,7 +5,7 @@ import {
   type ChangeEvent,
   type KeyboardEvent,
 } from "react";
-import { Input, Slider } from "@snackbit/opendil/ui";
+import { Input, Slider } from "@snackbit/opendil/lib";
 import { positionRate, ratePosition, validRate } from "./replay-delivery";
 export interface ReplayRateProps {
   value: number;

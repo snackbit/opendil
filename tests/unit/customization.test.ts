@@ -1,7 +1,7 @@
 import { createElement, type ReactNode } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { prerender } from "react-dom/static";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   DilRenderer,
   preloadHostRenderer,
@@ -11,6 +11,10 @@ import {
   type DilComponentProps,
 } from "../../packages/opendil/src/dil/customization";
 import { CustomComponent } from "../../packages/opendil/src/dil/custom-component";
+import { DilParser } from "../../packages/opendil/src/dil/parser/dil-parser";
+import { DilDocument } from "../../packages/opendil/src/dil/runtime/document";
+import { NodeView } from "../../packages/opendil/src/dil/view/node-view";
+import { installInlineWorkers } from "../../packages/opendil/src/testing";
 
 /** Server output once lazily loaded host and shadow renderers have resolved. */
 async function renderComplete(element: ReactNode) {
@@ -52,6 +56,37 @@ describe("public renderer configuration", () => {
         }),
       ),
     ).toContain('data-dil-mode="shadow"');
+  });
+  it("server-renders the content of text that is complete at mount", async () => {
+    await preloadHostRenderer();
+    const complete = renderToStaticMarkup(
+      createElement(DilRenderer, {
+        mode: "host",
+        text: '# Heading\n\n<box><text>{"Literal"}</text></box>',
+      }),
+    );
+    expect(complete).toContain("<h1>Heading</h1>");
+    expect(complete).toContain("Literal");
+    expect(complete).toContain('data-complete="true"');
+    // A stream is parsed in the worker after mount, so the server sends none of it.
+    const streaming = renderToStaticMarkup(
+      createElement(DilRenderer, {
+        mode: "host",
+        text: "# Heading",
+        isStreaming: true,
+      }),
+    );
+    expect(streaming).not.toContain("Heading");
+  });
+  it("leaves text over the first-render limit to the parser worker", async () => {
+    await preloadHostRenderer();
+    const html = renderToStaticMarkup(
+      createElement(DilRenderer, {
+        mode: "host",
+        text: "x".repeat(1_048_577),
+      }),
+    );
+    expect(html).not.toContain("xxxx");
   });
   it.each([true, false])(
     "invokes only ready callback attributes (ready=%s)",
@@ -142,6 +177,30 @@ describe("public renderer configuration", () => {
       'customization (components, className) requires mode="host"',
     );
   });
+  it.each([
+    ["markdownComponents", { markdownComponents: {} }],
+    ["diagnostics", { diagnostics: { console: false } }],
+    ["theme", { theme: "inherit" }],
+  ])("keeps %s out of the iframe mode", (name, extra) => {
+    const invalid = createElement(
+      DilRenderer,
+      // @ts-expect-error Exercise the runtime guard for untyped JavaScript consumers.
+      Object.assign({ text: "# Hello" }, extra),
+    );
+    expect(() => renderToStaticMarkup(invalid)).toThrow(
+      `customization (${name}) requires mode="host"`,
+    );
+  });
+  it("marks a host renderer that inherits the page's design variables", async () => {
+    const html = await renderComplete(
+      createElement(DilRenderer, { mode: "host", text: "", theme: "inherit" }),
+    );
+    expect(html).toContain('data-dil-theme="inherit"');
+    const stock = await renderComplete(
+      createElement(DilRenderer, { mode: "host", text: "" }),
+    );
+    expect(stock).toContain('data-dil-theme="stock"');
+  });
   it("treats undefined styling props as unset in the iframe mode", () => {
     const html = renderToStaticMarkup(
       createElement(DilRenderer, {
@@ -205,5 +264,41 @@ describe("public renderer configuration", () => {
     expect(html).toContain('class="consumer-class"');
     expect(html).toContain('class="consumer-slot"');
     expect(html).toContain("Child content");
+  });
+});
+describe("host components that validate their attributes", () => {
+  it("receive quoted strings and JSON literals, and nothing for other values", () => {
+    vi.stubGlobal("__DIL_VM_WORKER__", "");
+    const uninstall = installInlineWorkers();
+    const keys: unknown[] = [];
+    function ArtifactFile({ attributes }: DilComponentProps) {
+      keys.push(attributes.fileKey);
+      const key =
+        typeof attributes.fileKey === "string" ? attributes.fileKey : "";
+      return createElement("span", { "data-file-key": key || "unbound" });
+    }
+    const document = new DilDocument();
+    document.apply(
+      new DilParser().append(
+        '<ArtifactFile fileKey="a"/><ArtifactFile fileKey={"b"}/><ArtifactFile/><ArtifactFile fileKey={key}/>',
+        true,
+      ),
+    );
+    const html = renderToStaticMarkup(
+      createElement(
+        CustomizationContext.Provider,
+        { value: { components: { ArtifactFile } } },
+        createElement(NodeView, { id: 0, document }),
+      ),
+    );
+    expect(keys).toEqual(["a", "b", undefined]);
+    expect(html).toContain('data-file-key="a"');
+    expect(html).toContain('data-file-key="b"');
+    expect(html).toContain('data-file-key="unbound"');
+    // An expression the host cannot see yet renders a pending placeholder.
+    expect(html).toContain('data-dil-pending="true"');
+    document.engine.dispose();
+    uninstall();
+    vi.unstubAllGlobals();
   });
 });

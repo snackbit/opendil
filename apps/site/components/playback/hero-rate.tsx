@@ -1,5 +1,5 @@
 import { memo, useCallback } from "react";
-import { Slider } from "@snackbit/opendil/ui";
+import { Slider } from "@snackbit/opendil/lib";
 import { positionRate, ratePosition } from "./replay-delivery";
 export interface HeroRateProps {
   value: number;

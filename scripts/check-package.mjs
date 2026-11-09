@@ -58,10 +58,17 @@ const specFiles = [
 ];
 for (const expected of [
   "dist/index.js",
-  "dist/agent-spec.js",
+  "dist/lib.js",
+  "dist/lib-ui.js",
+  "dist/lib-markdown.js",
+  "dist/lib-serialize.js",
+  "dist/lib-text.js",
+  "dist/lib-export.js",
+  "dist/lib-agent-spec.js",
+  "dist/testing.js",
   "dist/types/index.d.ts",
-  "dist/types/ui.d.ts",
-  "dist/types/agent-spec.d.ts",
+  "dist/types/lib.d.ts",
+  "dist/types/testing.d.ts",
   "dist/styles.css",
   "dist/runtime/frame.html",
   "dist/runtime/frame.js",
@@ -115,7 +122,7 @@ try {
   // Every shipped chunk is reachable from a JavaScript entry point.
   const installed = join(scratch, "node_modules/@snackbit/opendil/dist");
   const reachable = new Set();
-  const pending = ["index.js", "ui.js", "agent-spec.js"];
+  const pending = ["index.js", "lib.js", "testing.js"];
   while (pending.length) {
     const file = pending.pop();
     if (reachable.has(file)) continue;
@@ -135,12 +142,23 @@ try {
   // Server code reads the specs of the installed version without fs or a bundler.
   await writeFile(
     join(scratch, "server.ts"),
-    'import { agentSpec, agentSpecFull, agentSpecExamples } from "@snackbit/opendil/agent-spec";\nexport const prompts: string[] = [agentSpec, agentSpecFull, agentSpecExamples];\n',
+    'import { agentSpec, agentSpecFull, agentSpecExamples, extractDilText, literalMarkdown, type DilTextResult } from "@snackbit/opendil/lib";\nexport const prompts: string[] = [agentSpec, agentSpecFull, agentSpecExamples];\nexport const preview: DilTextResult = extractDilText(literalMarkdown("{x}"));\n',
+  );
+  // The lib entry imports in plain Node, without a DOM, so text extraction
+  // runs on servers; its React half loads without touching window.
+  await writeFile(
+    join(scratch, "text.mjs"),
+    `import { extractDilText, literalMarkdown, MarkdownRenderer, Button } from "@snackbit/opendil/lib";
+if (typeof globalThis.window !== "undefined" || typeof MarkdownRenderer !== "function" || !Button)
+  throw new Error("The lib entry needs a DOM or lacks its React exports");
+const result = extractDilText(literalMarkdown("{1+1} <Button/>") + '\\n\\n<File fileKey="a" label={"Report"}/>');
+if (JSON.stringify(result) !== JSON.stringify({ text: "{1+1} <Button/>\\nReport", truncated: false, components: [{ name: "File", literalAttributes: { fileKey: "a", label: "Report" } }] }))
+  throw new Error("Unexpected text extraction: " + JSON.stringify(result));`,
   );
   await writeFile(
     join(scratch, "spec.mjs"),
     `import { readFile } from "node:fs/promises";
-import { agentSpec, agentSpecFull, agentSpecExamples } from "@snackbit/opendil/agent-spec";
+import { agentSpec, agentSpecFull, agentSpecExamples } from "@snackbit/opendil/lib";
 const specs = { "genui.agent.md": agentSpec, "genui.agent.full.md": agentSpecFull, "genui.examples.md": agentSpecExamples };
 for (const [file, text] of Object.entries(specs))
   if (text !== await readFile(new URL(import.meta.resolve("@snackbit/opendil/spec/" + file)), "utf8"))
@@ -149,13 +167,14 @@ console.log(JSON.stringify(specs));`,
   );
   await writeFile(
     join(scratch, "spec.cjs"),
-    'const { agentSpec } = require("@snackbit/opendil/agent-spec");\nif (typeof agentSpec !== "string") throw new Error("require() cannot load agent-spec");\n',
+    'const { agentSpec } = require("@snackbit/opendil/lib");\nif (typeof agentSpec !== "string") throw new Error("require() cannot load the lib entry");\n',
   );
   const shippedSpecs = JSON.parse(run(process.execPath, ["spec.mjs"]));
   for (const file of specFiles)
     if (shippedSpecs[file] !== (await readFile("spec/" + file, "utf8")))
       throw new Error("Packed agent spec differs from spec/" + file);
   run(process.execPath, ["spec.cjs"]);
+  run(process.execPath, ["text.mjs"]);
   await writeFile(
     join(scratch, "index.html"),
     '<div id="root"></div><script type="module" src="/main.tsx"></script>',
@@ -165,8 +184,8 @@ console.log(JSON.stringify(specs));`,
     `
 import { createRef, useState } from "react";
 import { createRoot } from "react-dom/client";
-import { DilRenderer, type DilComponentProps, type DilRendererHandle, type DilRenderError } from "@snackbit/opendil";
-import { Button, Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectTrigger, SelectValue } from "@snackbit/opendil/ui";
+import { DilRenderer, type DilButtonProps, type DilComponentProps, type DilDiagram, type DilRendererHandle, type DilRenderError, type DilProblemProps, type DilMarkdownLinkProps, type DilUiPrimitives } from "@snackbit/opendil";
+import { Button, exportSvg, literalMarkdown, MarkdownRenderer, rasterizeSvg, serializeRenderedDocument, Tabs, TabsList, TabsTrigger, TabsContent, Select, SelectTrigger, SelectValue } from "@snackbit/opendil/lib";
 import "@snackbit/opendil/styles.css";
 function Custom({children, className}: DilComponentProps) { return <aside className={className} aria-label="Consumer extension">{children}</aside>; }
 const components = { Custom };
@@ -186,6 +205,59 @@ function StopProbe({mode}: {mode: "isolated" | "host" | "shadow"}) {
   const props = { text, isStreaming: streaming, onError: (problem: DilRenderError) => setProblems(list => [...list, problem]) };
   return <section aria-label={mode + " stop"}><button onClick={() => setStreaming(false)}>Stop</button><output aria-label={mode + " problems"}>{problems.map(problem => problem.kind + "@" + problem.offset).join(" ")}</output>{mode === "isolated" ? <DilRenderer {...props} runtimeBaseUrl="/consumer/opendil/" /> : <DilRenderer {...props} mode={mode} />}</section>;
 }
+function Link({ href, children }: DilMarkdownLinkProps) { return <a href={href}>{children}</a>; }
+function Problem({ scope, error }: DilProblemProps) { return <span data-problem={scope} data-error-code={error.code}>Host problem</span>; }
+const markdownComponents = { link: Link };
+const diagnostics = { console: false, Problem };
+// Host design variables reach an inheriting renderer; the stock theme keeps its own.
+function InheritProbe() {
+  return <section aria-label="inherit probe" style={{ ["--foreground" as string]: "rgb(7, 8, 9)" }}>
+    <MarkdownRenderer text={"[Package docs](https://example.com/docs) <Button onClick={go}/>"} markdownComponents={markdownComponents} theme="inherit" />
+    <DilRenderer mode="host" theme="inherit" showStatus={false} markdownComponents={markdownComponents} diagnostics={diagnostics} text={"Inherited [link](https://example.com/dil)\\n\\n<Unknown/>\\n\\n" + literalMarkdown("Literal {1+1}")} />
+    <DilRenderer mode="host" showStatus={false} text="Stock text" />
+  </section>;
+}
+// The host's own button inside stock widgets, and copying what the answer shows.
+function ConsumerButton({ variant, size, ...props }: DilButtonProps) { return <button {...props} data-consumer-button={variant ?? "default"} />; }
+const uiPrimitives: DilUiPrimitives = { Button: ConsumerButton };
+const copied = createRef<DilRendererHandle>();
+function CopyProbe() {
+  const [copy, setCopy] = useState("");
+  return <section aria-label="copy probe">
+    <DilRenderer ref={copied} mode="host" showStatus={false} uiPrimitives={uiPrimitives} text={"## Copied\\n\\n<button>Consumer action</button>\\n\\n<checkbox checked={true}>Done</checkbox>"} />
+    <button onClick={() => setCopy((copied.current?.serialize()?.markdown ?? "") + "|" + serializeRenderedDocument(document.body).html.length)}>Copy answer</button>
+    <output aria-label="copied markdown">{copy}</output>
+  </section>;
+}
+// Code tokens from the host, and a host textarea rule that outranks OpenDIL's.
+const code = '<CodeBlock language="ts" editable>\\nconst a = 1;\\n\\tconst b = 2;\\nconst c = 3;\\n</CodeBlock>';
+function CodeProbe() {
+  return <section aria-label="code probe" id="code-probe" style={{ ["--dil-code-font-size" as string]: "15px", ["--dil-code-line-height" as string]: "1.5" }}>
+    <style>{"#code-probe [data-hostile] textarea{font-size:22px;line-height:40px;letter-spacing:2px;padding:1px 3px}"}</style>
+    <div data-tokens=""><DilRenderer mode="host" showStatus={false} text={code} /></div>
+    <div data-hostile=""><DilRenderer mode="host" showStatus={false} text={code} /></div>
+  </section>;
+}
+// The host opens a rendered diagram and exports it as SVG and PNG.
+function DiagramProbe() {
+  const [result, setResult] = useState("");
+  async function open(diagram: DilDiagram) {
+    const png = await rasterizeSvg(diagram.svg, { scale: 2, background: "white" });
+    const clear = await rasterizeSvg(diagram.svg, { scale: 1, background: "transparent" });
+    const pixel = async (blob: Blob) => {
+      const bitmap = await createImageBitmap(blob);
+      const canvas = new OffscreenCanvas(bitmap.width, bitmap.height);
+      const context = canvas.getContext("2d");
+      context?.drawImage(bitmap, 0, 0);
+      return [bitmap.width, bitmap.height, context?.getImageData(0, 0, 1, 1).data[3]].join("x");
+    };
+    setResult([diagram.title, Math.ceil(diagram.width * 2) + "x" + Math.ceil(diagram.height * 2), await pixel(png), await pixel(clear), png.type, exportSvg(diagram.svg).type, diagram.source.length].join("|"));
+  }
+  return <section aria-label="diagram probe">
+    <DilRenderer mode="host" showStatus={false} onOpenDiagram={open} text={"\`\`\`mermaid\\nflowchart LR\\n  accTitle: Release flow\\n  Build --> Ship\\n\`\`\`"} />
+    <output aria-label="diagram result">{result}</output>
+  </section>;
+}
 const root = document.getElementById("root");
 if (!root) throw new Error("Missing root");
 createRoot(root).render(location.search === "?stop" ? <><StopProbe mode="isolated" /><StopProbe mode="host" /><StopProbe mode="shadow" /></> : <>
@@ -198,6 +270,10 @@ createRoot(root).render(location.search === "?stop" ? <><StopProbe mode="isolate
 <DilRenderer mode="host" text="<Custom>Host package consumer</Custom>" components={components} classNames={{ Custom: "rounded-xl p-4" }} progressiveReveal={{ staggerMs: 0, durationMs: 0 }} />
 <DilRenderer mode="shadow" text="<Custom>Shadow package consumer</Custom>" components={components} classNames={{ Custom: "consumer-extension" }} shadowStyles=".consumer-extension{background-color:rgb(1,2,3)}" autoScroll={{ behavior: "smooth", padding: 32 }} />
 <LayoutProbe mode="host" /><LayoutProbe mode="shadow" />
+<InheritProbe />
+<CopyProbe />
+<CodeProbe />
+<DiagramProbe />
 </>);
 `,
   );
@@ -297,6 +373,14 @@ createRoot(root).render(location.search === "?stop" ? <><StopProbe mode="isolate
   const page = await browser.newPage();
   const errors = [];
   page.on("pageerror", (error) => errors.push(error.message));
+  // Nothing the package renders, diagrams included, fetches from elsewhere.
+  const origin = "http://127.0.0.1:" + address.port;
+  const remote = [];
+  page.on("request", (request) => {
+    const url = request.url();
+    if (!url.startsWith(origin) && !/^(?:data|blob):/.test(url))
+      remote.push(url);
+  });
   await page.goto("http://127.0.0.1:" + address.port + "/consumer/");
   await page
     .frameLocator("iframe")
@@ -325,6 +409,104 @@ createRoot(root).render(location.search === "?stop" ? <><StopProbe mode="isolate
     "background-color",
     "rgb(1, 2, 3)",
   );
+  const inherit = page.getByLabel("inherit probe", { exact: true });
+  await expect(
+    inherit.getByRole("link", { name: "Package docs", exact: true }),
+  ).toHaveAttribute("href", "https://example.com/docs");
+  await expect(inherit.getByText("<Button onClick={go}/>")).toBeVisible();
+  await expect(
+    inherit.getByRole("link", { name: "link", exact: true }),
+  ).toHaveAttribute("href", "https://example.com/dil");
+  await expect(inherit.locator('[data-problem="part"]')).toHaveAttribute(
+    "data-error-code",
+    "unknown-component",
+  );
+  await expect(
+    inherit.getByText("Literal {1+1}", { exact: true }),
+  ).toBeVisible();
+  await expect(inherit.getByText("Inherited", { exact: false })).toHaveCSS(
+    "color",
+    "rgb(7, 8, 9)",
+  );
+  await expect(inherit.getByText("Stock text", { exact: true })).toHaveCSS(
+    "color",
+    "rgb(13, 13, 13)",
+  );
+  const copyProbe = page.getByLabel("copy probe", { exact: true });
+  await expect(
+    copyProbe.getByRole("button", { name: "Consumer action", exact: true }),
+  ).toHaveAttribute("data-consumer-button", "default");
+  await copyProbe
+    .getByRole("button", { name: "Copy answer", exact: true })
+    .click();
+  await expect(copyProbe.getByLabel("copied markdown")).toHaveText(
+    /^## Copied\s+\[x\] Done\|\d+$/,
+  );
+  // Both editor layers share one set of metrics: from the host's code tokens,
+  // or from a host textarea rule that outranks the package's styles.
+  const codeProbe = page.getByLabel("code probe", { exact: true });
+  for (const [variant, size, lineHeight] of [
+    ["tokens", "15px", "22.5px"],
+    ["hostile", "22px", "40px"],
+  ]) {
+    const block = codeProbe.locator(`[data-${variant}] .dil-code-block`);
+    await block.getByRole("textbox", { name: "Code editor" }).waitFor();
+    const metrics = await block.evaluate((element) => {
+      const input = element.querySelector("textarea");
+      const layer = element.querySelector(".dil-code-highlight");
+      if (!input || !layer) throw new Error("Missing editor layers");
+      const read = (node) => {
+        const css = getComputedStyle(node);
+        return [
+          css.fontFamily,
+          css.fontSize,
+          css.lineHeight,
+          css.letterSpacing,
+          css.tabSize,
+          css.paddingTop,
+          css.paddingLeft,
+          css.whiteSpace,
+        ].join(" ");
+      };
+      const box = (node) => node.getBoundingClientRect();
+      return {
+        input: read(input),
+        layer: read(layer),
+        size: getComputedStyle(input).fontSize,
+        lineHeight: getComputedStyle(input).lineHeight,
+        heights: [box(input).height, box(layer).height, input.scrollHeight],
+        padding:
+          parseFloat(getComputedStyle(input).paddingTop) +
+          parseFloat(getComputedStyle(input).paddingBottom),
+      };
+    });
+    if (metrics.input !== metrics.layer)
+      throw new Error(
+        `Editor layers differ (${variant}): ${metrics.input} / ${metrics.layer}`,
+      );
+    if (metrics.size !== size || metrics.lineHeight !== lineHeight)
+      throw new Error(
+        `Editor metrics (${variant}): ${metrics.size} ${metrics.lineHeight}`,
+      );
+    // Three lines of code: the frame fits them, without empty rows.
+    const [inputHeight, layerHeight] = metrics.heights;
+    const expected = 3 * parseFloat(lineHeight) + metrics.padding;
+    if (
+      Math.abs(inputHeight - expected) > 2 ||
+      Math.abs(layerHeight - inputHeight) > 0.5
+    )
+      throw new Error(
+        `Editor height (${variant}): ${metrics.heights.join(", ")}, expected ${expected}`,
+      );
+  }
+  const diagramProbe = page.getByLabel("diagram probe", { exact: true });
+  await diagramProbe
+    .getByRole("button", { name: "Open diagram", exact: true })
+    .click();
+  await expect(diagramProbe.getByLabel("diagram result")).toHaveText(
+    /^Release flow\|(\d+x\d+)\|\1x255\|\d+x\d+x0\|image\/png\|image\/svg\+xml;charset=utf-8\|\d+$/,
+  );
+  if (remote.length) throw new Error("Remote requests: " + remote.join(", "));
   for (const mode of ["host", "shadow"]) {
     const probe = page.getByLabel(mode + " layout", { exact: true });
     const box = probe.locator('[data-d-component="box"]');
@@ -429,7 +611,7 @@ createRoot(root).render(location.search === "?stop" ? <><StopProbe mode="isolate
     );
   if (errors.length) throw new Error(errors.join("\n"));
   console.log(
-    "Verified packed package contents, declarations, agent spec exports, CLI, all rendering modes, scoped CSS, stable streaming layout, interrupted documents with onError, and /consumer/ runtime paths: " +
+    "Verified packed package contents, declarations, agent spec exports, CLI, all rendering modes, scoped CSS, theme inheritance, Markdown overrides, host diagnostics, injected UI primitives, rendered copies, code editor metrics under host CSS, diagram open and export without remote requests, text extraction in Node, stable streaming layout, interrupted documents with onError, and /consumer/ runtime paths: " +
       archive,
   );
 } catch (error) {

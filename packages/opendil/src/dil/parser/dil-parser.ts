@@ -12,6 +12,7 @@ import {
 import type { DilNode, NodeKind, ParseIssue, TreeBatch } from "./types";
 import { TagVocabulary } from "./vocabulary";
 import { cutTag, finishOpen } from "./unfinished";
+import { CUT, RAW_TAGS, rawClosing } from "./raw-body";
 
 type Mode = "text" | "tag" | "brace" | "code" | "fence" | "span" | "literal";
 type Step = typeof WAIT | undefined;
@@ -130,7 +131,7 @@ export class DilParser {
     }
   }
 
-  /** Moves scanned code into the open CodeBlock. */
+  /** Moves scanned raw text into the open CodeBlock or Markdown. */
   private codeText() {
     const node = this.nodes[this.parent];
     if (node) {
@@ -160,7 +161,12 @@ export class DilParser {
     node.status = "error";
     node.error = message;
     this.touch(node);
-    this.issues.push({ kind: "syntax", message, offset: node.offset });
+    this.issues.push({
+      kind: "syntax",
+      code: "malformed-syntax",
+      message,
+      offset: node.offset,
+    });
   }
 
   /** Open constructs keep what they completed; an unfinished token is dropped. */
@@ -289,7 +295,7 @@ export class DilParser {
     if (match[3]) this.finish(node.id);
     else {
       this.stack.unshift(node.id);
-      if (node.name === "CodeBlock") this.mode = "code";
+      if (RAW_TAGS.has(node.name)) this.mode = "code";
     }
   }
 
@@ -333,30 +339,23 @@ export class DilParser {
       const char = this.source.charAt(this.cursor);
       const next = this.source[this.cursor + 1] ?? "";
       if (this.mode === "code") {
-        const closing = "</CodeBlock>";
-        if (
-          char === "<" &&
-          closing.startsWith(
-            this.source.slice(this.cursor, this.cursor + closing.length),
-          )
-        ) {
-          if (this.source.length - this.cursor < closing.length) {
-            if (!complete) break;
-            this.codeText();
-            this.cutToken();
-            break;
-          }
-          if (this.source.startsWith(closing, this.cursor)) {
-            this.codeText();
-            this.closeFrame();
-            this.cursor += closing.length;
-            this.textStart = this.cursor;
-            this.blockStart = this.cursor;
-            this.mode = "text";
-            continue;
-          }
+        const closing = `</${this.nodes[this.parent]?.name ?? ""}>`;
+        const end =
+          char === "<"
+            ? rawClosing(this.source, this.cursor, closing, complete)
+            : 0;
+        if (end === WAIT) break;
+        if (end === CUT || end > 0) this.codeText();
+        if (end === CUT) {
+          this.cutToken();
+          break;
         }
-        this.cursor++;
+        if (end > 0) {
+          this.closeFrame();
+          this.cursor += end;
+          this.textStart = this.blockStart = this.cursor;
+          this.mode = "text";
+        } else this.cursor++;
         continue;
       }
       // Leave sufficient lookahead for delimiters crossing a chunk boundary.

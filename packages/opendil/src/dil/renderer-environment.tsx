@@ -27,6 +27,7 @@ export interface RendererEnvironment {
   copy?: (text: string) => Promise<boolean>;
   onInput?: (detail: { length: number }) => void;
   onCommit?: (detail: RendererMetrics) => void;
+  onSettled?: () => void;
   onError?: (error: DilRenderError) => void;
 }
 /**

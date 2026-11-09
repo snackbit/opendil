@@ -35,7 +35,7 @@ The AI SDK setup needs the `ai`, `@ai-sdk/react`, and `@ai-sdk/openai` packages.
 
 ```ts title="app/api/chat/route.ts"
 import { openai } from "@ai-sdk/openai";
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
 export async function POST(req: Request) {
@@ -59,7 +59,7 @@ This uses AI SDK 7, where the system prompt option is `instructions`. Earlier ve
 This route needs the `openai` package.
 
 ```ts title="app/api/chat/route.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 import OpenAI from "openai";
 
 const client = new OpenAI(); // Reads OPENAI_API_KEY.
@@ -118,7 +118,7 @@ This route needs the `@anthropic-ai/sdk` package.
 
 ```ts title="app/api/chat/route.ts"
 import Anthropic from "@anthropic-ai/sdk";
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 const client = new Anthropic(); // Reads ANTHROPIC_API_KEY.
 const encoder = new TextEncoder();
@@ -185,7 +185,7 @@ export async function POST(req: Request) {
 This route calls the provider's HTTP API directly and needs no SDK. It works with any provider that offers an OpenAI-compatible Chat Completions endpoint; set `LLM_BASE_URL`, `LLM_API_KEY`, and `LLM_MODEL` for yours.
 
 ```ts title="app/api/chat/route.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 // Any provider with an OpenAI-compatible Chat Completions endpoint works.
 const baseUrl = process.env.LLM_BASE_URL ?? "https://api.openai.com/v1";
@@ -983,7 +983,7 @@ preloadHostRenderer().catch(() => {});
 
 ## Recap
 
-- Load the system prompt from `@snackbit/opendil/agent-spec` on your server, spec first, your instructions after it.
+- Load the system prompt from `@snackbit/opendil/lib` on your server, spec first, your instructions after it.
 - Render one `DilRenderer` per answer, keyed by the message id, with all the text received so far.
 - Set `isStreaming={false}` when the answer finishes, is stopped, or fails. With the AI SDK, also check the chat `status`.
 - Follow only the newest answer; the renderer finds your scrolling message list.

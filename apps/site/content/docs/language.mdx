@@ -268,6 +268,16 @@ console.log(message);
 
 `CodeBlock` reads everything up to the exact `</CodeBlock>` as text. Neither form runs the code, and edits stay inside the code block. See [Code](/docs/components/code/) for the details.
 
+To show Markdown that must not become DIL, such as a quoted document or a template with braces, wrap it in `<Markdown>`. Everything up to the exact `</Markdown>` renders as Markdown only: tags, braces, and directives display as written.
+
+```dil
+<Markdown>
+**Template:** Dear {name}, your order <Order id="1"/> has shipped.
+</Markdown>
+```
+
+One line break after the opening tag and one before the closing tag are not content. To show the delimiter itself, write `<\/Markdown>`: a `<` followed by backslashes and `/Markdown` displays with one backslash fewer. Code that generates the block can call `literalMarkdown(text)` from `@snackbit/opendil/lib`, which adds the line breaks and escapes for you.
+
 ## What DIL does not do
 
 DIL documents cannot:

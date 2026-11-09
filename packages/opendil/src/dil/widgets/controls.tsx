@@ -9,20 +9,9 @@ import {
   type CompositionEvent,
   type ReactNode,
 } from "react";
-import { Button } from "../../components/ui/controls/button";
-import { Checkbox } from "../../components/ui/controls/checkbox";
-import { Input } from "../../components/ui/controls/input";
-import {
-  RadioGroup,
-  RadioGroupItem,
-} from "../../components/ui/controls/radio-group";
-import { Slider } from "../../components/ui/controls/slider";
-import {
-  ToggleGroup,
-  ToggleGroupItem,
-} from "../../components/ui/controls/toggle-group";
-import { PopoverTrigger } from "../../components/ui/overlays/popover";
 import type { StoreApi } from "zustand/vanilla";
+import { useUiPrimitives } from "../ui-primitives";
+import { usePortalScope } from "../../components/ui/overlays/ui-scope";
 import type { DocumentStatus } from "../runtime/document";
 import { ActionFeedbackTooltip, useActionFeedback } from "./action-feedback";
 import { useControlValue } from "./use-control-value";
@@ -60,6 +49,7 @@ export function ButtonControl({
   status,
 }: ActionProps) {
   const trigger = useContext(PopoverTriggerScope);
+  const { Button, Popover } = useUiPrimitives();
   const [feedback, track] = useActionFeedback(status);
   const click = useCallback(() => {
     track(invoke(attributes, "onClick"));
@@ -93,7 +83,7 @@ export function ButtonControl({
   );
   return (
     <ActionFeedbackTooltip feedback={feedback}>
-      {trigger ? <PopoverTrigger asChild>{button}</PopoverTrigger> : button}
+      {trigger ? <Popover.Trigger asChild>{button}</Popover.Trigger> : button}
     </ActionFeedbackTooltip>
   );
 }
@@ -108,6 +98,7 @@ export function CheckboxControl({
     attributes.checked === true,
     attributes.onChange,
   );
+  const { Checkbox } = useUiPrimitives();
   const id = useId();
   const change = useCallback(
     (checked: boolean | "indeterminate") => {
@@ -159,11 +150,16 @@ export function SliderControl({
     },
     [setValue],
   );
+  const { Slider } = useUiPrimitives();
   const marks: unknown[] = Array.isArray(attributes.marks)
     ? attributes.marks
     : [];
   return (
-    <div ref={presentationRef} className={cn("py-2", className)}>
+    <div
+      ref={presentationRef}
+      className={cn("py-2", className)}
+      data-dil-copy-text={label ? `${label}: ${value}` : String(value)}
+    >
       <Slider
         aria-label={label}
         value={[value]}
@@ -194,6 +190,7 @@ export function InputControl({
     text(attributes.value),
     attributes.onChange,
   );
+  const { Input } = useUiPrimitives();
   const composing = useRef(false);
   const startComposition = useCallback(() => {
     composing.current = true;
@@ -238,11 +235,12 @@ export function SegmentedControl({
     },
     [attributes],
   );
+  const { ToggleGroup } = useUiPrimitives();
   const options: unknown[] = Array.isArray(attributes.options)
     ? attributes.options
     : [];
   return (
-    <ToggleGroup
+    <ToggleGroup.Root
       ref={presentationRef}
       type="single"
       aria-label={label}
@@ -256,16 +254,16 @@ export function SegmentedControl({
       {options.map((option) => {
         const data = record(option);
         return (
-          <ToggleGroupItem
+          <ToggleGroup.Item
             key={text(data.value)}
             value={text(data.value)}
             className="rounded-md text-xs data-[state=on]:bg-background data-[state=on]:shadow-sm"
           >
             {text(data.label)}
-          </ToggleGroupItem>
+          </ToggleGroup.Item>
         );
       })}
-    </ToggleGroup>
+    </ToggleGroup.Root>
   );
 }
 export function RadioGroupControl({
@@ -282,8 +280,9 @@ export function RadioGroupControl({
     },
     [attributes],
   );
+  const { RadioGroup } = useUiPrimitives();
   return (
-    <RadioGroup
+    <RadioGroup.Root
       ref={presentationRef}
       aria-label={label}
       value={text(attributes.value)}
@@ -295,7 +294,7 @@ export function RadioGroupControl({
       )}
     >
       {children}
-    </RadioGroup>
+    </RadioGroup.Root>
   );
 }
 export function RadioControl({
@@ -306,6 +305,7 @@ export function RadioControl({
   presentationRef,
 }: ControlProps) {
   const id = useId();
+  const { RadioGroup } = useUiPrimitives();
   return (
     <label
       ref={presentationRef}
@@ -315,13 +315,38 @@ export function RadioControl({
         className,
       )}
     >
-      <RadioGroupItem
+      <RadioGroup.Item
         id={id}
         value={text(attributes.value)}
         disabled={!ready}
       />
       {children}
     </label>
+  );
+}
+export function PopoverControl({ children }: { children?: ReactNode }) {
+  const { Popover } = useUiPrimitives();
+  return <Popover.Root>{children}</Popover.Root>;
+}
+export function PopoverContentControl({
+  attributes,
+  children,
+}: {
+  attributes: Attributes;
+  children?: ReactNode;
+}) {
+  const { Popover } = useUiPrimitives();
+  const { container } = usePortalScope();
+  return (
+    <Popover.Content
+      side={attributes.side === "top" ? "top" : "bottom"}
+      align={attributes.align === "end" ? "end" : "center"}
+      className="w-auto max-w-[calc(100vw-2rem)]"
+      portalContainer={container}
+    >
+      {/* Stacks inline children such as consecutive <text> lines. */}
+      <div className="dil-flow gap-2">{children}</div>
+    </Popover.Content>
   );
 }
 export function PressableControl({
@@ -343,6 +368,7 @@ export function PressableControl({
         type="button"
         onClick={click}
         data-dil-action=""
+        data-dil-copy="content"
         disabled={!ready}
         className={cn(
           "dil-layout w-full text-left outline-none transition-colors hover:bg-secondary focus-visible:ring-2 focus-visible:ring-ring",

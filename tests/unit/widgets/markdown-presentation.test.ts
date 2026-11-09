@@ -2,7 +2,7 @@
 import { act, createElement } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
-import { MarkdownNode } from "../../../packages/opendil/src/dil/view/markdown-node";
+import { MarkdownNode } from "../../../packages/opendil/src/dil/markdown/markdown-node";
 import { DilDocument } from "../../../packages/opendil/src/dil/runtime/document";
 import {
   advanceMarkdown,
@@ -10,7 +10,7 @@ import {
   EMPTY_MARKDOWN,
   markdownIndent,
   normalizeMarkdown,
-} from "../../../packages/opendil/src/dil/runtime/markdown-stream";
+} from "../../../packages/opendil/src/dil/markdown/markdown-stream";
 import type { DilNode } from "../../../packages/opendil/src/dil/parser/types";
 afterEach(() => {
   vi.restoreAllMocks();

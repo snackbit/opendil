@@ -14,15 +14,15 @@ Each answer is a small application: it has its own parser, often its own JavaScr
 
 ## What each answer costs
 
-Every `DilRenderer` runs its own pipeline: a parser in a Web Worker and, when the answer needs one, an expression engine, a sandboxed JavaScript engine (QuickJS) in a second Web Worker. Answers share nothing except the code your page has loaded.
+Every `DilRenderer` runs its own pipeline: a parser and, when the answer needs one, an expression engine, a sandboxed JavaScript engine (QuickJS) in a Web Worker. Answers share nothing except the code your page has loaded and, in host and Shadow DOM modes, the compiled QuickJS module.
 
-| Resource              | Iframe mode (default)                                          | Host and Shadow DOM modes              |
-| --------------------- | -------------------------------------------------------------- | -------------------------------------- |
-| Iframe                | One sandboxed iframe per answer                                | None; components render in your page   |
-| Runtime code          | Its own copy of `frame.js`, parsed and run in each iframe      | The page's code, shared by all answers |
-| Parser worker         | One, from mount until the final text is applied                | The same                               |
-| Expression engine     | One, from the first expression, state, or action until unmount | The same                               |
-| Text and parsed nodes | Kept in memory until unmount                                   | The same                               |
+| Resource              | Iframe mode (default)                                          | Host and Shadow DOM modes                                                                    |
+| --------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
+| Iframe                | One sandboxed iframe per answer                                | None; components render in your page                                                         |
+| Runtime code          | Its own copy of `frame.js`, parsed and run in each iframe      | The page's code, shared by all answers                                                       |
+| Parser worker         | One, from mount until the final text is applied                | None up to 1 MiB of text at mount: it parses in the page. Longer text as in iframe mode      |
+| Expression engine     | One, from the first expression, state, or action until unmount | The same, and one spare started by `preloadHostRenderer()`; a cached answer keeps its engine |
+| Text and parsed nodes | Kept in memory until unmount                                   | The same                                                                                     |
 
 Two details keep finished answers cheap:
 
@@ -105,11 +105,23 @@ export function MessageList({ messages }: { messages: Message[] }) {
 }
 ```
 
-In host and Shadow DOM modes, also keep `components`, `componentConfig`, `classNames`, `slots`, `onInput`, `onCommit`, and `onError` stable. Define registries and class maps at module scope, and wrap callbacks in `useCallback`. A new object or function on every render makes the answer's components render again. The iframe mode compares `tokens` by content and reads its callbacks when it needs them, so new objects there cost little.
+In host and Shadow DOM modes, `componentConfig`, `classNames`, `slots`, `markdownComponents`, `diagnostics`, `uiPrimitives`, and `tokens` are compared by content, so inline objects cost nothing while their values stay the same. Keep the components inside them, and `onInput`, `onCommit`, and `onError`, stable: define components at module scope and wrap callbacks in `useCallback`. A new component function remounts what it renders, and a new callback makes the answer's components render again. `onOpenDiagram` may change on every render. The iframe mode compares `tokens` by content and reads its callbacks when it needs them, so new objects there cost little.
 
 ### Follow only the latest answer
 
 Pass `autoScroll` to the answer that is streaming, not to every answer, as `isLatest` does above. See [Follow the stream](/docs/streaming/#follow-the-stream).
+
+### Keep finished answers when they unmount
+
+In host and Shadow DOM modes, give each finished answer a `cacheKey`, such as its message id and a hash of its text. When a renderer with that key unmounts, as an answer scrolls out of a virtualized list or the reader switches conversations, OpenDIL keeps its document: parsed tree, results, state, and widget heights. A renderer that mounts with the same key and text shows it in its first commit, with no placeholders and no work for the expression engine. Up to 12 unmounted answers stay cached; older ones are disposed. An answer that streams in without a key and receives one when it finishes is kept under that key. A document belongs to one renderer at a time: a second renderer that mounts with a key already on screen shows the same results in its first commit, and its own expression engine confirms them once.
+
+```tsx
+<DilRenderer mode="host" text={text} cacheKey={`message:${id}:${hash}`} />
+```
+
+`clearDocumentCache()` drops every kept answer, for example when a user signs out, or between test cases and stories that reuse keys. Answers on screen keep working until they unmount; later renderers evaluate again.
+
+To show final values right after a reload, store the latest snapshot that `onSnapshot` receives (once a finished answer settles, and again when widgets that were out of view then have laid out), and pass it back as `snapshot`. The renderer shows its results in the first commit, and the expression engine then evaluates the answer once in the background: results that match change nothing, and values that differ, such as the current time, replace the snapshot's. A snapshot of other text, or from another OpenDIL version, is ignored. A snapshot holds the first evaluation only, not what the reader changed. It also holds the heights of charts, graphs and diagrams per renderer width, so one answer shown in a narrow panel and in a wide view reserves the right space in each. Every renderer that mounts from a snapshot calls `onSnapshot` again when it settles, with the heights of its own width added; store the latest. Charts and graphs whose height a snapshot recorded, and those that receive their values after the first commit, mount one per task, so an answer with several of them does not mount them in one long task.
 
 ### Update the screen less often
 

@@ -15,7 +15,15 @@ const ScopeContext = createContext({ key: "", returning: NO_RETURN });
 export function usePresentationKey(identity: string) {
   return useContext(ScopeContext).key + "/" + identity;
 }
-export function usePresentationTarget(identity: string, eligible = true) {
+/**
+ * A block that may fade in. `offset` is where it starts in the message
+ * source: only text that arrives after the renderer mounted reveals.
+ */
+export function usePresentationTarget(
+  identity: string,
+  eligible = true,
+  offset = Infinity,
+) {
   const controller = useContext(RevealContext);
   const scope = useContext(ScopeContext);
   const key = scope.key + "/" + identity;
@@ -30,9 +38,10 @@ export function usePresentationTarget(identity: string, eligible = true) {
           element,
           eligible,
           scope.returning.current,
+          offset,
         );
     },
-    [controller, key, eligible, scope],
+    [controller, key, eligible, scope, offset],
   );
 }
 export function VirtualPresentation({

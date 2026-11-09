@@ -40,7 +40,11 @@ Line, bar, and scatter charts:
   chartType: "line" | "bar" | "scatter",
   data: object[],
   xKey: string,
-  series: {dataKey:string,label?:string}[]
+  series: {dataKey:string,label?:string}[],
+  title?: string,
+  description?: string,
+  xLabel?: string,
+  yLabel?: string
 }
 ```
 
@@ -51,7 +55,9 @@ Pie charts:
   chartType: "pie",
   data: object[],
   nameKey: string,
-  valueKey: string
+  valueKey: string,
+  title?: string,
+  description?: string
 }
 ```
 
@@ -59,8 +65,10 @@ Pie charts:
 - Each `series[].dataKey` names a numeric field. `label` defaults to the `dataKey`.
 - `nameKey` and `valueKey` name the slice label and its value.
 - Without `chartType`, the chart draws a line.
+- `title` shows above the chart and names it for screen readers and copies; `description` is a caption under the title.
+- `xLabel` and `yLabel` label the axes. Put units there, as in `"Revenue (USD)"`.
 
-There are no attributes for size, colors, axes, tooltips, or the legend. Put units and a title in text next to the chart.
+There are no attributes for size, colors, ticks, domains, tooltips, or the legend.
 
 ### Interaction
 
@@ -73,9 +81,9 @@ There are no attributes for size, colors, axes, tooltips, or the legend. Put uni
 
 Legend selection belongs to the chart. The answer cannot read it or react to it.
 
-**Accessibility:** keyboard focus on a legend entry highlights its series or slice. Enter or Space on a legend entry works like a click: it shows only that series, or shows all series again. Hold Ctrl (Cmd on macOS) to hide or show one series. In line charts, every series after the first is dashed, so series differ by more than color. A chart is still hard to read without sight. Always add a caption or a small table that states the key values, as the examples do.
+**Accessibility:** keyboard focus on a legend entry highlights its series or slice. Enter or Space on a legend entry works like a click: it shows only that series, or shows all series again. Hold Ctrl (Cmd on macOS) to hide or show one series. In line charts, every series after the first is dashed, so series differ by more than color. A chart is still hard to read without sight. Give it a `title`, which names it for screen readers, and add a caption or a small table that states the key values, as the examples do. [Copying the answer](/docs/renderer/#copy-the-answer-as-shown) copies a chart as its title, description, and data table.
 
-**Styling:** series colors come from the tokens `--chart-1` to `--chart-5`; set them with `tokens` on `DilRenderer`, as described in [Theming](/docs/theming/). The renderer sets these colors as inline custom properties, so charts work under a Content Security Policy without `style-src 'unsafe-inline'`. `classNames` does not apply to `Chart`.
+**Styling:** series colors come from `--dil-chart-1` to `--dil-chart-8`, falling back to `--chart-1` to `--chart-8` and then the stock palette, and repeat from the ninth series; set them with `tokens` on `DilRenderer`, as described in [Theming](/docs/theming/). The renderer sets these colors as inline custom properties, so charts work under a Content Security Policy without `style-src 'unsafe-inline'`. `classNames` does not apply to `Chart`.
 
 **Size:** large data sets count against the display limit of an answer. See [Display limits](/docs/limits/#display).
 

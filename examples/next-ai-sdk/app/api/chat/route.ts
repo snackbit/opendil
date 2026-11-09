@@ -1,5 +1,5 @@
 import { openai } from "@ai-sdk/openai";
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 import { convertToModelMessages, streamText, type UIMessage } from "ai";
 
 export async function POST(req: Request) {

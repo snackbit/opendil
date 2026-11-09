@@ -1,5 +1,13 @@
 "use client";
-import { createElement, lazy, Suspense, type ReactNode } from "react";
+import {
+  createElement,
+  lazy,
+  Suspense,
+  useCallback,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { Circle } from "lucide-react";
 import { ICONS, LABELS, SIZES, SVG_ELEMENTS } from "./vocabulary";
 import { Badge } from "../../../components/ui/display/badge";
@@ -9,10 +17,6 @@ import {
   TableBody,
   TableCell,
 } from "../../../components/ui/display/table";
-import {
-  Popover,
-  PopoverContent,
-} from "../../../components/ui/overlays/popover";
 import {
   Carousel,
   CarouselContent,
@@ -30,6 +34,8 @@ import {
   ButtonControl,
   CheckboxControl,
   InputControl,
+  PopoverContentControl,
+  PopoverControl,
   PopoverTriggerScope,
   PressableControl,
   RadioControl,
@@ -48,17 +54,71 @@ import { DilTableRow, TableScope } from "../../view/table-context";
 import { NodeGraph } from "../graphs/node-graph";
 import { RenderLimit } from "../../view/render-limit";
 import { useReportProblem } from "../../view/render-boundary";
-import { UNSHOWN_PART_MESSAGE } from "../../render-error";
+import { UNSHOWN_PART_MESSAGE, type DilRenderError } from "../../render-error";
+import { PartProblem } from "../../view/problem-view";
+import { PendingBlock } from "../../view/loading-block";
+import { LiteralMarkdownNode } from "../../markdown/markdown-node";
 import { useCustomization } from "../../customization";
 import { CustomComponent } from "../../custom-component";
 import { cn } from "../../../lib/cn";
 import { usePresentationTarget } from "../../view/reveal/presentation";
+import { useReservedHeight } from "../../widget-heights";
+import { useMountTurn } from "../mount-queue";
 const MermaidDiagram = lazy(() =>
   import("../mermaid-diagram").then((module) => ({
     default: module.MermaidDiagram,
   })),
 );
 
+/**
+ * A chart or graph waits for its mount turn, holding the height it last
+ * measured at this width, when it appears after its renderer's first commit,
+ * or in a document seeded with recorded results whose reserve is known.
+ * Otherwise, as in a live document a renderer adopts, it mounts in the first
+ * commit: that commit then has the final layout, which a reserve measured
+ * earlier can miss by a pixel or two.
+ */
+function QueuedWidget({
+  document,
+  nodeId,
+  name,
+  children,
+}: {
+  document: DilDocument;
+  nodeId: number;
+  name: string;
+  children: ReactNode;
+}) {
+  const reserve = useReservedHeight(document.heights, nodeId);
+  const [immediate] = useState(
+    () => !document.presented && !(document.seeded && reserve !== undefined),
+  );
+  const ready = useMountTurn(immediate);
+  return ready ? children : <PendingBlock name={name} reserve={reserve} />;
+}
+/** Mermaid holds the height it last measured at this width while it lays out. */
+function MermaidWidget({
+  document,
+  nodeId,
+  source,
+  presentationRef,
+}: {
+  document: DilDocument;
+  nodeId: number;
+  source: string;
+  presentationRef: (element: HTMLElement | null) => void;
+}) {
+  const reserve = useReservedHeight(document.heights, nodeId);
+  return (
+    <Suspense fallback={<PendingBlock name="Mermaid" reserve={reserve} />}>
+      <MermaidDiagram
+        source={source}
+        presentationRef={presentationRef}
+        reserve={reserve}
+      />
+    </Suspense>
+  );
+}
 export interface PrimitiveProps {
   node: DilNode;
   attributes: Attributes;
@@ -102,12 +162,29 @@ export function Primitive({
       "spacer",
       "label",
       "divider",
+      // Its Markdown blocks reveal one by one.
+      "Markdown",
     ].includes(node.name) &&
     !attributes.border &&
     !attributes.background;
   const presentationRef = usePresentationTarget(
     "node:" + node.id + ":" + instance,
     !svg && !inline && !structural,
+    node.offset,
+  );
+  // Widgets whose height a snapshot records for the next mount's placeholder.
+  const nodeId = node.id;
+  const widget = useRef<HTMLElement | null>(null);
+  const widgetRef = useCallback(
+    (element: HTMLElement | null) => {
+      presentationRef(element);
+      // Repeated templates share a node id; only this instance's entry goes.
+      if (element) document.widgets.set(nodeId, element);
+      else if (document.widgets.get(nodeId) === widget.current)
+        document.widgets.delete(nodeId);
+      widget.current = element;
+    },
+    [presentationRef, document, nodeId],
   );
   const Component = Object.hasOwn(customization.components ?? {}, node.name)
     ? customization.components?.[node.name]
@@ -162,10 +239,9 @@ export function Primitive({
             JSON.stringify(attributes.content ?? {}).length / 128,
           )}
         >
-          <NodeGraph
-            attributes={attributes}
-            presentationRef={presentationRef}
-          />
+          <QueuedWidget document={document} nodeId={node.id} name="NodeGraph">
+            <NodeGraph attributes={attributes} presentationRef={widgetRef} />
+          </QueuedWidget>
         </RenderLimit>
       );
     case "Mermaid":
@@ -174,12 +250,12 @@ export function Primitive({
           document={document}
           cost={50 + Math.ceil(text(attributes.source).length / 16)}
         >
-          <Suspense fallback={null}>
-            <MermaidDiagram
-              source={text(attributes.source)}
-              presentationRef={presentationRef}
-            />
-          </Suspense>
+          <MermaidWidget
+            document={document}
+            nodeId={node.id}
+            source={text(attributes.source)}
+            presentationRef={widgetRef}
+          />
         </RenderLimit>
       );
     case "box":
@@ -231,6 +307,9 @@ export function Primitive({
               ? "tabular-nums"
               : undefined,
             lineHeight: node.name === "title" ? 1.35 : undefined,
+            // A caption annotates the content before it, so it takes its own
+            // line even where the parent lays children out inline (table cells).
+            display: node.name === "caption" ? "block" : undefined,
             margin: 0,
           },
         },
@@ -310,10 +389,12 @@ export function Primitive({
           document={document}
           cost={Math.ceil(JSON.stringify(attributes.content ?? {}).length / 64)}
         >
-          <DilChart
-            content={attributes.content}
-            presentationRef={presentationRef}
-          />
+          <QueuedWidget document={document} nodeId={node.id} name="Chart">
+            <DilChart
+              content={attributes.content}
+              presentationRef={widgetRef}
+            />
+          </QueuedWidget>
         </RenderLimit>
       );
     case "AsyncImage":
@@ -321,6 +402,14 @@ export function Primitive({
         <AsyncImage
           query={text(attributes.query)}
           presentationRef={presentationRef}
+        />
+      );
+    case "Markdown":
+      return (
+        <LiteralMarkdownNode
+          node={node}
+          document={document}
+          instance={instance}
         />
       );
     case "CodeBlock":
@@ -336,7 +425,7 @@ export function Primitive({
         />
       );
     case "popover":
-      return <Popover>{children}</Popover>;
+      return <PopoverControl>{children}</PopoverControl>;
     case "popover-trigger":
       return (
         <PopoverTriggerScope.Provider value={true}>
@@ -345,14 +434,9 @@ export function Primitive({
       );
     case "popover-content":
       return (
-        <PopoverContent
-          side={attributes.side === "top" ? "top" : "bottom"}
-          align={attributes.align === "end" ? "end" : "center"}
-          className="w-auto max-w-[calc(100vw-2rem)]"
-        >
-          {/* Stacks inline children such as consecutive <text> lines. */}
-          <div className="dil-flow gap-2">{children}</div>
-        </PopoverContent>
+        <PopoverContentControl attributes={attributes}>
+          {children}
+        </PopoverContentControl>
       );
     case "carousel":
       return (
@@ -398,17 +482,12 @@ function UnsupportedComponent({
   node: DilNode;
   document: DilDocument;
 }) {
-  useReportProblem(document, {
+  const problem: DilRenderError = {
     kind: "syntax",
+    code: "unknown-component",
     message: `<${node.name}> is neither a stock DIL component nor one passed in the components prop.`,
     offset: node.offset,
-  });
-  return (
-    <div
-      role="alert"
-      className="rounded border border-destructive/30 p-3 text-sm text-destructive"
-    >
-      {UNSHOWN_PART_MESSAGE}
-    </div>
-  );
+  };
+  useReportProblem(document, problem);
+  return <PartProblem error={problem}>{UNSHOWN_PART_MESSAGE}</PartProblem>;
 }

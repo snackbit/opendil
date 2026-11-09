@@ -31,7 +31,7 @@ A graph of labeled nodes and edges that the reader can pan, zoom, and select fro
 
 Positions are hints, not exact coordinates. The graph moves columns apart to keep at least 64 graph pixels between node cards, and moves nodes down so they do not overlap. Without positions, nodes fill three columns. Nodes and edges past the maximum counts are dropped; see [Component limits](/docs/limits/#components).
 
-The graph is 320 px tall and has built-in pan and zoom controls. The reader cannot drag nodes or draw new edges.
+The graph is 320 px tall and has built-in pan and zoom controls. The mouse wheel scrolls the page past the graph; it zooms only while the graph has focus (after a click or Tab) or while Cmd (macOS) or Ctrl is held. Pinch, the controls, and dragging pan and zoom at any time. The reader cannot drag nodes or draw new edges.
 
 **Callback value:** `onSelect` receives the clicked node's `id` as a string. Bind `selectedId` and `onSelect` to the same state, as in the example, so the selection stays visible and other content can react to it.
 
@@ -79,20 +79,46 @@ flowchart LR
 
 <ComponentProps name="Mermaid" />
 
-OpenDIL runs Mermaid at its strict security level, without HTML labels, and sanitizes the SVG it produces, removing links and scripts. It shows "Unsupported or oversized Mermaid source" instead of a diagram when the source contains any of these:
+OpenDIL runs Mermaid at its strict security level, without HTML labels, and sanitizes the SVG it produces, removing links and scripts. Instead of a diagram, it shows "Diagram uses a Mermaid feature that is not supported." and the source, with a copy button, when the source contains any of these:
 
 - a `%%{` configuration directive;
 - any `<` character, so no HTML;
 - the text `click` or `classDef` followed by a space or line break, anywhere in the source. This includes node labels, so `A[Users click Save]` is rejected;
 - a line that starts with `style` or `linkStyle`, or with `---` (which also rules out frontmatter).
 
-Invalid or unfinished source shows "Diagram is incomplete or invalid". For the size limits, see [Component limits](/docs/limits/#components).
+Invalid or unfinished source shows "Diagram is incomplete or invalid.", and a diagram over a size limit says which limit; both also show the source. For the size limits, see [Component limits](/docs/limits/#components).
 
 Mermaid diagrams are pictures. They have no selection or callbacks; use `NodeGraph` when the reader needs to pick a node.
 
 **Accessibility:** a Mermaid diagram is an image of text that most screen readers cannot follow. Add a short text summary of what it shows.
 
 **Styling:** Mermaid uses its neutral theme. `classNames` does not apply to `Mermaid`.
+
+### Open and export diagrams
+
+In host and Shadow DOM modes, pass `onOpenDiagram` to `DilRenderer` or `MarkdownRenderer` to add an "Open diagram" button to rendered Mermaid diagrams, from `<Mermaid>` and from mermaid fences. The button uses your `uiPrimitives` and hands your function a `DilDiagram`:
+
+- `svg`: the sanitized diagram as a standalone SVG document, sized to its natural dimensions;
+- `source`: the Mermaid source from the answer;
+- `title`: the diagram's accessible title from `accTitle`, or `undefined`;
+- `width` and `height`: the natural size in CSS pixels.
+
+Without `onOpenDiagram`, diagrams render as before, without the button. Iframe mode rejects the prop. A diagram whose SVG has neither a viewBox nor a pixel size gets no button, because it cannot be shown or exported on its own.
+
+`@snackbit/opendil/lib` turns the SVG into files, for example for a download menu in your viewer:
+
+```tsx
+import type { DilDiagram } from "@snackbit/opendil";
+import { exportSvg, rasterizeSvg } from "@snackbit/opendil/lib";
+
+async function download(diagram: DilDiagram) {
+  const svg = exportSvg(diagram.svg); // image/svg+xml Blob
+  const png = await rasterizeSvg(diagram.svg, { scale: 2, background: "white" });
+  return [svg, png];
+}
+```
+
+`rasterizeSvg` draws at 1x, 2x, 3x, or 4x the natural size, on a `"transparent"` or `"white"` background, and embeds the page's web fonts that the SVG names, so the PNG matches the screen. Failures reject with a `DilExportError` whose `code` is `invalid-svg`, `missing-size`, `invalid-options`, `too-large` (past 16,384 pixels on a side), `decode-failed`, or `encode-failed`; `exportSvg` throws the same error for `invalid-svg` and `missing-size`. Neither helper sanitizes its input: pass `diagram.svg` or other SVG you trust, because a downloaded SVG file can run scripts when opened.
 
 <SpecExcerpt name="Mermaid" />
 

@@ -12,7 +12,7 @@ import {
   SelectItem,
   SelectItemIndicator,
   SelectItemText,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import { Check, ChevronDown } from "lucide-react";
 import { examples, type ExampleDefinition } from "@/lib/examples/catalog";
 export interface ExamplePickerProps {

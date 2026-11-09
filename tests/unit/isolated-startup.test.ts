@@ -200,7 +200,12 @@ it("forwards validated errors and completion details from the frame", async () =
   port.postMessage({ type: "error", error: "Cut" });
   port.postMessage({
     type: "error",
-    error: { kind: "incomplete", message: "Cut", offset: 0 },
+    error: {
+      kind: "incomplete",
+      code: "unfinished-structure",
+      message: "Cut",
+      offset: 0,
+    },
   });
   port.postMessage({
     type: "commit",
@@ -209,7 +214,14 @@ it("forwards validated errors and completion details from the frame", async () =
   // Frames copied from earlier releases send no incomplete flag.
   port.postMessage({ type: "commit", detail: { scanned: 6, complete: true } });
   await vi.waitFor(() => expect(commits).toHaveLength(2));
-  expect(reported).toEqual([{ kind: "incomplete", message: "Cut", offset: 0 }]);
+  expect(reported).toEqual([
+    {
+      kind: "incomplete",
+      code: "unfinished-structure",
+      message: "Cut",
+      offset: 0,
+    },
+  ]);
   expect(commits).toEqual([
     { scanned: 6, complete: true, incomplete: true },
     { scanned: 6, complete: true, incomplete: false },
@@ -231,6 +243,7 @@ it("forwards validated errors and completion details from the frame", async () =
   await vi.waitFor(() =>
     expect(reported).toContainEqual({
       kind: "source",
+      code: "source-replaced",
       message: "Start a new message instance before replacing its source.",
     }),
   );
@@ -272,11 +285,12 @@ it("bounds the errors a frame can report", async () => {
   expect(reported).toEqual([
     ...Array.from({ length: 20 }, (_, index) => ({
       kind: "syntax",
+      code: "unclassified",
       message: "Flood",
       offset: index + 1,
     })),
-    { kind: "limit", message: UNREPORTED_PROBLEMS },
-    { kind: "incomplete", message: "Cut", offset: 0 },
+    { kind: "limit", code: "problem-limit", message: UNREPORTED_PROBLEMS },
+    { kind: "incomplete", code: "unclassified", message: "Cut", offset: 0 },
   ]);
   port.close();
 });
@@ -296,6 +310,7 @@ it("reports a runtime frame that never starts through onError", () => {
   expect(reported).toEqual([
     {
       kind: "runtime",
+      code: "frame-startup-failed",
       message: expect.stringContaining("/missing-runtime/frame.html"),
     },
   ]);

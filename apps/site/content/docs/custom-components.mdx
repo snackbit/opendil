@@ -87,14 +87,14 @@ Define `od-custom-callout` and `od-custom-action` in your app's stylesheet.
 
 For Shadow DOM, use `mode="shadow"` and pass the CSS for your classes through `shadowStyles`; page CSS does not reach inside the shadow root. See [Style inside a shadow root](/docs/theming/#shadow-dom-css).
 
-The module below implements both tags. `Callout` reads its label from your app's configuration and forwards named style slots. `Action` replaces `button`: it forwards clicks to the answer and honors the answer's `disabled` attribute. It renders `Button` from `@snackbit/opendil/ui` (see [React UI exports](/docs/ui/)); import your design system's button instead. A replacement button cannot authorize clipboard writes; see [Clipboard](#clipboard).
+The module below implements both tags. `Callout` reads its label from your app's configuration and forwards named style slots. `Action` replaces `button`: it forwards clicks to the answer and honors the answer's `disabled` attribute. It renders `Button` from `@snackbit/opendil/lib` (see [React UI exports](/docs/ui/)); import your design system's button instead. A replacement button cannot authorize clipboard writes; see [Clipboard](#clipboard).
 
 <SourceDisclosure label="dil-components.tsx">
 
 ```tsx title="components/dil-components.tsx"
 import { useCallback } from "react";
 import type { DilComponentProps } from "@snackbit/opendil";
-import { Button } from "@snackbit/opendil/ui";
+import { Button } from "@snackbit/opendil/lib";
 
 function Callout({
   children,
@@ -276,12 +276,75 @@ Change the label or the title emphasis below. The answer's state survives the ch
 
 <CustomizationPlayground variant="configuration" />
 
+## Render Markdown elements [#markdown-elements]
+
+Markdown in an answer renders links as inert text and drops images. To make them work in your app, or to restyle code, headings, blockquotes, and tables, pass `markdownComponents`. They apply to Markdown prose, `<Markdown>` blocks, and [`MarkdownRenderer`](/docs/renderer/#render-markdown-without-dil):
+
+```tsx
+import type { DilMarkdownComponents } from "@snackbit/opendil";
+
+const markdownComponents: DilMarkdownComponents = {
+  link: ({ href, children }) =>
+    /^https?:/.test(href) ? (
+      <a href={href} target="_blank" rel="noopener noreferrer">{children}</a>
+    ) : (
+      <span>{children}</span>
+    ),
+  code: ({ language, source, Default, ...rest }) =>
+    language === "chart" ? <MyChart json={source} /> : <Default language={language} source={source} {...rest} />,
+  heading: ({ level, children }) => <MyHeading level={level}>{children}</MyHeading>,
+};
+```
+
+`link` and `image` receive URLs from the answer, after the URL policy: check them before you navigate or load anything. The default policy passes relative URLs and the `http`, `https`, `mailto`, `irc`, `ircs`, and `xmpp` schemes. To admit another scheme your overrides handle, such as `sandbox:` file links, pass `urlTransform(url, attribute)`, which returns the URL to use or `undefined` to drop it (`attribute` is `"href"` or `"src"`); it replaces the default, so keep refusing `javascript:` and other schemes you do not handle. A URL that contains an expression, such as `[x](https://example.com/{id})`, is never passed to your component. `code` receives inline code (`block: false`) and fenced code (`block: true`) with its language; `Default` renders it the stock way, including the code block frame and Mermaid fences. `table` replaces the `table` element, so render one around its rows. Tell the model what works in your app, for example that links are clickable, after the agent spec.
+
+## Use your design system's controls [#design-system-controls]
+
+Stock widgets such as `button`, `checkbox`, `input`, `slider`, `segmented-control`, `radio-group`, and `popover` render OpenDIL's own controls. Pass `uiPrimitives` to render them with yours instead, while OpenDIL keeps each widget's behavior, state binding, and actions. Do not replace stock tags through `components` for this: that would change what the tags mean.
+
+```tsx
+import type { DilUiPrimitives } from "@snackbit/opendil";
+import { Button } from "@/components/ui/button";
+import * as Popover from "@/components/ui/popover";
+
+// Keep the components stable; the map itself may be written inline.
+const uiPrimitives: DilUiPrimitives = {
+  Button,
+  Popover: {
+    Root: Popover.Popover,
+    Trigger: Popover.PopoverTrigger,
+    Content: ({ portalContainer, ...props }) => (
+      <Popover.PopoverContent portalContainer={portalContainer} {...props} />
+    ),
+  },
+};
+
+<DilRenderer mode="host" text={text} uiPrimitives={uiPrimitives} />;
+```
+
+| Primitive     | Used by                                            | Props OpenDIL passes                                                                                 |
+| ------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `Button`      | `button`, carousel arrows, code block actions      | `DilButtonProps`: button props, `variant` (`default`, `outline`, `ghost`), `size`, and a `ref`       |
+| `Checkbox`    | `checkbox`                                         | `id`, `checked`, `onCheckedChange`, `disabled`                                                       |
+| `Input`       | `input`                                            | input props and a `ref`                                                                              |
+| `Slider`      | `slider`                                           | `value` (one number in an array), `min`, `max`, `step`, `onValueChange`, `disabled`, `aria-label`    |
+| `RadioGroup`  | `radio-group`, `radio`                             | `Root`: `value`, `onValueChange`, `disabled`, `aria-label`, `ref`; `Item`: `id`, `value`, `disabled` |
+| `ToggleGroup` | `segmented-control`                                | `Root`: `type="single"`, `value`, `onValueChange`, `segmented`, `size`, `ref`; `Item`: `value`       |
+| `Popover`     | `popover`, `popover-trigger`, `popover-content`    | `Root`; `Trigger` with `asChild`; `Content`: `side`, `align`, `portalContainer`                      |
+| `Tooltip`     | copy feedback on actions, code block action labels | `label`, `children` (the trigger), `open`, `portalContainer`                                         |
+
+The props follow shadcn/ui, so shadcn components usually fit as they are. Grouped primitives share React context and are replaced together; a primitive you leave out stays stock. Charts, graphs, diagrams, and the code editor stay OpenDIL's.
+
+Overlays must render into `portalContainer`, an element inside the renderer's scope, rather than `document.body`: there they keep the answer's tokens and, in Shadow DOM mode, its styles. `portalContainer` is `null` until the scope mounts. Your controls must forward `ref` and spread unknown props, such as `data-dil-action` and Radix's trigger props, onto their element.
+
+`uiPrimitives` works in host and Shadow DOM modes. In Shadow DOM mode, your page's CSS does not reach the controls: pass the CSS they need as `shadowStyles`. CSS custom properties set on the page still inherit into the shadow root, so token-based styles keep working; see [Style inside a shadow root](/docs/theming/#shadow-dom-css). Radix's roving focus, used by its toggle groups, radio groups, and tabs, reads `document.activeElement`, which is the shadow host inside a shadow root: arrow keys then jump to the last option. Use host mode for Radix-based groups, or groups that move focus themselves, as the demo's toggle group does. The [customization demo](/demo/customization/) renders a small design system this way in both modes.
+
 ## Tell the model about your components
 
 The [agent spec](/docs/agent-spec/), the instructions that teach a model to write DIL, covers only the built-in tags. It tells the model to use a custom component only when your prompt supplies a contract with its name, attributes, children, and actions. Put that contract after the spec and your product context, in the spec's own notation. This is the system prompt from [Prompting and evaluation](/docs/prompting/#structure-the-system-prompt), with `Rating` added to its `customComponents` string:
 
 ```ts title="lib/system-prompt.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 const product = [
   "You are the planning assistant in a budgeting app.",
@@ -318,7 +381,7 @@ Your component's own checks are the validation of model output. A capitalized ta
 
 The prebuilt iframe runtime renders only built-in components. React components are functions in your page; they cannot cross into the sandboxed frame.
 
-In iframe mode, TypeScript types `components`, `componentConfig`, `classNames`, `slots`, `className`, and `shadowStyles` as `undefined`. A JavaScript caller that passes one of them gets this error:
+In iframe mode, TypeScript types `components`, `componentConfig`, `classNames`, `slots`, `markdownComponents`, `diagnostics`, `uiPrimitives`, `className`, `theme`, and `shadowStyles` as `undefined`. A JavaScript caller that passes one of them gets this error:
 
 ```text
 OpenDIL customization (components) requires mode="host" or mode="shadow".
@@ -332,7 +395,7 @@ OpenDIL customization (components) requires mode="host" or mode="shadow".
 
 Custom components run with your app's browser privileges in both host and Shadow DOM modes. Shadow DOM separates styles, not JavaScript. The DIL callbacks your component invokes still run in the expression engine.
 
-The expression engine's [limits](/docs/limits/) do not bound your component's own rendering, effects, or network calls. Keep that code responsive, and handle its loading states and asynchronous errors yourself. Validate attributes before you use them in URLs, DOM properties, or requests. See [Security](/docs/security/) for the full trust model.
+The expression engine's [limits](/docs/limits/) do not bound your component's own rendering, effects, or network calls. Keep that code responsive, and handle its loading states and asynchronous errors yourself. Validate attributes before you use them in URLs, DOM properties, or requests: `attributes` holds a string for a quoted value such as `fileKey="report"`, the value of a JSON literal such as `fileKey={"report"}`, whatever another expression returns, and nothing for a missing attribute. Treat anything other than the type you expect as missing, and render your own error state. See [Security](/docs/security/) for the full trust model.
 
 ### Clipboard
 

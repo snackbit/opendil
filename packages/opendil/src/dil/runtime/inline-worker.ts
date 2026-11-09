@@ -1,3 +1,5 @@
+import type { DilRenderErrorCode } from "../render-error";
+import { inlineWorkerFactory } from "./inline-worker-hook";
 /**
  * Host and Shadow DOM renderers run the parser and the QuickJS runtime in blob:
  * workers, which inherit the page's Content Security Policy. When that policy
@@ -85,9 +87,11 @@ export interface InlineWorkerOptions<Message> {
   role: string;
   /** Reader-safe message for failures the page policy does not explain. */
   crashMessage: string;
+  /** Reported with crashMessage. */
+  crashCode: DilRenderErrorCode;
   onMessage: (data: Message) => void;
   /** Receives one reader-safe message when the worker cannot start or stops. */
-  onStop: (message: string) => void;
+  onStop: (message: string, code: DilRenderErrorCode) => void;
 }
 export interface InlineWorker {
   /** Null when the browser refused to construct the worker. */
@@ -95,10 +99,42 @@ export interface InlineWorker {
   /** Terminates the worker without reporting a failure. */
   dispose(): void;
 }
-type Cause = "policy" | "trusted-types" | undefined;
+/** A worker that the testing helper refuses is reported like a blocked one, without console advice. */
+export const REPLACED_WORKER_MESSAGE =
+  "This part can't run here: @snackbit/opendil/testing provides no expression runtime.";
+type Cause = "policy" | "trusted-types" | "replaced" | undefined;
+function blobWorker(
+  source: string,
+  role: string,
+  stop: (cause: Cause) => void,
+): Worker | null {
+  const url = URL.createObjectURL(
+    new Blob([source], { type: "text/javascript" }),
+  );
+  try {
+    return new Worker(workerURL(url));
+  } catch (error) {
+    let cause: Cause;
+    if (error instanceof DOMException && error.name === "SecurityError")
+      cause = "policy";
+    else if (error instanceof TypeError && trustedTypes())
+      cause = "trusted-types";
+    else console.error(`OpenDIL: could not start the ${role} worker.`, error);
+    queueMicrotask(() => stop(cause));
+    return null;
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
 export function startInlineWorker<Message>(
   source: string,
-  { role, crashMessage, onMessage, onStop }: InlineWorkerOptions<Message>,
+  {
+    role,
+    crashMessage,
+    crashCode,
+    onMessage,
+    onStop,
+  }: InlineWorkerOptions<Message>,
 ): InlineWorker {
   // A blob: policy report seen while the worker loads; consulted only for load failures.
   let blocked = false;
@@ -133,26 +169,17 @@ export function startInlineWorker<Message>(
           `Allow OpenDIL's policy with "trusted-types ${TRUSTED_TYPES_POLICY}" ` +
           `(add 'allow-duplicates' if more than one copy of OpenDIL runs on the page). ${advice()}`,
       );
-    onStop(cause ? POLICY_BLOCKED_MESSAGE : crashMessage);
+    if (cause === "replaced")
+      onStop(REPLACED_WORKER_MESSAGE, "worker-blocked-policy");
+    else if (cause) onStop(POLICY_BLOCKED_MESSAGE, "worker-blocked-policy");
+    else onStop(crashMessage, crashCode);
   };
-  const url = URL.createObjectURL(
-    new Blob([source], { type: "text/javascript" }),
-  );
+  const replacement = inlineWorkerFactory()?.(role);
   let worker: Worker | null = null;
-  try {
-    worker = new Worker(workerURL(url));
-  } catch (error) {
-    let cause: Cause;
-    if (error instanceof DOMException && error.name === "SecurityError")
-      cause = "policy";
-    else if (error instanceof TypeError && trustedTypes())
-      cause = "trusted-types";
-    else console.error(`OpenDIL: could not start the ${role} worker.`, error);
-    // Owners attach their listeners after construction.
-    queueMicrotask(() => stop(cause));
-  } finally {
-    URL.revokeObjectURL(url);
-  }
+  // Owners attach their listeners after construction.
+  if (replacement === "blocked") queueMicrotask(() => stop("replaced"));
+  else if (replacement) worker = replacement as unknown as Worker;
+  else worker = blobWorker(source, role, stop);
   if (worker) {
     worker.onmessage = (event: MessageEvent<Message>) => {
       if (!started) {

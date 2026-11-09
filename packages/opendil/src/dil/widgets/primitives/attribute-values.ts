@@ -1,4 +1,5 @@
 import type { CSSProperties } from "react";
+import { isLocalSvgValue } from "../../svg-safety";
 export type Attributes = Readonly<Record<string, unknown>>;
 export function text(value: unknown, fallback = ""): string {
   return typeof value === "string" ? value : fallback;
@@ -41,15 +42,18 @@ const SVG_ATTRIBUTES = new Set([
   "orient",
   "markerEnd",
 ]);
-/** Presentation-only SVG attributes; paint and marker references stay in the document. */
+/**
+ * Presentation-only SVG attributes. Links, `style`, filters, masks and clip
+ * paths are not in the list, and paint and marker references stay in the
+ * document, so inline SVG fetches nothing.
+ */
 export function svgAttributes(attributes: Attributes): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(attributes).filter(
       ([key, value]) =>
         SVG_ATTRIBUTES.has(key) &&
-        (typeof value !== "string" ||
-          (!/javascript:|https?:|data:|[<;\\]/i.test(value) &&
-            (!/url\s*\(/i.test(value) || /^url\(#[\w-]+\)$/.test(value)))),
+        (typeof value === "number" ||
+          (typeof value === "string" && isLocalSvgValue(value))),
     ),
   );
 }

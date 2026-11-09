@@ -61,6 +61,8 @@ beforeEach(() => {
   );
   vi.stubGlobal("cancelAnimationFrame", vi.fn());
   controller.configure({ staggerMs: 50, durationMs: 180 });
+  controller.setStreaming(true);
+  controller.revealFrom = 0;
   dispose = controller.start();
 });
 afterEach(() => {
@@ -99,7 +101,10 @@ it("reveals once per logical identity and never hides a replacement view", () =>
   const replacement = target("record:1");
   paint();
   expect(animations).toHaveLength(1);
-  expect(replacement.element.dataset.dilPhase).toBe("visible");
+  // Shown content is left alone: no attribute, style or layout read.
+  expect(replacement.element.dataset.dilPhase).toBeUndefined();
+  expect(replacement.element.style.opacity).toBe("");
+  expect(replacement.element.inert).toBe(false);
 });
 it("covers children with their parent's reveal and staggers only visual siblings", () => {
   const parent = document.createElement("div"),
@@ -200,7 +205,7 @@ it("queues registrations until committed startup and keeps history scoped", () =
   dispose();
   const history = new PresentationHistory();
   controller = new RevealController(history, () => ({ top: 0, bottom: 900 }));
-  controller.configure({ staggerMs: 50, durationMs: 180 });
+  controller.prime({ staggerMs: 50, durationMs: 180 }, true, 0);
   const first = target("branch/first");
   dispose = controller.start();
   paint();
@@ -313,6 +318,8 @@ it("attaches the lifecycle to committed messages and their actual viewport", asy
       active,
       empty ? null : model,
       viewport,
+      true,
+      0,
     );
     return present
       ? createElement(
@@ -395,7 +402,7 @@ it("reveals first-mount and later targets when React replays effects", async () 
   }
   function Renderer({ ids }: { ids: string[] }) {
     const ref = useRef<HTMLDivElement>(null);
-    const reveal = useProgressiveReveal(ref, true, model);
+    const reveal = useProgressiveReveal(ref, true, model, undefined, true, 0);
     return createElement(
       "div",
       { ref },
@@ -434,7 +441,8 @@ it("reveals first-mount and later targets when React replays effects", async () 
   await render(["first", "later"]);
   paint();
   expect(animations).toHaveLength(2);
-  expect(item("first").dataset.dilPhase).toBe("visible");
+  expect(item("first").dataset.dilPhase).toBeUndefined();
+  expect(item("first").style.opacity).toBe("");
   await act(() => reactRoot.unmount());
 });
 it("reveals the first screen of an iframe whose height trails its content", () => {
@@ -473,7 +481,7 @@ it("reveals the first screen of an iframe whose height trails its content", () =
     top: offset,
     bottom: offset + height,
   }));
-  controller.configure({ staggerMs: 50, durationMs: 180 });
+  controller.prime({ staggerMs: 50, durationMs: 180 }, true, 0);
   dispose = controller.start();
   const [below, offscreen] = [400, innerHeight + 200].map((top, index) => {
     const element = document.createElement("div");
@@ -487,4 +495,71 @@ it("reveals the first screen of an iframe whose height trails its content", () =
   expect(below?.dataset.dilPhase).toBe("revealing");
   expect(offscreen?.dataset.dilPhase).toBe("visible");
   reporter.dispose();
+});
+it("shows content at once where the DOM cannot animate", () => {
+  // jsdom, which host test suites often use, has no Element.animate.
+  Object.defineProperty(HTMLElement.prototype, "animate", {
+    configurable: true,
+    value: undefined,
+  });
+  const plain = target("plain");
+  paint();
+  expect(plain.element.style.opacity).toBe("");
+  expect(plain.element.dataset.dilPhase).toBe("visible");
+  expect(animations).toHaveLength(0);
+});
+it("leaves text present at mount, finished answers and disabled reveal untouched", async () => {
+  const measure = vi.spyOn(HTMLElement.prototype, "getBoundingClientRect");
+  const element = () => {
+    const created = document.createElement("p");
+    root.append(created);
+    return created;
+  };
+  controller.revealFrom = 100;
+  const prefix = element();
+  controller.register("prefix", prefix, true, false, 40);
+  controller.setStreaming(false);
+  const finished = element();
+  controller.register("finished", finished, true, false, 200);
+  controller.setStreaming(true);
+  controller.configure(null);
+  const disabled = element();
+  controller.register("disabled", disabled, true, false, 200);
+  await Promise.resolve();
+  paint();
+  expect(measure).not.toHaveBeenCalled();
+  expect(animations).toHaveLength(0);
+  for (const shown of [prefix, finished, disabled]) {
+    expect(shown.getAttributeNames()).toEqual([]);
+    expect(shown.inert).toBe(false);
+  }
+});
+it("reveals only text that arrives while streaming and shows it all when the stream ends", async () => {
+  controller.revealFrom = 10;
+  const arrived = document.createElement("p"),
+    queued = document.createElement("p"),
+    after = document.createElement("p");
+  root.append(arrived, queued, after);
+  controller.register("arrived", arrived, true, false, 20);
+  // Hidden before the next paint, so it never flashes.
+  await Promise.resolve();
+  expect(arrived.style.opacity).toBe("0");
+  paint();
+  expect(arrived.dataset.dilPhase).toBe("revealing");
+  controller.register("queued", queued, true, false, 30);
+  await Promise.resolve();
+  expect(queued.inert).toBe(true);
+  controller.setStreaming(false);
+  for (const shown of [arrived, queued]) {
+    expect(shown.style.opacity).toBe("");
+    expect(shown.inert).toBe(false);
+    expect(shown.dataset.dilPhase).toBe("visible");
+  }
+  expect(animations[0]?.cancel).toHaveBeenCalled();
+  // Late values, charts and diagrams of a finished answer never fade.
+  controller.register("after", after, true, false, 40);
+  await Promise.resolve();
+  paint();
+  expect(after.getAttributeNames()).toEqual([]);
+  expect(animations).toHaveLength(1);
 });

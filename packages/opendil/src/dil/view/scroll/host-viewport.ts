@@ -11,11 +11,16 @@ export class HostViewport implements RendererViewport {
   private readonly listeners = new Set<() => void>();
   private stop: (() => void) | undefined;
   private last = "";
+  /** The measurement listeners read while a notification runs. */
+  private current: ReturnType<HostViewport["read"]> | undefined;
   constructor(
     private readonly target: () => HTMLElement | null,
     private readonly roots: ScrollRootTracker,
   ) {}
   private measure() {
+    return this.current ?? this.read();
+  }
+  private read() {
     const element = this.target();
     const root = element && this.roots.rootFor(element);
     if (!element || !root) return { origin: 0, offset: 0, height: 0, width: 0 };
@@ -54,7 +59,14 @@ export class HostViewport implements RendererViewport {
   }
   subscribe(listener: () => void) {
     this.listeners.add(listener);
-    this.stop ??= this.observe();
+    if (this.target()) this.stop ??= this.observe();
+    // Content that renders in the renderer's first commit, such as a complete
+    // document, subscribes before the renderer's own ref is attached, which
+    // happens later in that commit.
+    else
+      queueMicrotask(() => {
+        if (this.listeners.size && this.target()) this.stop ??= this.observe();
+      });
     return () => {
       this.listeners.delete(listener);
       if (this.listeners.size) return;
@@ -63,11 +75,18 @@ export class HostViewport implements RendererViewport {
     };
   }
   private notify = (force = false) => {
-    const { offset, height, width } = this.measure();
+    const measured = this.read();
+    const { offset, height, width } = measured;
     const key = offset + ":" + height + ":" + width;
     if (!force && key === this.last) return;
     this.last = key;
-    this.listeners.forEach((listener) => listener());
+    // Listeners read offset, height, width and origin: one layout read serves them all.
+    this.current = measured;
+    try {
+      this.listeners.forEach((listener) => listener());
+    } finally {
+      this.current = undefined;
+    }
   };
   private observe() {
     const element = this.target();

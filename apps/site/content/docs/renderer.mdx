@@ -26,7 +26,7 @@ Types without inline definitions are listed under [Types](#types).
 | `isStreaming`       | `boolean`                          | `false`      | `true` while text may still arrive. Set `false` to finish the answer                              |
 | `mode`              | `"isolated" \| "shadow" \| "host"` | `"isolated"` | Where the answer renders. See [Rendering modes](/docs/rendering-modes/)                           |
 | `showStatus`        | `boolean`                          | `true`       | Shows "Receiving document", "Incomplete", or "Complete". Errors show either way                   |
-| `progressiveReveal` | `ProgressiveReveal`                | `false`      | Fades in new blocks. `true` means a 50 ms stagger and a 180 ms fade                               |
+| `progressiveReveal` | `ProgressiveReveal`                | `false`      | Fades in blocks that stream in. `true` means a 50 ms stagger and a 180 ms fade                    |
 | `updateInterval`    | `UpdateInterval`                   | `"instant"`  | Minimum milliseconds between screen updates while streaming                                       |
 | `autoScroll`        | `AutoScroll`                       | `false`      | Keeps the end of a streaming answer in view. `true` scrolls instantly, without padding            |
 | `scrollContainer`   | `ScrollContainer`                  | `"auto"`     | What scrolls around the renderer, for `autoScroll` and long lists                                 |
@@ -37,13 +37,13 @@ Types without inline definitions are listed under [Types](#types).
 
 All callbacks and the ref work in every mode.
 
-| Prop             | Type                                   | Description                                                                     |
-| ---------------- | -------------------------------------- | ------------------------------------------------------------------------------- |
-| `onFollowChange` | `(following: boolean) => void`         | Reports whether `autoScroll` is following the answer                            |
-| `onInput`        | `(detail: { length: number }) => void` | Called when the renderer forwards new text or the finish signal                 |
-| `onCommit`       | `(detail: RendererMetrics) => void`    | Called after the renderer applies parsed text, at most once per animation frame |
-| `onError`        | `(error: DilRenderError) => void`      | Receives each distinct rendering problem once                                   |
-| `ref`            | `Ref<DilRendererHandle>`               | Handle with `resumeAutoScroll()`. See [Ref handle](#ref-handle)                 |
+| Prop             | Type                                   | Description                                                                       |
+| ---------------- | -------------------------------------- | --------------------------------------------------------------------------------- |
+| `onFollowChange` | `(following: boolean) => void`         | Reports whether `autoScroll` is following the answer                              |
+| `onInput`        | `(detail: { length: number }) => void` | Called when the renderer forwards new text or the finish signal                   |
+| `onCommit`       | `(detail: RendererMetrics) => void`    | Called after the renderer applies parsed text, at most once per animation frame   |
+| `onError`        | `(error: DilRenderError) => void`      | Receives each distinct rendering problem once                                     |
+| `ref`            | `Ref<DilRendererHandle>`               | Handle with `resumeAutoScroll()` and `serialize()`. See [Ref handle](#ref-handle) |
 
 ### Iframe mode
 
@@ -55,21 +55,30 @@ All callbacks and the ref work in every mode.
 
 These props customize the answer, so they need `mode="host"` or `mode="shadow"`.
 
-| Prop              | Type                                  | Description                                                                                                                        |
-| ----------------- | ------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| `components`      | `DilCustomization["components"]`      | Your React components by tag name. See [Custom components](/docs/custom-components/)                                               |
-| `componentConfig` | `DilCustomization["componentConfig"]` | Default attributes per tag, built-in or custom. Attributes in the answer win                                                       |
-| `classNames`      | `DilCustomization["classNames"]`      | A class for each tag's root element. See [Theming](/docs/theming/#class-overrides)                                                 |
-| `slots`           | `DilCustomization["slots"]`           | Named class strings for the parts of your custom components                                                                        |
-| `className`       | `string`                              | A class on the renderer's `.dil-scope` root                                                                                        |
-| `shadowStyles`    | `string`                              | Shadow DOM mode only. Trusted CSS added to the shadow root after the built-in styles. See [Theming](/docs/theming/#shadow-dom-css) |
+| Prop                 | Type                                  | Description                                                                                                                                                                         |
+| -------------------- | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `components`         | `DilCustomization["components"]`      | Your React components by tag name. See [Custom components](/docs/custom-components/)                                                                                                |
+| `componentConfig`    | `DilCustomization["componentConfig"]` | Default attributes per tag, built-in or custom. Attributes in the answer win                                                                                                        |
+| `classNames`         | `DilCustomization["classNames"]`      | A class for each tag's root element. See [Theming](/docs/theming/#class-overrides)                                                                                                  |
+| `slots`              | `DilCustomization["slots"]`           | Named class strings for the parts of your custom components                                                                                                                         |
+| `markdownComponents` | `DilMarkdownComponents`               | Your renderers for Markdown links, images, code, headings, blockquotes, and tables. See [Custom components](/docs/custom-components/#markdown-elements)                             |
+| `diagnostics`        | `DilDiagnostics`                      | `console: false` stops console warnings; `Problem` renders problems instead of the generic wording. See [Report rendering problems](#report-rendering-problems)                     |
+| `uiPrimitives`       | `DilUiPrimitives`                     | Your buttons, inputs, toggles, sliders, popovers, and tooltips inside stock widgets. See [Custom components](/docs/custom-components/#design-system-controls)                       |
+| `onOpenDiagram`      | `(diagram: DilDiagram) => void`       | Adds an "Open diagram" button to Mermaid diagrams. See [Diagrams](/docs/components/diagrams/#open-and-export-diagrams)                                                              |
+| `onSettled`          | `() => void`                          | Called once when a finished answer has its final layout; the root also carries `data-dil-settled`. See [Streaming](/docs/streaming/#know-when-text-has-been-applied)                |
+| `cacheKey`           | `string`                              | Your identity for a finished answer; a remount with the same key and text adopts its live document. See [Performance](/docs/performance/#keep-finished-answers-when-they-unmount)   |
+| `snapshot`           | `DilSnapshot`                         | Results recorded by `onSnapshot` for this text, shown in the first commit and then confirmed                                                                                        |
+| `onSnapshot`         | `(snapshot: DilSnapshot) => void`     | Receives the answer's results and widget heights when a finished answer first settles, and again once widgets that were out of view then have laid out; keep the latest. Plain JSON |
+| `theme`              | `"stock" \| "inherit"`                | `"inherit"` takes colors, radius, and font from your page. See [Theming](/docs/theming/#inherit-your-design-variables)                                                              |
+| `className`          | `string`                              | A class on the renderer's `.dil-scope` root                                                                                                                                         |
+| `shadowStyles`       | `string`                              | Shadow DOM mode only. Trusted CSS added to the shadow root after the built-in styles. See [Theming](/docs/theming/#shadow-dom-css)                                                  |
 
 ### Details
 
-- **`isStreaming`**: setting it to `false` finishes the answer even when `text` did not change. The renderer then stops its parser. An answer that ends with an open tag keeps what it completed and shows "This response ended before it was finished."
+- **`isStreaming`**: setting it to `false` finishes the answer even when `text` did not change. The renderer then stops its parser. An answer that ends with an open tag keeps what it completed and shows "This response ended before it was finished." In host and Shadow DOM modes, the text the renderer has when it mounts, up to 1 MiB, is parsed during the first render, whether it is complete or still streaming: the first commit and server rendering show its content, and no parser worker starts. A stream's later text parses in the page too. Expressions still run in the worker after mount.
 - **`showStatus`**: chat apps usually pass `false`, because the conversation already shows progress. The note about an answer that ended early stays visible.
-- **`progressiveReveal`**: readers who ask for reduced motion see content without the fade.
-- **`updateInterval`**: `0` and `"instant"` update as soon as text is parsed. Reader input, such as typing into an input, always updates at once.
+- **`progressiveReveal`**: only text that arrives while the renderer streams fades in, never a finished answer or the text a stream had when its renderer mounted. Readers who ask for reduced motion see content without the fade.
+- **`updateInterval`**: `0` and `"instant"` update once per animation frame, with the text and expression results that arrived since the last one. Reader input, such as typing into an input, always updates at once.
 - **`autoScroll`**: following starts when streaming starts and pauses when the reader scrolls, swipes, or presses a scrolling key in the same scroller. `"smooth"` falls back to instant scrolling under reduced motion. `padding` scrolls up to that many extra pixels past the answer's end, when the page or list has room below it.
 - **`scrollContainer`**: `"auto"` uses the nearest ancestor that scrolls vertically, crossing Shadow DOM boundaries, and the window when none does. It checks again when the layout changes. `"window"` always uses the page. An element, or a ref to one, names the scroller; `null` and an empty ref behave like `"auto"`.
 - **`tokens`**: the values override both appearances, so pass different values for light and dark when you need them. The iframe mode ignores values that could load resources, with one `console.warn` per token name. The exact rules are on [Limits](/docs/limits/#iframe-startup-and-theme).
@@ -81,10 +90,13 @@ These props customize the answer, so they need `mode="host"` or `mode="shadow"`.
 ```ts
 interface DilRendererHandle {
   resumeAutoScroll(): void;
+  serialize(): DilSerializedDocument | null;
 }
 ```
 
 `resumeAutoScroll()` resumes following and moves to the end of the answer. Use it for a "Jump to latest" button; see [Show a Jump to latest button](#show-a-jump-to-latest-button). It does nothing while `autoScroll` is `false`.
+
+`serialize()` returns what the answer shows now as `{ html, markdown }`, for a copy button; see [Copy the answer as shown](#copy-the-answer-as-shown). It returns `null` in iframe mode, because the page cannot read the frame's document.
 
 In host and Shadow DOM modes, the ref stays `null` until the code for those modes has loaded. Call [`preloadHostRenderer()`](#preloadhostrenderer) to load it early.
 
@@ -96,7 +108,15 @@ function preloadHostRenderer(): Promise<void>;
 
 Host and Shadow DOM modes load their code, including the parser and the expression engine, in a separate chunk the first time a page renders one of them. Pages that only use the iframe mode never download it. Until the chunk loads, a host or Shadow DOM renderer renders nothing, its `ref` is `null`, and a synchronous `renderToString` leaves it out. Streaming server rendering waits for the chunk.
 
-`preloadHostRenderer()` starts loading the chunk. Once its promise resolves, both modes render synchronously. If the chunk fails to load, the promise rejects; a renderer that then renders passes the error to your error boundary and tries again on its next render. See [Load host and Shadow DOM code early](#load-host-and-shadow-dom-code-early).
+`preloadHostRenderer()` starts loading the chunk and returns the same promise on every call, so you can pass it to `use()` in one boundary above your answers. Once it resolves, both modes render synchronously, and an expression runtime is already starting for the first answer that needs one. If the chunk fails to load, the promise rejects; a renderer that then renders passes the error to your error boundary and tries again on its next render. See [Load host and Shadow DOM code early](#load-host-and-shadow-dom-code-early).
+
+## clearDocumentCache()
+
+```ts
+function clearDocumentCache(): void;
+```
+
+Drops every finished answer that `cacheKey` keeps in host and Shadow DOM modes, for example when a user signs out, or between test cases and stories that reuse keys. Unmounted answers are disposed at once. Answers on screen keep working and are disposed when they unmount. A later renderer with a cleared key parses and evaluates its text again. Snapshots you stored from `onSnapshot` are yours to clear. Before the host and Shadow DOM code has loaded, nothing is cached and the call does nothing. See [Keep finished answers when they unmount](/docs/performance/#keep-finished-answers-when-they-unmount).
 
 ## Types
 
@@ -112,7 +132,10 @@ The package root exports these types:
 | `ProgressiveReveal`, `ProgressiveRevealOptions`                              | The `progressiveReveal` value                                                                                                |
 | `UpdateInterval`                                                             | The `updateInterval` value                                                                                                   |
 | `RendererMetrics`                                                            | What `onCommit` receives                                                                                                     |
-| `DilRenderError`, `DilRenderErrorKind`                                       | What `onError` receives                                                                                                      |
+| `DilSnapshot`                                                                | What `onSnapshot` receives and `snapshot` takes: `version`, `sourceHash`, `values`, and `heights`                            |
+| `DilRenderError`, `DilRenderErrorKind`, `DilRenderErrorCode`                 | What `onError` receives                                                                                                      |
+| `DilDiagnostics`, `DilProblemProps`                                          | The `diagnostics` prop and the props of its `Problem` component                                                              |
+| `DilMarkdownComponents` and its `DilMarkdown…Props`                          | The `markdownComponents` prop                                                                                                |
 | `DilComponentProps`                                                          | Props of a custom component; see [Custom components](/docs/custom-components/#read-attributes-and-call-back-into-the-answer) |
 | `DilCustomization`                                                           | `components`, `componentConfig`, `classNames`, and `slots` together                                                          |
 
@@ -444,7 +467,70 @@ export function MonitoredAnswer({
 }
 ```
 
+Every error has a `kind` and a stable `code`, such as `unknown-component`, `malformed-syntax`, `expression-failed`, `source-replaced`, or `render-budget`. Branch on the code; the message is for people. Errors from an iframe runtime copied from an earlier release arrive as `unclassified`.
+
+In host and Shadow DOM modes, `diagnostics` decides what readers see. `Problem` replaces the document alert, the note that an answer ended early (`scope: "document"`), and the generic wording for a part that cannot be shown (`scope: "part"`, which can sit inside a sentence, so render inline content). `console: false` stops OpenDIL's console warnings, which can quote parts of the answer:
+
+```tsx
+<DilRenderer
+  mode="host"
+  text={text}
+  diagnostics={{
+    console: false,
+    Problem: ({ error }) => <span role="alert">Couldn't show this ({error.code})</span>,
+  }}
+/>
+```
+
 To find out why a model writes invalid DIL, see [Prompting and evaluation](/docs/prompting/).
+
+### Render Markdown without DIL
+
+`MarkdownRenderer` from `@snackbit/opendil/lib` renders Markdown with the same styles, `markdownComponents`, and `uiPrimitives`, without parsing DIL: tags, braces, and directives display as typed. It starts no worker, so use it for text that must stay literal, such as what a user wrote. Unlike `DilRenderer`, its `text` can be replaced at any time.
+
+```tsx
+import { MarkdownRenderer } from "@snackbit/opendil/lib";
+
+<MarkdownRenderer text={userMessage} theme="inherit" />;
+```
+
+Pass `inline` to render inside a line of your own text, such as a title or a label: the output is spans only. Paragraphs, headings, list items, quotes, and table cells keep their text and inline formatting without block elements, and fenced code shows as inline code. The line breaks between blocks stay in the text: with `white-space: pre-wrap` on your element, paragraphs stay apart as written; with normal white space, they collapse to a space. A `ref` gives the same `serialize()` as `DilRenderer`'s handle.
+
+### Copy the answer as shown
+
+A copy button should copy what the reader sees, not the DIL source. `serialize()` on the renderer's ref, or `serializeRenderedDocument(element)` from `@snackbit/opendil/lib`, returns:
+
+- `html`: sanitized `text/html` with headings, emphasis, lists, links, tables, code, and quotes. Only `http`, `https`, and `mailto` links and `http(s)` images remain, and no ids, classes, styles, or handlers.
+- `markdown`: the same content as Markdown, for `text/plain`.
+
+Widgets give their current state: inputs their values, checkboxes, switches, and options a mark (`[x]`, `(x)`), sliders their value, a chart its title, caption, and data table, a diagram its source as a fenced block, and a code block its current text. Buttons, hidden tab panels, open overlays, status and problem notices, and scripts are left out. Blocks that are still fading in with `progressiveReveal` are copied. Your own components follow their HTML semantics; mark an element `data-dil-copy="skip"` to leave it out, or give it `data-dil-copy-text` to copy that text instead.
+
+```tsx
+const answer = useRef<DilRendererHandle>(null);
+async function copy() {
+  const copy = answer.current?.serialize();
+  if (!copy) return;
+  await navigator.clipboard.write([
+    new ClipboardItem({
+      "text/html": new Blob([copy.html], { type: "text/html" }),
+      "text/plain": new Blob([copy.markdown], { type: "text/plain" }),
+    }),
+  ]);
+}
+<DilRenderer ref={answer} mode="host" text={text} />;
+```
+
+### Read an answer's text without running it
+
+`extractDilText(source, options?)` from `@snackbit/opendil/lib` returns the reading text of an answer, for search indexes or previews, without React, workers, or QuickJS. It reads Markdown prose, `<Markdown>` bodies, JSON string and number literals such as `{"Revenue"}`, and `label`, `title`, and `caption` attributes. It skips `CodeBlock`, fenced code, SVG, and every other expression.
+
+```ts
+import { extractDilText } from "@snackbit/opendil/lib";
+
+const { text, truncated, components } = extractDilText(answer, { maxLength: 500 });
+```
+
+`maxLength` (default 2,000) bounds the returned text and `maxSourceLength` (default 1 MiB) the source it reads; `truncated` reports either cut. `components` lists your capitalized components in document order, each with the attributes it would receive as strings: quoted values and JSON string literals.
 
 ### Measure applied text
 

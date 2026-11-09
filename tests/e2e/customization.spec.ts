@@ -56,6 +56,79 @@ for (const mode of ["Host DOM", "Shadow DOM"] as const) {
     await page.getByRole("button", { name: "Restore component" }).click();
     await expect(alerts).toHaveCount(0);
   });
+  test(`${mode} stock widgets render with injected host primitives`, async ({
+    page,
+  }) => {
+    await page.goto("demo/customization/");
+    await page
+      .getByRole("button", { name: "Demo settings", exact: true })
+      .click();
+    await page.getByRole("radio", { name: mode, exact: true }).click();
+    await page.keyboard.press("Escape");
+    // Locators pierce open shadow roots, so one scenario covers both modes.
+    const demo = page.locator('[data-demo="host-primitives"]');
+    const reset = demo.getByRole("button", { name: "Reset period" });
+    await expect(reset).toHaveAttribute("data-host-primitive", "button");
+    // Host styles reach the ShadowRoot through shadowStyles; the accent is a
+    // custom property inherited from the page across the boundary.
+    await expect(reset).toHaveCSS("background-color", "rgb(21, 111, 85)");
+    await expect(reset).toHaveCSS("border-radius", "2px");
+    const inShadow = await reset.evaluate(
+      (element) => element.getRootNode() instanceof ShadowRoot,
+    );
+    expect(inShadow).toBe(mode === "Shadow DOM");
+
+    // Roving focus inside the host toggle group, with OpenDIL's state binding.
+    const week = demo.getByRole("radio", { name: "Week" });
+    const month = demo.getByRole("radio", { name: "Month" });
+    await expect(week).toHaveAttribute("data-host-primitive", "toggle-item");
+    await expect(week).toHaveAttribute("data-state", "on");
+    await reset.focus();
+    await page.keyboard.press("Tab");
+    await expect(week).toBeFocused();
+    await page.keyboard.press("ArrowRight");
+    await expect(month).toBeFocused();
+    await page.keyboard.press("Space");
+    await expect(month).toHaveAttribute("data-state", "on");
+    await expect(
+      demo.getByText("Period: month", { exact: true }),
+    ).toBeVisible();
+    await reset.click();
+    await expect(demo.getByText("Period: week", { exact: true })).toBeVisible();
+
+    const reviewed = demo.getByRole("checkbox", { name: "Reviewed" });
+    await expect(reviewed).toHaveAttribute("data-host-primitive", "checkbox");
+    await reviewed.click();
+    await expect(reviewed).toHaveAttribute("data-state", "checked");
+
+    // The host popover portals into the renderer's own scope.
+    const open = demo.getByRole("button", { name: "Open details" });
+    await expect(open).toHaveAttribute("data-variant", "outline");
+    await open.click();
+    const content = demo.getByText("Details from the host popover");
+    await expect(content).toBeVisible();
+    const placement = await content.evaluate((element) => ({
+      portal: element.closest("[data-dil-portals]") !== null,
+      scope: element.closest(".dil-scope") !== null,
+      host: element
+        .closest("[data-host-primitive]")
+        ?.getAttribute("data-host-primitive"),
+      shadow: element.getRootNode() instanceof ShadowRoot,
+    }));
+    expect(placement).toEqual({
+      portal: true,
+      scope: true,
+      host: "popover",
+      shadow: mode === "Shadow DOM",
+    });
+    await expect(demo.locator(".demo-ds-popover")).toHaveCSS(
+      "border-top-color",
+      "rgb(21, 111, 85)",
+    );
+    await page.keyboard.press("Escape");
+    await expect(content).toBeHidden();
+    await expect(open).toBeFocused();
+  });
 }
 
 test("static frame keeps its opaque origin and denies network requests", async ({
@@ -139,6 +212,12 @@ test("customization docs run registered components, themes and named slots", asy
   await styled
     .getByRole("button", { name: "Custom increment", exact: true })
     .click();
+  await expect(
+    styled.getByText("Custom count: 1", { exact: true }),
+  ).toBeVisible();
+  const styledDocument = await styled
+    .locator("[data-dil-document]")
+    .elementHandle();
   await stylingDemo.getByRole("radio", { name: "Violet", exact: true }).click();
   // The accent line is the callout's ::before, inset from its rounded border.
   await expect
@@ -161,6 +240,10 @@ test("customization docs run registered components, themes and named slots", asy
   await expect(
     styled.getByText("Custom count: 1", { exact: true }),
   ).toBeVisible();
+  // New customization objects restyle the same document; it never remounts.
+  expect(await styledDocument?.evaluate((element) => element.isConnected)).toBe(
+    true,
+  );
   await testInfo.attach("live-customization-theme", {
     body: await stylingDemo.screenshot(),
     contentType: "image/png",

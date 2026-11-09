@@ -112,6 +112,8 @@ labels. They do not open their href. Markdown images are suppressed. Use a visib
 plain-text URL if the reader needs the destination, and do not promise that
 clicking it navigates. There is no DIL anchor or image tag to restore browser
 behavior. Bare URLs can be recognized by GFM but still render without navigation.
+A host renderer can make Markdown links or images work; rely on that only when
+the host's instructions say so.
 
 Task-list checkboxes are Markdown presentation. They do not provide onChange,
 state binding, or an action target. Use the checkbox component for user-editable
@@ -616,6 +618,32 @@ Do not include the exact closing delimiter inside its raw source; it terminates
 the component even if it occurs in a quoted source-language string. Use a fenced
 code block for examples that need to show the delimiter literally. Language is a
 display hint, not a compiler selection or permission to execute code.
+
+#### Component: Markdown
+
+```text
+Properties: none
+
+Children: raw
+```
+
+Place Markdown directly between opening and closing tags. Everything is literal
+until the exact `</Markdown>` delimiter: braces, tags, and directives inside
+display as written and never evaluate, and the content renders as Markdown only.
+Use it to quote supplied Markdown, such as a document, a template, or text that
+contains braces, without escaping each expression character.
+
+One line break after the opening tag and one before the closing tag are not
+content. To show the delimiter itself, escape it: a `<` followed by one or more
+backslashes and `/Markdown` displays with one backslash fewer, so
+`<\/Markdown>` displays `</Markdown>`. Hosts that generate this block escape its
+content the same way.
+
+```dil
+<Markdown>
+**Template:** write {name} where the recipient's name goes. It stays as typed.
+</Markdown>
+```
 
 ### Media components
 
@@ -1409,7 +1437,11 @@ Line/bar/scatter content:
   chartType: "line" | "bar" | "scatter",
   data: object[],
   xKey: string,
-  series: {dataKey:string,label?:string}[]
+  series: {dataKey:string,label?:string}[],
+  title?: string,
+  description?: string,
+  xLabel?: string,
+  yLabel?: string
 }
 ```
 
@@ -1420,7 +1452,9 @@ Pie content:
   chartType: "pie",
   data: object[],
   nameKey: string,
-  valueKey: string
+  valueKey: string,
+  title?: string,
+  description?: string
 }
 ```
 
@@ -1432,7 +1466,10 @@ emit area, radar, bubble, candlestick, heatmap, or composed-chart components.
 Data is an array of plain records. For line/bar, xKey identifies a category or
 numeric x field; each series dataKey identifies a finite numeric y field. Label
 is optional and falls back to dataKey. Keep field keys and series keys stable and
-distinct. Supply units in nearby text rather than inventing axis-formatting props.
+distinct. title is shown above the chart and names it for assistive technology
+and copies; description is a one-sentence caption under the title. xLabel and
+yLabel name the axes; put units there, as in "Revenue (USD)", rather than
+inventing axis-formatting props.
 Do not place React components, functions, or expression strings inside content.
 
 Scatter uses numeric x data and the first series' dataKey for the shared numeric

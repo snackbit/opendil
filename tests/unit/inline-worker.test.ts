@@ -81,6 +81,7 @@ function start(role: string) {
   const handle = startInlineWorker("", {
     role,
     crashMessage: "Crashed.",
+    crashCode: "runtime-crashed",
     onMessage: (data) => received.push(data),
     onStop: (message) => stops.push(message),
   });
@@ -196,6 +197,7 @@ it("creates blob: worker URLs through its own Trusted Types policy", async () =>
   const options = {
     role: "trusted",
     crashMessage: "Crashed.",
+    crashCode: "runtime-crashed" as const,
     onMessage: () => {},
     onStop: (message: string) => stops.push(message),
   };
@@ -218,6 +220,7 @@ it("only lets its Trusted Types policy pass blob: URLs", async () => {
     .startInlineWorker("", {
       role: "rules",
       crashMessage: "Crashed.",
+      crashCode: "runtime-crashed",
       onMessage: () => {},
       onStop: () => {},
     })
@@ -238,6 +241,7 @@ it("explains a worker refused by Trusted Types when the policy name is not allow
   fresh.startInlineWorker("", {
     role: "typed",
     crashMessage: "Crashed.",
+    crashCode: "runtime-crashed",
     onMessage: () => {},
     onStop: (message) => stops.push(message),
   });
@@ -257,15 +261,19 @@ it("tells developers to keep the app policy off the isolated frame", async () =>
   expect(diagnostic).toContain("inside OpenDIL's isolated frame");
   expect(diagnostic).not.toContain('mode="host"');
 });
-function fatalEngine() {
+async function fatalEngine() {
   const engine = new ExpressionEngine();
   const halted: string[] = [];
   engine.events.addEventListener("dil:error", (event) => {
     if (event instanceof CustomEvent) halted.push(event.detail.message);
   });
   engine.declare("const [count] = DIL.useState(0)");
+  // The declaration leaves with the task's batch.
+  await Promise.resolve();
   const worker = workers.at(-1);
-  const request = worker?.posted[0] as { id: number } | undefined;
+  const request = worker?.posted.find(
+    (message) => (message as { type?: string }).type !== "init",
+  ) as { id: number } | undefined;
   if (!worker || !request) throw new Error("Missing declaration request");
   worker.onmessage?.({
     data: { id: request.id, fatal: "QuickJS failed to start" },
@@ -273,20 +281,22 @@ function fatalEngine() {
   engine.dispose();
   return halted;
 }
-it("names wasm-unsafe-eval when the page policy blocks WebAssembly", () => {
+it("names wasm-unsafe-eval when the page policy blocks WebAssembly", async () => {
   vi.spyOn(WebAssembly, "Module").mockImplementation(() => {
     throw new WebAssembly.CompileError("violates Content Security policy");
   });
-  expect(fatalEngine()).toEqual([WASM_BLOCKED_MESSAGE]);
+  expect(await fatalEngine()).toEqual([WASM_BLOCKED_MESSAGE]);
   expect(String(errors.mock.calls[0]?.[0])).toContain(
     "blocks WebAssembly, so document expressions cannot run",
   );
 });
-it("keeps the runtime failure when WebAssembly compiles", () => {
-  expect(fatalEngine()).toEqual(["Execution stopped: QuickJS failed to start"]);
+it("keeps the runtime failure when WebAssembly compiles", async () => {
+  expect(await fatalEngine()).toEqual([
+    "Execution stopped: QuickJS failed to start",
+  ]);
   expect(errors).not.toHaveBeenCalled();
 });
-it("shows readers the policy message instead of a parser crash", async () => {
+it("shows readers the policy message instead of a worker crash", async () => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   behavior = "policy";
   const mount = document.createElement("div");
@@ -294,7 +304,13 @@ it("shows readers the policy message instead of a parser crash", async () => {
   const root = createRoot(mount);
   try {
     await act(() =>
-      root.render(createElement(MessageRenderer, { text: "# Title" })),
+      root.render(
+        // A stream parses in the page; its state needs the runtime worker.
+        createElement(MessageRenderer, {
+          text: "{@body const [n] = DIL.useState(1)}<text>{n}</text>\n",
+          isStreaming: true,
+        }),
+      ),
     );
     await vi.waitFor(() =>
       expect(mount.querySelector('[role="alert"]')?.textContent).toBe(
