@@ -11,7 +11,9 @@ import { closeSettings, replaceSource } from "./site-demo-page";
 /** Counts React commits and expression-runtime messages in the page. */
 async function countWork(page: Page) {
   await page.addInitScript(() => {
-    const counts = { commits: 0, posts: 0 };
+    const counts = { commits: 0, posts: 0, jobs: new Array<string>() };
+    const workers = new WeakMap<Worker, number>();
+    let workerId = 0;
     const renderers = new Map<number, unknown>();
     Reflect.set(window, "__REACT_DEVTOOLS_GLOBAL_HOOK__", {
       renderers,
@@ -33,12 +35,24 @@ async function countWork(page: Page) {
     Object.defineProperty(Worker.prototype, "postMessage", {
       configurable: true,
       value(this: Worker, message: unknown, ...rest: unknown[]) {
-        const type =
-          message && typeof message === "object"
-            ? Reflect.get(message, "type")
-            : undefined;
+        const payload = message && typeof message === "object" ? message : null;
+        const type = payload ? Reflect.get(payload, "type") : undefined;
         // The parser worker receives plain text input; these are runtime jobs.
-        if (type === "call" || type === "batch") counts.posts++;
+        if (payload && (type === "call" || type === "batch")) {
+          counts.posts++;
+          if (!workers.has(this)) workers.set(this, ++workerId);
+          const steps = Reflect.get(payload, "steps");
+          const names = Array.isArray(steps)
+            ? steps
+                .map((step: unknown) =>
+                  step && typeof step === "object"
+                    ? Reflect.get(step, "type")
+                    : "unknown",
+                )
+                .join(",")
+            : "";
+          counts.jobs.push(`${workers.get(this)}:${type}:${names}`);
+        }
         Reflect.apply(post, this, [message, ...rest]);
       },
     });
@@ -46,6 +60,7 @@ async function countWork(page: Page) {
       const current = { ...counts };
       counts.commits = 0;
       counts.posts = 0;
+      counts.jobs = [];
       return current;
     });
   });
@@ -56,6 +71,7 @@ function takeCounts(page: Page) {
       Reflect.get(window, "workCounts") as () => {
         commits: number;
         posts: number;
+        jobs: string[];
       }
     )(),
   );
@@ -106,7 +122,7 @@ test("a slider step costs one runtime message and one commit after the control's
   const bound = output.getByText(/^Monthly \d+$/);
   for (const seats of [9, 10, 11]) {
     const cost = await step(page, slider, bound, `Monthly ${seats * 29}`);
-    expect(cost.posts).toBe(1);
+    expect(cost.posts, JSON.stringify(cost)).toBe(1);
     expect(cost.commits).toBeLessThanOrEqual(2);
   }
 });
@@ -120,11 +136,19 @@ test("the landing budget's slider sends one runtime message per step", async ({
   await expect(slider).toBeEnabled();
   const total = page.getByText(/^€\d+\.\d\d$/).first();
   await expect(total).toHaveText("€232.00");
+  // A visible total can arrive before the chart's initial evaluations finish.
+  // Count an interaction only after this renderer's startup work has settled.
+  await expect(
+    page
+      .locator("[data-dil-renderer]")
+      .filter({ has: page.getByRole("slider", { name: "Team members" }) })
+      .first(),
+  ).toHaveAttribute("data-dil-settled", "true");
   await slider.focus();
   for (const seats of [9, 10]) {
     // The chart's own layout effects add commits of their own, so only the
     // runtime traffic is fixed here.
     const cost = await step(page, slider, total, `€${(seats * 29).toFixed(2)}`);
-    expect(cost.posts).toBe(1);
+    expect(cost.posts, JSON.stringify(cost)).toBe(1);
   }
 });

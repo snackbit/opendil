@@ -1,5 +1,8 @@
 import { execFileSync } from "node:child_process";
 
+// Match GitHub's test profile and require Playwright to start its own server.
+process.env.CI = "true";
+
 const checks = [
   "build",
   "check",

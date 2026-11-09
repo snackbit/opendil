@@ -2,6 +2,10 @@
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { unified } from "unified";
+import remarkParse from "remark-parse";
+import remarkGfm from "remark-gfm";
+import { toString } from "mdast-util-to-string";
 import {
   MarkdownRenderer,
   type DilMarkdownRendererHandle,
@@ -25,6 +29,38 @@ function serialize(html: string) {
 }
 
 describe("serializeRenderedDocument", () => {
+  it.each([
+    "a|b",
+    "a\\|b",
+    "a\\\\|b",
+    "\\|[link](javascript:alert(1))",
+    "a\\b",
+  ])("keeps table text and code containing %s in one cell", (value) => {
+    for (const code of [false, true]) {
+      const table = document.createElement("table");
+      table.innerHTML =
+        "<tr><th>Value</th><th>Other</th></tr><tr><td></td><td>safe</td></tr>";
+      const cell = table.rows[1]?.cells[0];
+      if (!cell) throw new Error("Missing fixture cell");
+      const content = document.createElement(code ? "code" : "span");
+      content.textContent = value;
+      cell.append(content);
+      const container = document.createElement("div");
+      container.append(table);
+      const copy = serializeRenderedDocument(container);
+      const block = unified()
+        .use(remarkParse)
+        .use(remarkGfm)
+        .parse(copy.markdown).children[0];
+      if (block?.type !== "table") throw new Error("Expected Markdown table");
+      const cells = block.children[1]?.children;
+      expect(cells).toHaveLength(2);
+      expect(cells?.map((cell) => toString(cell))).toEqual([value, "safe"]);
+      expect(cells?.[0]?.children.some((child) => child.type === "link")).toBe(
+        false,
+      );
+    }
+  });
   it("keeps semantic formatting in both formats", () => {
     const copy = serialize(
       [
@@ -92,6 +128,21 @@ describe("serializeRenderedDocument", () => {
     expect(copy.html).toContain(
       "<table><tbody><tr><td>no</td><td>header</td></tr></tbody></table>",
     );
+  });
+  it("keeps link destinations and image labels inside their table cell", () => {
+    const copy = serialize(
+      '<table><tr><th>Value</th><th>Other</th></tr><tr><td><a href="https://example.com/a|b">A|B</a><img src="https://example.com/a|b" alt="A\\|B"></td><td>safe</td></tr></table>',
+    );
+    const block = unified().use(remarkParse).use(remarkGfm).parse(copy.markdown)
+      .children[0];
+    if (block?.type !== "table") throw new Error("Expected Markdown table");
+    const cells = block.children[1]?.children;
+    expect(cells).toHaveLength(2);
+    expect(cells?.[0]?.children).toMatchObject([
+      { type: "link", url: "https://example.com/a%7Cb" },
+      { type: "image", url: "https://example.com/a%7Cb", alt: "A\\|B" },
+    ]);
+    expect(toString(cells?.[1])).toBe("safe");
   });
   it("escapes Markdown syntax and HTML in text", () => {
     const copy = serialize(

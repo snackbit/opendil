@@ -2,12 +2,14 @@ import type { Block, Inline } from "./model";
 
 // Characters that change meaning anywhere in Markdown text. Underscores matter
 // only at word edges, where they can open or close emphasis.
-const SPECIAL = /[\\`*[\]<~]|(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g;
+const SPECIAL = /[\\`*[\]<~|]|(?<![A-Za-z0-9])_|_(?![A-Za-z0-9])/g;
 // Text at the start of a line that would read as a heading, list, or quote:
 // these interrupt a paragraph, so lines after a hard break need it too.
 const BLOCK_START = /^([ \t]*)(#{1,6}(?=\s|$)|[-+*](?=\s)|\d+(?=[.)]\s)|>)/gm;
-function escape(text: string) {
-  return text.replace(SPECIAL, (match) => "\\" + match);
+function escape(text: string, table = false) {
+  return text.replace(SPECIAL, (match) =>
+    match === "|" && !table ? match : "\\" + match,
+  );
 }
 /**
  * Where inline content goes: a paragraph, a single line such as a heading,
@@ -26,6 +28,7 @@ function codeSpan(raw: string) {
   return fence + padded + fence;
 }
 function destination(url: string) {
+  url = url.replace(/[\\|]/g, encodeURIComponent);
   return /[\s()<>]/.test(url)
     ? "<" + url.replace(/[<>]/g, encodeURI) + ">"
     : url;
@@ -35,24 +38,32 @@ function inline(children: Inline[], context: Context = "prose"): string {
   return children
     .map((child) => {
       switch (child.kind) {
-        case "text": {
-          const text = escape(child.value);
-          return table ? text.replace(/\|/g, "\\|") : text;
-        }
+        case "text":
+          return escape(child.value, table);
         case "strong":
           return "**" + inline(child.children, context) + "**";
         case "emphasis":
           return "*" + inline(child.children, context) + "*";
         case "deleted":
           return "~~" + inline(child.children, context) + "~~";
-        case "code":
+        case "code": {
+          if (!table || !child.value.includes("|"))
+            return codeSpan(child.value);
+          // GFM interprets backslashes before a pipe before parsing code spans.
+          // Put ambiguous separators between spans as entities to preserve their text.
+          if (child.value.includes("\\"))
+            return child.value
+              .split("|")
+              .map((part) => (part ? codeSpan(part) : ""))
+              .join("&#124;");
           return codeSpan(
-            table ? child.value.replace(/\|/g, "\\|") : child.value,
+            child.value.replace(/[\\|]/g, (match) => "\\" + match),
           );
+        }
         case "link":
           return `[${inline(child.children, context)}](${destination(child.href)})`;
         case "image":
-          return `![${escape(child.alt)}](${destination(child.src)})`;
+          return `![${escape(child.alt, table)}](${destination(child.src)})`;
         case "break":
           return context === "prose" ? "\\\n" : "<br>";
         case "mark":

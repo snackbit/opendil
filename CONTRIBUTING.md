@@ -23,6 +23,8 @@ If dependencies were installed with `--ignore-scripts`, run `npm run hooks:insta
 Stage all tracked edits before committing. Every commit runs `npm run ci:local`,
 the same build, quality, browser, package, rebuild, site, links, and example checks
 as GitHub CI. Install Chromium with the setup command below before the first commit.
+The shared runner sets `CI=true` locally too, including the existing CI performance
+budgets and a fresh Playwright server rather than reusing a running site.
 
 ```sh
 npm ci

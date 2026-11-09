@@ -55,6 +55,8 @@
 
 ### Patch Changes
 
+- Markdown copies preserve literal backslashes and pipes in table cells without introducing new columns or links.
+
 - Iframe resize reports preserve pending scroll corrections for an unchanged reading position instead of discarding corrections during row measurement.
 - Virtualized widgets replace temporary size estimates when their data arrives, including when the final widget has the same height as its placeholder, preventing overlapping rows.
 
