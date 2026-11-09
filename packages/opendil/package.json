@@ -1,6 +1,6 @@
 {
   "name": "@snackbit/opendil",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Streaming interactive documents for React using Dynamic Interface Language",
   "type": "module",
   "types": "./dist/types/index.d.ts",

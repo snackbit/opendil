@@ -708,6 +708,8 @@ it("reports a frame's visible part of a scroll container and scrolls it on reque
   other.dispatchEvent(new Event("scroll"));
   expect(post).toHaveBeenCalledTimes(2);
   log.element.scrollTop = 900;
+  // An iframe resize can report between measuring rows and applying their correction.
+  resized(frame);
   reporter.scroll(700, 2);
   expect(log.scrollTo).toHaveBeenLastCalledWith({
     top: 900 - 500 - 100 + 700,

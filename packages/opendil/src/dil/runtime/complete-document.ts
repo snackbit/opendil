@@ -1,6 +1,6 @@
 import { DilParser } from "../parser/dil-parser";
-import { MAX_NODES, ParserSession } from "../parser/parser-session";
-import type { ParserReply, StreamInput, TreeBatch } from "../parser/types";
+import { ParserSession } from "../parser/parser-session";
+import type { StreamInput, TreeBatch } from "../parser/types";
 import { DilDocument } from "./document";
 
 /**
@@ -8,12 +8,12 @@ import { DilDocument } from "./document";
  * the first render, so it has content immediately, including in server
  * rendering. Longer text parses in the worker.
  */
-export const SYNC_PARSE_LIMIT = 1_048_576;
+export const SYNC_PARSE_LIMIT = 16_384;
 /** Parses the rest of a stream in the calling thread, with a worker's interface. */
 export interface StreamParser {
   postMessage(input: StreamInput): void;
   /** Receives each reply; replies before mount went into the document. */
-  onmessage: ((reply: ParserReply) => void) | null;
+  onmessage: ((reply: TreeBatch) => void) | null;
 }
 export interface ParsedDocument {
   document: DilDocument;
@@ -25,8 +25,7 @@ export interface ParsedDocument {
 /**
  * Parses a complete document in the calling thread. Its reports are held
  * until the renderer releases them to the host's listeners. Returns null when
- * the worker must parse it: the text is too long, or it exceeds the node
- * limit, which the worker reports.
+ * the worker must parse it because the initial text is too long.
  */
 export function parseCompleteDocument(
   text: string,
@@ -36,7 +35,6 @@ export function parseCompleteDocument(
   const parser = new DilParser();
   parser.allow(components);
   const batch = parser.append(text, true);
-  if (batch.nodes.some((node) => node.id >= MAX_NODES)) return null;
   const document = new DilDocument();
   document.hold();
   document.apply(batch);
@@ -45,16 +43,16 @@ export function parseCompleteDocument(
 }
 /**
  * Parses the text a stream already has, then each delta, in the calling
- * thread. Parsing a delta takes microseconds, so a renderer that mounts
- * mid-stream shows its prefix in the first commit and starts no parser
- * worker. Returns null for a prefix the worker must parse.
+ * thread. A short prefix appears in the first commit without a parser
+ * worker. Structural limits apply to every append. Returns null for a
+ * prefix the worker must parse.
  */
 export function parseStreamingDocument(
   text: string,
   components: readonly string[],
 ): ParsedDocument | null {
   if (text.length > SYNC_PARSE_LIMIT) return null;
-  const replies: ParserReply[] = [];
+  const replies: TreeBatch[] = [];
   const stream: StreamParser = {
     postMessage: (input) => session.receive(input),
     onmessage: null,
@@ -70,14 +68,18 @@ export function parseStreamingDocument(
     complete: false,
     components: [...components],
   });
-  if (replies.some((reply) => "stopped" in reply)) return null;
   const document = new DilDocument();
   document.hold();
   let scanned = 0;
   for (const reply of replies) {
-    document.apply(reply as TreeBatch);
-    scanned = (reply as TreeBatch).scanned;
+    document.apply(reply);
+    scanned = reply.scanned;
   }
   document.settle();
-  return { document, text, scanned, stream };
+  return {
+    document,
+    text,
+    scanned,
+    ...(document.status.getState().complete ? {} : { stream }),
+  };
 }

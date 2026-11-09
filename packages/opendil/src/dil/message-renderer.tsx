@@ -11,7 +11,7 @@ import {
 } from "react";
 import type { DilRendererHandle } from "./renderer-handle";
 import { useStore } from "zustand";
-import type { ParserReply, StreamInput, TreeBatch } from "./parser/types";
+import type { StreamInput, TreeBatch } from "./parser/types";
 import { useCustomization } from "./customization";
 import { DilDocument } from "./runtime/document";
 import type { ParsedDocument, StreamParser } from "./runtime/complete-document";
@@ -337,7 +337,6 @@ function MessageDocument({
     finalized.current = adopted !== null && !adopted.stream;
     sentNames.current = adopted ? componentNamesRef.current : "";
     let queued: TreeBatch[] = [];
-    let latest = { revision: 0, scanned: 0 };
     const publish = () => {
       const batches = queued;
       queued = [];
@@ -411,30 +410,7 @@ function MessageDocument({
         document.updates.published();
       }
     }
-    latest = {
-      revision: document.status.getState().revision,
-      scanned: adopted?.scanned ?? 0,
-    };
-    const receive = (reply: ParserReply) => {
-      let batch: TreeBatch;
-      if ("stopped" in reply) {
-        document.fail({
-          kind: "limit",
-          code: "parser-node-limit",
-          message: reply.message,
-        });
-        // Nothing more is parsed, so the document is final as it stands.
-        batch = {
-          ...latest,
-          revision: latest.revision + 1,
-          nodes: [],
-          links: [],
-          declarations: [],
-          issues: [],
-          complete: true,
-        };
-      } else batch = reply;
-      latest = { revision: batch.revision, scanned: batch.scanned };
+    const receive = (batch: TreeBatch) => {
       queued.push(batch);
       // Publishes with the frame's evaluation results, in one commit.
       document.updates.enqueue("source", publish);

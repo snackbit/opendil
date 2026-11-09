@@ -15,6 +15,7 @@ export interface FrameViewportMessage {
 export class FrameViewportReporter {
   private revision = 0;
   private lastOffset = 0;
+  private movedAtRevision = 0;
   private observed: HTMLElement | null = null;
   private readonly stop: () => void;
   constructor(
@@ -55,6 +56,7 @@ export class FrameViewportReporter {
   }
   report = () => {
     const { box, bounds, offset } = this.visible();
+    if (offset !== this.lastOffset) this.movedAtRevision = this.revision + 1;
     this.lastOffset = offset;
     // The frame is sized to its content, so its height trails each commit: it
     // starts 0 px tall and grows after content arrives. Content added at its
@@ -78,7 +80,8 @@ export class FrameViewportReporter {
    * request from before the reader's latest scroll is discarded.
    */
   scroll(offset: number, revision: number) {
-    if (revision !== this.revision) return;
+    // Size-only reports do not supersede a correction for the same reading position.
+    if (revision < this.movedAtRevision || revision > this.revision) return;
     const { root, box, bounds, offset: current } = this.visible();
     if (
       root &&

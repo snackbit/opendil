@@ -273,7 +273,11 @@ export class DilDocument {
       incomplete: ending !== null,
       ending,
     });
-    for (const issue of batch.issues) this.report(issue);
+    for (const issue of batch.issues) {
+      if (issue.kind === "limit")
+        this.engine.halt(issue.message, "limit", issue.code);
+      else this.report(issue);
+    }
   }
   private presentedChildren(id: number) {
     const children = this.node(id).getState().children.toArray();

@@ -95,7 +95,11 @@ export function extractDilText(
 ): DilTextResult {
   let truncated = source.length > maxSourceLength;
   const parser = new DilParser();
-  const { links } = parser.append(source.slice(0, maxSourceLength), true);
+  const { links, issues } = parser.append(
+    source.slice(0, maxSourceLength),
+    true,
+  );
+  truncated ||= issues.some((issue) => issue.kind === "limit");
   const nodes = parser.snapshot();
   const children = new Map<number, number[]>();
   for (const { parent, child } of links) {

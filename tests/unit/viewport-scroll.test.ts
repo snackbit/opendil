@@ -27,11 +27,17 @@ it("coalesces virtualizer corrections to the latest offset after layout and igno
   expect(send).toHaveBeenLastCalledWith(160, 1);
   scroller.scroll(170);
   viewport.revision++;
+  viewport.offset = 150;
   paint(32);
   expect(send).toHaveBeenCalledTimes(1);
+  scroller.scroll(180);
+  viewport.height = 800;
+  viewport.revision++;
+  paint(40);
+  expect(send).toHaveBeenLastCalledWith(180, 2);
   scroller.scroll(200);
   scroller.dispose();
   paint(48);
-  expect(send).toHaveBeenCalledTimes(1);
+  expect(send).toHaveBeenCalledTimes(2);
   expect(cancel).toHaveBeenCalled();
 });

@@ -157,3 +157,36 @@ export function parseAttributes(source: string): Record<string, Attribute> {
     throw new Error("Invalid component attributes");
   return result;
 }
+
+/** Read the binding suffix from the right; whitespace runs never backtrack. */
+export function eachBinding(token: string) {
+  const source = token.slice(6).trim();
+  let cursor = source.length;
+  const space = () => {
+    const end = cursor;
+    while (cursor && /\s/.test(source.charAt(cursor - 1))) cursor--;
+    return end !== cursor;
+  };
+  const word = () => {
+    const end = cursor;
+    while (cursor && /[\w$]/.test(source.charAt(cursor - 1))) cursor--;
+    return source.slice(cursor, end);
+  };
+  let item = word();
+  let index = "";
+  let separated = space();
+  if (source.charAt(cursor - 1) === ",") {
+    cursor--;
+    space();
+    index = item;
+    item = word();
+    separated = space();
+    if (!index) return undefined;
+  }
+  if (!item || !separated || word() !== "as") return undefined;
+  // Keep the expression's whitespace, including newlines after JS comments.
+  // Only the final whitespace character belongs to the binding separator.
+  const expressionEnd = cursor - 1;
+  if (!space() || !cursor) return undefined;
+  return { expression: source.slice(0, expressionEnd), item, index };
+}

@@ -463,17 +463,34 @@ describe("a message that ends early", () => {
     );
   });
 
+  it.each([true, false])(
+    "preserves the prefix when initial nesting exceeds the limit (streaming: %s)",
+    async (streaming) => {
+      await show("<text>Kept</text>" + "<box>".repeat(129), streaming);
+      await frame();
+      expect(mount.textContent).toContain("Kept");
+      expect(mount.querySelector('[role="alert"]')?.textContent).toContain(
+        "nesting limit",
+      );
+      expect(status()).toBe("Complete");
+      expect(errors).toEqual([
+        expect.objectContaining({ kind: "limit", code: "parser-depth-limit" }),
+      ]);
+      expect(commits.at(-1)).toMatchObject({ complete: true });
+      expect(workers).toEqual([]);
+    },
+  );
+
   it("finishes the document as a limit when the parser reaches its node limit", async () => {
-    const parser = new DilParser();
+    const parser = new DilParser({ maxNodes: 5 });
     // Over the first-render limit, so the worker parses it.
-    const padding = " ".repeat(1_048_577);
-    await show("<box>Kept</box>" + padding, true);
+    const padding = " ".repeat(16_385);
+    await show("<box>Kept</box>" + padding + "<box/><box/>", true);
     const [parserWorker] = byRole("parser");
     if (!parserWorker) throw new Error("Missing parser worker");
     answer(parser, parserWorker);
     const message =
       "Rendering stopped: this message has more parts than the renderer supports.";
-    parserWorker.onmessage?.({ data: { stopped: "limit", message } });
     await frame();
     expect(mount.textContent).toContain("Kept");
     expect(mount.querySelector('[role="alert"]')?.textContent).toBe(message);

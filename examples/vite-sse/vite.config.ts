@@ -24,5 +24,6 @@ export default defineConfig({
   plugins: [react(), opendilFrameHeader()],
   // Forward chat requests to the API server during development.
   // `vite preview` uses the same proxy.
-  server: { proxy: { "/api": "http://localhost:8787" } },
+  server: { host: "127.0.0.1", proxy: { "/api": "http://127.0.0.1:8787" } },
+  preview: { host: "127.0.0.1" },
 });

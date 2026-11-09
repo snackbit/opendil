@@ -253,8 +253,8 @@ export class ExpressionEngine {
     const urgent = job.type === "call";
     const invalidated = new Set<string>();
     const updated = new Set<string>();
-    // A declaration adds a name without changing what existing names hold, so
-    // results it invalidates publish only if their next evaluation differs.
+    // A declaration adds a name without changing what existing names hold.
+    // Publish its refreshed results only when values differ or a view waited.
     for (const step of steps)
       this.invalidate(
         step.result,
@@ -337,6 +337,8 @@ export class ExpressionEngine {
       entry.value = this.decode(result);
       entry.raw = raw;
     }
+    const awaitingFreshness = entry.awaitingFreshness;
+    entry.awaitingFreshness = false;
     entry.ready = true;
     entry.dirty = false;
     entry.revision = revision;
@@ -345,7 +347,7 @@ export class ExpressionEngine {
     entry.oneShot = false;
     this.replaceHandles(entry, result.handles ?? []);
     this.cache.touch(key);
-    return !same;
+    return !same || awaitingFreshness;
   }
   /** Stops the runtime; a reported halt reaches the document as a dil:error event. */
   halt(
@@ -418,6 +420,9 @@ export class ExpressionEngine {
   isFresh(source: string, scope: Scope = {}) {
     if (this.literal(source)) return true;
     const entry = this.cache.entries.get(this.cache.key(source, scope));
+    // A remounted view can observe a refresh while its old value is cached.
+    // Wake it when freshness returns, even if the value itself is unchanged.
+    if (entry?.dirty && !this.stopped) entry.awaitingFreshness = true;
     return !!entry?.ready && (this.stopped || !entry.dirty);
   }
   /**

@@ -10,7 +10,7 @@ import {
 import { ParserSession } from "../../packages/opendil/src/dil/parser/parser-session";
 import { INLINE_WORKER_HOOK } from "../../packages/opendil/src/dil/runtime/inline-worker-hook";
 import { REPLACED_WORKER_MESSAGE } from "../../packages/opendil/src/dil/runtime/inline-worker";
-import type { ParserReply } from "../../packages/opendil/src/dil/parser/types";
+import type { TreeBatch } from "../../packages/opendil/src/dil/parser/types";
 import type { DilRenderError } from "../../packages/opendil/src/dil/render-error";
 
 let mount: HTMLDivElement;
@@ -111,7 +111,7 @@ describe("installInlineWorkers", () => {
 
 describe("the parser session behind both workers", () => {
   function session(maxNodes?: number) {
-    const replies: ParserReply[] = [];
+    const replies: TreeBatch[] = [];
     const scheduled: (() => void)[] = [];
     const parser = new ParserSession((reply) => replies.push(reply), {
       schedule: (next) => scheduled.push(next),
@@ -141,12 +141,23 @@ describe("the parser session behind both workers", () => {
     parser.receive({ suffix: "<box/><box/><box/>", complete: false });
     parser.receive({ suffix: "more", complete: true });
     drain();
-    expect(replies).toEqual([
-      {
-        stopped: "limit",
-        message:
-          "Rendering stopped: this message has more parts than the renderer supports.",
-      },
+    expect(replies).toHaveLength(1);
+    expect(replies[0]).toMatchObject({
+      complete: true,
+      issues: [
+        {
+          kind: "limit",
+          code: "parser-node-limit",
+          message:
+            "Rendering stopped: this message has more parts than the renderer supports.",
+          offset: 12,
+        },
+      ],
+    });
+    expect(replies[0]?.nodes.map((node) => node.name)).toEqual([
+      "document",
+      "box",
+      "box",
     ]);
   });
 });

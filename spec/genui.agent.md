@@ -385,7 +385,8 @@ are built in. No custom node types, styles, or edge handlers are authorable.
 
 Mermaid accepts source text as a string, also through a fenced mermaid block.
 Keep it within 8,192 characters and 100 edges. Do not include configuration
-directives, frontmatter, authored CSS, HTML, click actions, or external links.
+directives, frontmatter, authored CSS, HTML, click actions, external links, or
+`@{...}` metadata nodes (including image and icon nodes).
 Output is sanitized. Mermaid is a diagram display, not an interaction surface.
 
 ### Maps

@@ -21,6 +21,17 @@ OpenDIL needs two changes to a chat app that already streams answers: your serve
 
 File names below follow the Next.js App Router. In a Vite app, put the files from `components/` in `src/components/`; the server route moves into a small API server in step 2.
 
+<Callout type="warn" title="Protect the provider endpoint">
+  The route snippets below show streaming inside an existing chat application;
+  they are not a complete public API. Authenticate the caller and enforce
+  per-user usage limits before calling a provider. Read request bodies with a
+  byte limit and validate message roles, text sizes, and supported parts at
+  runtime: TypeScript annotations on `req.json()` do not validate input.
+  Never accept client-authored system or developer messages. The runnable
+  examples are restricted to local development and refuse production requests;
+  keep those guards until your application supplies its own access controls.
+</Callout>
+
 <Steps>
 <Step>
 

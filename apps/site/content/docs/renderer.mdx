@@ -75,7 +75,7 @@ These props customize the answer, so they need `mode="host"` or `mode="shadow"`.
 
 ### Details
 
-- **`isStreaming`**: setting it to `false` finishes the answer even when `text` did not change. The renderer then stops its parser. An answer that ends with an open tag keeps what it completed and shows "This response ended before it was finished." In host and Shadow DOM modes, the text the renderer has when it mounts, up to 1 MiB, is parsed during the first render, whether it is complete or still streaming: the first commit and server rendering show its content, and no parser worker starts. A stream's later text parses in the page too. Expressions still run in the worker after mount.
+- **`isStreaming`**: setting it to `false` finishes the answer even when `text` did not change. The renderer then stops its parser. An answer that ends with an open tag keeps what it completed and shows "This response ended before it was finished." In host and Shadow DOM modes, the text the renderer has when it mounts, up to 16,384 UTF-16 code units, is parsed during the first render, whether it is complete or still streaming: the first commit and server rendering show its content, and no parser worker starts. A stream's later text parses in the page too. Longer initial text uses a worker. Expressions still run in the worker after mount.
 - **`showStatus`**: chat apps usually pass `false`, because the conversation already shows progress. The note about an answer that ended early stays visible.
 - **`progressiveReveal`**: only text that arrives while the renderer streams fades in, never a finished answer or the text a stream had when its renderer mounted. Readers who ask for reduced motion see content without the fade.
 - **`updateInterval`**: `0` and `"instant"` update once per animation frame, with the text and expression results that arrived since the last one. Reader input, such as typing into an input, always updates at once.
@@ -530,7 +530,7 @@ import { extractDilText } from "@snackbit/opendil/lib";
 const { text, truncated, components } = extractDilText(answer, { maxLength: 500 });
 ```
 
-`maxLength` (default 2,000) bounds the returned text and `maxSourceLength` (default 1 MiB) the source it reads; `truncated` reports either cut. `components` lists your capitalized components in document order, each with the attributes it would receive as strings: quoted values and JSON string literals.
+`maxLength` (default 2,000) bounds the returned text and `maxSourceLength` (default 1 MiB) the source it reads; `truncated` reports either cut or a parser depth/node limit. `components` lists your capitalized components in document order, each with the attributes it would receive as strings: quoted values and JSON string literals.
 
 ### Measure applied text
 

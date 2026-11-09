@@ -138,6 +138,46 @@ function result(source: string, fields: Record<string, unknown>) {
 const dispatched = () => Promise.resolve();
 /** Non-urgent results publish with the next frame, or its timer fallback. */
 const published = () => new Promise((resolve) => setTimeout(resolve, 60));
+it.each([false, true])(
+  "publishes unchanged refreshes when a view observed pending freshness: %s",
+  async (waiting) => {
+    const sent: { id: number; type: string }[] = [];
+    let worker: ControlledWorker | undefined;
+    class ControlledWorker {
+      onmessage: ((event: { data: unknown }) => void) | null = null;
+      constructor() {
+        worker = this;
+      }
+      postMessage(message: { id: number; type: string }) {
+        if (message.type !== "init") sent.push(message);
+      }
+      terminate() {}
+    }
+    vi.stubGlobal("Worker", ControlledWorker);
+    const engine = create();
+    const source = '({chartType: "pie"})';
+    engine.retain([source]);
+    await dispatched();
+    const answer = (reply: Record<string, unknown>) =>
+      worker?.onmessage?.({ data: { id: sent.at(-1)?.id, ...reply } });
+    answer({ results: [result(source, { value: { chartType: "pie" } })] });
+    await published();
+    const initial = engine.read(source);
+    const signature = engine.signature([source], {}, engine.store.getState());
+    engine.declare("const later=1");
+    await dispatched();
+    answer({ steps: [{ changed: true, revision: 0 }] });
+    if (waiting) expect(engine.isFresh(source)).toBe(false);
+    await dispatched();
+    answer({ results: [result(source, { value: { chartType: "pie" } })] });
+    await published();
+    expect(engine.isFresh(source)).toBe(true);
+    expect(engine.read(source)).toBe(initial);
+    expect(
+      engine.signature([source], {}, engine.store.getState()) !== signature,
+    ).toBe(waiting);
+  },
+);
 it("publishes action-driven binding refreshes immediately even with slow streaming presentation", async () => {
   const scheduler = new PresentationScheduler();
   scheduler.configure(60000);

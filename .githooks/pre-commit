@@ -1,0 +1,8 @@
+#!/bin/sh
+set -eu
+cd "$(git rev-parse --show-toplevel)"
+if ! git diff --quiet; then
+  echo 'Stage your tracked changes before committing so CI checks the commit contents.' >&2
+  exit 1
+fi
+exec npm run ci:local

@@ -6,6 +6,8 @@ export interface EvaluationEntry {
   oneShot: boolean;
   ready: boolean;
   dirty: boolean;
+  /** A view withheld rendering until this entry became fresh again. */
+  awaitingFreshness: boolean;
   value: unknown;
   /** The result as the worker encoded it, to recognize an unchanged value. */
   raw?: string;
@@ -44,6 +46,7 @@ export class EvaluationCache {
         oneShot: false,
         ready: false,
         dirty: true,
+        awaitingFreshness: false,
         value: undefined,
         revision: 0,
         invalidated: 0,

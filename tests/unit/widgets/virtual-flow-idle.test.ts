@@ -5,6 +5,7 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { DilParser } from "../../../packages/opendil/src/dil/parser/dil-parser";
 import { DilDocument } from "../../../packages/opendil/src/dil/runtime/document";
 import { NodeView } from "../../../packages/opendil/src/dil/view/node-view";
+import { VirtualFlow } from "../../../packages/opendil/src/dil/view/virtual-flow";
 import {
   RendererEnvironmentContext,
   type RendererViewport,
@@ -116,4 +117,44 @@ it("keeps a long flow's positions current, ignoring subpixel movement", async ()
   });
   expect(flow.renders() - before).toBeGreaterThan(subpixel);
   await flow.unmount();
+});
+it("replaces a pending row's estimate when its same-height content becomes ready", async () => {
+  vi.spyOn(HTMLElement.prototype, "offsetHeight", "get").mockReturnValue(320);
+  const model = new DilDocument();
+  const container = document.createElement("div");
+  document.body.append(container);
+  const root = createRoot(container);
+  const view = viewport();
+  const show = (pending: boolean) =>
+    act(() =>
+      root.render(
+        createElement(
+          RendererEnvironmentContext.Provider,
+          { value: { viewport: view } },
+          createElement(VirtualFlow, {
+            count: 150,
+            document: model,
+            scope: {},
+            instance: "measured",
+            renderItem: (index) =>
+              index === 0 && pending
+                ? createElement("div", { "data-dil-pending": "true" })
+                : createElement("button", null, "Ready " + index),
+          }),
+        ),
+      ),
+    );
+  const second = () =>
+    container.querySelector<HTMLElement>('[data-virtual-index="1"]');
+  try {
+    await show(true);
+    expect(second()?.style.transform).toBe("translateY(140px)");
+    await show(false);
+    expect(container.querySelector("[data-dil-pending]")).toBeNull();
+    expect(second()?.style.transform).toBe("translateY(320px)");
+  } finally {
+    await act(() => root.unmount());
+    model.engine.dispose();
+    container.remove();
+  }
 });

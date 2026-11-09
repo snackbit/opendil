@@ -164,14 +164,14 @@ describe("parsing a document that ended early", () => {
   });
 
   it("summarizes deep nesting instead of listing every open element", () => {
-    const source = "<box>".repeat(20000);
+    const source = "<box>".repeat(128);
     const message = new DilParser().append(source, true).issues[0]?.message;
     expect(message).toBe(
       "The document ended before it was finished. Unfinished: " +
         "<box> at character 0, <box> at character 5, <box> at character 10, " +
-        "<box> at character 15, 19992 more, <box> at character 99980, " +
-        "<box> at character 99985, <box> at character 99990, " +
-        "<box> at character 99995.",
+        "<box> at character 15, 120 more, <box> at character 620, " +
+        "<box> at character 625, <box> at character 630, " +
+        "<box> at character 635.",
     );
   });
 

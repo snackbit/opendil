@@ -13,6 +13,9 @@
   },
   "packageManager": "npm@11.17.0",
   "scripts": {
+    "prepare": "node scripts/install-hooks.mjs",
+    "hooks:install": "node scripts/install-hooks.mjs",
+    "ci:local": "node scripts/check-ci.mjs",
     "dev": "npm run build:package && npm run dev -w @opendil/site",
     "build:package": "npm run build -w @snackbit/opendil",
     "build": "npm run build:package && npm run build -w @opendil/site",

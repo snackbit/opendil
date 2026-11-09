@@ -27,12 +27,15 @@ A component that fails to render shows its error only after the answer finishes 
 | ---------------------------- | --------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
 | Text length per answer       | 5,000,000 UTF-16 code units | "Message source limit exceeded"                                                                                                             |
 | Parsed nodes per answer      | 100,000                     | "Rendering stopped: this message has more parts than the renderer supports."                                                                |
+| Parsed tree depth            | 128 levels                  | "Rendering stopped: this message exceeds the nesting limit of 128."                                                                         |
 | One Markdown text block      | 65,536 characters           | "Text block exceeds the display limit." in place of that block. In a `<Markdown>` block the limit applies to each paragraph, list, or table |
 | Parser work before it yields | 16,384 code units           | Nothing. Long text is parsed in slices so the parser worker keeps responding                                                                |
 
-The node count includes records readers never see, such as declarations, directives, and whitespace between tags. An answer that reaches the node limit keeps what the parser had already applied and is marked complete.
+The node count includes structural records readers never see, such as branches and whitespace between tags. Depth counts tree nodes below the document root, including conditional branches. The parser checks these limits before allocating the next node, keeps the parsed prefix, and marks the answer complete. `onError` reports `kind: "limit"` with `code: "parser-node-limit"` or `"parser-depth-limit"`.
 
-{/* Sources: message-renderer.tsx (5_000_000), isolated-renderer.tsx (5_000_000), frame.tsx (5_000_000); parser/parser-session.ts (MAX_NODES = 100000, slices of 16384); markdown/markdown-node.tsx (65536). */}
+Text present at mount up to 16,384 UTF-16 code units parses synchronously; longer initial text uses a parser worker. A stream that starts on the synchronous path continues there, with the same structural limits.
+
+{/* Sources: message-renderer.tsx (5_000_000), isolated-renderer.tsx (5_000_000), frame.tsx (5_000_000); parser/tree.ts (100000 nodes, 128 levels), parser/parser-session.ts (slices of 16384); markdown/markdown-node.tsx (65536). */}
 
 ## Expressions
 

@@ -31,6 +31,7 @@ export type DilRenderErrorCode =
   | "component-render-failed"
   | "parser-crashed"
   | "parser-node-limit"
+  | "parser-depth-limit"
   | "runtime-crashed"
   | "frame-startup-failed"
   | "source-limit"
@@ -88,6 +89,7 @@ const CODES: ReadonlySet<string> = new Set<DilRenderErrorCode>([
   "component-render-failed",
   "parser-crashed",
   "parser-node-limit",
+  "parser-depth-limit",
   "runtime-crashed",
   "frame-startup-failed",
   "source-limit",

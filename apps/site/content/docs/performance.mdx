@@ -16,13 +16,13 @@ Each answer is a small application: it has its own parser, often its own JavaScr
 
 Every `DilRenderer` runs its own pipeline: a parser and, when the answer needs one, an expression engine, a sandboxed JavaScript engine (QuickJS) in a Web Worker. Answers share nothing except the code your page has loaded and, in host and Shadow DOM modes, the compiled QuickJS module.
 
-| Resource              | Iframe mode (default)                                          | Host and Shadow DOM modes                                                                    |
-| --------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------------------------------- |
-| Iframe                | One sandboxed iframe per answer                                | None; components render in your page                                                         |
-| Runtime code          | Its own copy of `frame.js`, parsed and run in each iframe      | The page's code, shared by all answers                                                       |
-| Parser worker         | One, from mount until the final text is applied                | None up to 1 MiB of text at mount: it parses in the page. Longer text as in iframe mode      |
-| Expression engine     | One, from the first expression, state, or action until unmount | The same, and one spare started by `preloadHostRenderer()`; a cached answer keeps its engine |
-| Text and parsed nodes | Kept in memory until unmount                                   | The same                                                                                     |
+| Resource              | Iframe mode (default)                                                                | Host and Shadow DOM modes                                                                    |
+| --------------------- | ------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------------- |
+| Iframe                | One sandboxed iframe per answer                                                      | None; components render in your page                                                         |
+| Runtime code          | Its own copy of `frame.js`, parsed and run in each iframe                            | The page's code, shared by all answers                                                       |
+| Parser worker         | None up to 16,384 code units at mount; otherwise one until the final text is applied | The same; short text parses in the page and longer initial text in a worker                  |
+| Expression engine     | One, from the first expression, state, or action until unmount                       | The same, and one spare started by `preloadHostRenderer()`; a cached answer keeps its engine |
+| Text and parsed nodes | Kept in memory until unmount                                                         | The same                                                                                     |
 
 Two details keep finished answers cheap:
 
@@ -300,7 +300,7 @@ Replace the URL with a page of yours that shows finished answers. Set `answers` 
 
 ## Recap
 
-- Each answer has its own parser worker until it finishes, and its own expression engine once it needs one. Iframe mode adds one iframe per answer.
+- Each answer has its own parser, with a worker for longer initial text, and its own expression engine once it needs one. Iframe mode adds one iframe per answer.
 - Stable keys, `memo`, stable props, and `isStreaming={false}` at the end keep long chats cheap.
 - Above 100 items, the renderer virtualizes, in the page or in a scrolling message list. Name the list with `scrollContainer` if detection picks the wrong element.
 - Virtualization limits the mounted interface, not memory.

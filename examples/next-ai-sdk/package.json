@@ -4,15 +4,15 @@
   "type": "module",
   "scripts": {
     "postinstall": "opendil copy-assets --out public/opendil",
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1",
     "build": "next build",
-    "start": "next start",
+    "start": "next start --hostname 127.0.0.1",
     "typecheck": "next typegen && tsc --noEmit"
   },
   "dependencies": {
     "@ai-sdk/openai": "^4.0.108",
     "@ai-sdk/react": "^4.0.166",
-    "@snackbit/opendil": "^0.2.0",
+    "@snackbit/opendil": "^0.3.0",
     "ai": "^7.0.162",
     "next": "^16.4.5",
     "react": "^19.2.0",

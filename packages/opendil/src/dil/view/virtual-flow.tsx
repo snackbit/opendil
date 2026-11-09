@@ -65,6 +65,7 @@ export function VirtualFlow({
   const { viewport } = useRendererEnvironment();
   const group = useId();
   const container = useRef<HTMLElement | null>(null);
+  const pendingRows = useRef(new Set<Element>());
   const table = useContext(TableScope) === "body";
   const setContainer = useCallback((element: HTMLElement | null) => {
     container.current = element;
@@ -157,6 +158,7 @@ export function VirtualFlow({
     measureElement: (element, entry, instance) => {
       // Pending guest values have no final geometry. Keep the virtual estimate until their real content commits.
       if (element.querySelector('[data-dil-pending], [aria-busy="true"]')) {
+        pendingRows.current.add(element);
         const index = Number(
           element.getAttribute(instance.options.indexAttribute),
         );
@@ -165,9 +167,40 @@ export function VirtualFlow({
           instance.options.estimateSize(index)
         );
       }
+      pendingRows.current.delete(element);
       return measureElement(element, entry, instance);
     },
   });
+  useEffect(() => {
+    if (!enabled) return;
+    const element = table
+      ? container.current?.closest("tbody")
+      : container.current;
+    if (!element) return;
+    // A reserved placeholder and the finished widget can have identical heights.
+    // ResizeObserver then has no event to replace the temporary size estimate.
+    const measureReady = () => {
+      for (const row of pendingRows.current) {
+        if (!row.isConnected) pendingRows.current.delete(row);
+        else if (!row.querySelector('[data-dil-pending], [aria-busy="true"]')) {
+          pendingRows.current.delete(row);
+          virtualizer.resizeItem(
+            virtualizer.indexFromElement(row),
+            measureElement(row, undefined, virtualizer),
+          );
+        }
+      }
+    };
+    const observer = new MutationObserver(measureReady);
+    observer.observe(element, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-dil-pending", "aria-busy"],
+    });
+    measureReady();
+    return () => observer.disconnect();
+  }, [enabled, table, virtualizer]);
   const onFocus = useCallback(
     (event: FocusEvent<HTMLElement>) => {
       const element = event.target.closest<HTMLElement>(

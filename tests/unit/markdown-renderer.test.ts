@@ -352,6 +352,11 @@ describe("Mermaid fences beyond the limits", () => {
       "Edge limit exceeded. 101 edges found, but the limit is 100.",
     ],
     [
+      "unsupported",
+      'flowchart TD\nA@{ img: "https://audit.invalid/pixel.svg" }',
+      "Diagram uses a Mermaid feature that is not supported.",
+    ],
+    [
       "invalid",
       "graph TD\n  A -->",
       "Diagram is incomplete or invalid.",
@@ -360,6 +365,7 @@ describe("Mermaid fences beyond the limits", () => {
   ])(
     "explains a %s diagram and shows its source with copy",
     async (problem, source, reason, failure?: string) => {
+      const rendered = mermaidRender.mock.calls.length;
       if (failure) mermaidRender.mockRejectedValueOnce(new Error(failure));
       await act(() =>
         root.render(
@@ -372,6 +378,8 @@ describe("Mermaid fences beyond the limits", () => {
       expect(notice()?.textContent).toBe(
         reason + " Its source is shown instead.",
       );
+      if (problem === "unsupported" || problem === "oversized")
+        expect(mermaidRender.mock.calls).toHaveLength(rendered);
       const diagram = mount.querySelector('[aria-label="Mermaid diagram"]');
       expect(
         diagram

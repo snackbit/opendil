@@ -1,4 +1,9 @@
-import { LexicalState, parseAttributes, tagStart } from "./lexical";
+import {
+  LexicalState,
+  parseAttributes,
+  tagStart,
+  eachBinding,
+} from "./lexical";
 import { AUTOLINK, LiteralTag } from "./literal-tag";
 import {
   blockLine,
@@ -9,7 +14,8 @@ import {
   WAIT,
   type Fence,
 } from "./markdown-lexing";
-import type { DilNode, NodeKind, ParseIssue, TreeBatch } from "./types";
+import type { DilNode, TreeBatch } from "./types";
+import { ParserTree, ParseLimit } from "./tree";
 import { TagVocabulary } from "./vocabulary";
 import { cutTag, finishOpen } from "./unfinished";
 import { CUT, RAW_TAGS, rawClosing } from "./raw-body";
@@ -20,6 +26,8 @@ const MAX_SPAN_RUN = 16;
 export interface DilParserOptions {
   /** Host-registered component names; lowercase ones become DIL tags. */
   components?: readonly string[];
+  /** A smaller node budget for parser-session tests. */
+  maxNodes?: number;
 }
 
 /**
@@ -47,17 +55,11 @@ export class DilParser {
   private literalTag = new LiteralTag();
   private readonly memo = scanMemo();
   private tokenNode = -1;
-  private nodes: DilNode[] = [];
-  private children = new Map<number, number[]>();
-  private stack: [number, ...number[]] = [0];
-  private dirty = new Set<number>();
-  private links: TreeBatch["links"] = [];
-  private declarations: string[] = [];
-  private issues: ParseIssue[] = [];
-  private revision = 0;
+  private readonly tree: ParserTree;
+  private stopped = false;
 
   constructor(options: DilParserOptions = {}) {
-    this.create("root", "document", 0, false);
+    this.tree = new ParserTree(options.maxNodes);
     this.vocabulary.allow(options.components);
   }
 
@@ -66,50 +68,11 @@ export class DilParser {
     this.vocabulary.allow(components);
   }
 
-  private get parent(): number {
-    return this.stack[0];
-  }
-  private closeFrame() {
-    this.finish(this.parent);
-    this.stack.shift();
-  }
-
-  private create(
-    kind: NodeKind,
-    name: string,
-    offset: number,
-    attach = true,
-  ): DilNode {
-    const node: DilNode = {
-      id: this.nodes.length,
-      kind,
-      name,
-      attributes: {},
-      text: "",
-      expressions: [],
-      status: "streaming",
-      offset,
-      error: "",
-    };
-    this.nodes.push(node);
-    this.children.set(node.id, []);
-    this.dirty.add(node.id);
-    if (attach) {
-      this.children.get(this.parent)?.push(node.id);
-      this.links.push({ parent: this.parent, child: node.id });
-    }
-    return node;
-  }
-
-  private touch(node: DilNode) {
-    this.dirty.add(node.id);
-  }
-
   private markdown(): DilNode {
-    const last = this.children.get(this.parent)?.at(-1);
-    const node = last === undefined ? undefined : this.nodes[last];
+    const last = this.tree.children.get(this.tree.parent)?.at(-1);
+    const node = last === undefined ? undefined : this.tree.nodes[last];
     if (node?.kind === "markdown" && node.status === "streaming") return node;
-    return this.create("markdown", "", this.textStart);
+    return this.tree.create("markdown", "", this.textStart);
   }
 
   private flushText(end: number) {
@@ -117,26 +80,26 @@ export class DilParser {
     if (text) {
       const node = this.markdown();
       node.text += text;
-      this.touch(node);
+      this.tree.touch(node);
     }
     this.textStart = end;
   }
 
   private finishMarkdown() {
-    const last = this.children.get(this.parent)?.at(-1);
-    const node = last === undefined ? undefined : this.nodes[last];
+    const last = this.tree.children.get(this.tree.parent)?.at(-1);
+    const node = last === undefined ? undefined : this.tree.nodes[last];
     if (node?.kind === "markdown") {
       node.status = "ready";
-      this.touch(node);
+      this.tree.touch(node);
     }
   }
 
   /** Moves scanned raw text into the open CodeBlock or Markdown. */
   private codeText() {
-    const node = this.nodes[this.parent];
+    const node = this.tree.nodes[this.tree.parent];
     if (node) {
       node.text += this.source.slice(this.textStart, this.cursor);
-      this.touch(node);
+      this.tree.touch(node);
     }
     this.textStart = this.cursor;
   }
@@ -149,33 +112,10 @@ export class DilParser {
     this.cursor = this.source.length;
   }
 
-  private finish(id: number) {
-    const node = this.nodes[id];
-    if (node) {
-      node.status = "ready";
-      this.touch(node);
-    }
-  }
-
-  private fail(node: DilNode, message: string) {
-    node.status = "error";
-    node.error = message;
-    this.touch(node);
-    this.issues.push({
-      kind: "syntax",
-      code: "malformed-syntax",
-      message,
-      offset: node.offset,
-    });
-  }
-
   /** Open constructs keep what they completed; an unfinished token is dropped. */
   private finishIncomplete() {
-    const open = this.stack
-      .slice(0, -1)
-      .reverse()
-      .flatMap((id) => this.nodes[id] ?? []);
-    const node = this.nodes[this.tokenNode];
+    const open = this.tree.stack.flatMap((id) => this.tree.nodes[id] ?? []);
+    const node = this.tree.nodes[this.tokenNode];
     const { mode, source, tokenStart: offset } = this;
     const pending =
       mode === "tag" && node?.kind === "pending" ? node : undefined;
@@ -184,78 +124,81 @@ export class DilParser {
         ? { source, mode, offset, pending }
         : undefined;
     const issue = finishOpen(open, token);
-    for (const changed of [...open, pending]) if (changed) this.touch(changed);
-    if (issue) this.issues.push(issue);
+    for (const changed of [...open, pending])
+      if (changed) this.tree.touch(changed);
+    if (issue) this.tree.issues.push(issue);
   }
 
   /** Returns whether the directive ends the current Markdown block. */
   private directive(token: string): boolean {
     if (token.startsWith("@body ")) {
-      this.declarations.push(token.slice(6).trim());
+      this.tree.declarations.push(token.slice(6).trim());
       return false;
     }
     if (token.startsWith("#each ")) {
       this.finishMarkdown();
-      const node = this.create("each", "each", this.tokenStart);
-      const match =
-        /^#each\s+([\s\S]+)\s+as\s+([\w$]+)(?:\s*,\s*([\w$]+))?$/.exec(token);
-      if (!match?.[1] || !match[2]) {
-        this.fail(node, "Invalid each directive");
+      const node = this.tree.create("each", "each", this.tokenStart);
+      const binding = eachBinding(token);
+      if (!binding) {
+        this.tree.fail(node, "Invalid each directive");
         return true;
       }
       node.attributes = {
-        items: { expression: match[1] },
-        item: { literal: match[2] },
-        index: { literal: match[3] ?? "" },
+        items: { expression: binding.expression },
+        item: { literal: binding.item },
+        index: { literal: binding.index },
       };
-      this.stack.unshift(node.id);
+      this.tree.stack.push(node.id);
       return true;
     }
     if (token.startsWith("#if ")) {
       this.finishMarkdown();
-      const node = this.create("if", "if", this.tokenStart);
-      this.stack.unshift(node.id);
-      const branch = this.create("branch", "branch", this.tokenStart);
+      const node = this.tree.create("if", "if", this.tokenStart);
+      this.tree.stack.push(node.id);
+      const branch = this.tree.create("branch", "branch", this.tokenStart);
       branch.attributes = { condition: { expression: token.slice(4) } };
-      this.stack.unshift(branch.id);
+      this.tree.stack.push(branch.id);
       return true;
     }
     if (token === ":else" || token.startsWith(":else if ")) {
       this.finishMarkdown();
-      const branch = this.nodes[this.parent];
+      const branch = this.tree.nodes[this.tree.parent];
       if (branch?.kind !== "branch") {
-        this.fail(
-          this.create("pending", "", this.tokenStart),
+        this.tree.fail(
+          this.tree.create("pending", "", this.tokenStart),
           "Unexpected else",
         );
         return true;
       }
-      this.closeFrame();
-      const next = this.create("branch", "branch", this.tokenStart);
+      this.tree.close();
+      const next = this.tree.create("branch", "branch", this.tokenStart);
       if (token !== ":else")
         next.attributes = { condition: { expression: token.slice(9) } };
-      this.stack.unshift(next.id);
+      this.tree.stack.push(next.id);
       return true;
     }
     if (token === "/each" || token === "/if") {
       this.finishMarkdown();
-      if (token === "/if" && this.nodes[this.parent]?.kind === "branch")
-        this.closeFrame();
+      if (
+        token === "/if" &&
+        this.tree.nodes[this.tree.parent]?.kind === "branch"
+      )
+        this.tree.close();
       const expected = token.slice(1);
-      if (this.nodes[this.parent]?.kind !== expected) {
-        this.fail(
-          this.create("pending", "", this.tokenStart),
+      if (this.tree.nodes[this.tree.parent]?.kind !== expected) {
+        this.tree.fail(
+          this.tree.create("pending", "", this.tokenStart),
           `Unexpected ${token}`,
         );
         return true;
       }
-      this.closeFrame();
+      this.tree.close();
       return true;
     }
     const node = this.markdown();
     node.text += `DILX${node.expressions.length}END`;
     node.expressions.push(token);
-    this.touch(node);
+    this.tree.touch(node);
     return false;
   }
 
@@ -263,21 +206,24 @@ export class DilParser {
     if (token.startsWith("</")) {
       this.finishMarkdown();
       const name = token.slice(2, -1).trim();
-      if (this.parent === 0 || this.nodes[this.parent]?.name !== name) {
-        this.fail(
-          this.create("pending", name, this.tokenStart),
+      if (
+        this.tree.parent === 0 ||
+        this.tree.nodes[this.tree.parent]?.name !== name
+      ) {
+        this.tree.fail(
+          this.tree.create("pending", name, this.tokenStart),
           `Unexpected closing tag ${name}`,
         );
         return;
       }
-      this.closeFrame();
+      this.tree.close();
       return;
     }
-    const node = this.nodes[this.tokenNode];
+    const node = this.tree.nodes[this.tokenNode];
     if (!node) return;
     const match = /^<([\w-]+)([\s\S]*?)(\/?)>$/.exec(token);
     if (!match?.[1]) {
-      this.fail(node, "Invalid opening tag");
+      this.tree.fail(node, "Invalid opening tag");
       return;
     }
     node.kind = "element";
@@ -285,53 +231,45 @@ export class DilParser {
     try {
       node.attributes = parseAttributes(match[2] ?? "");
     } catch (error) {
-      this.fail(
+      this.tree.fail(
         node,
         error instanceof Error ? error.message : "Invalid attributes",
       );
       return;
     }
-    this.touch(node);
-    if (match[3]) this.finish(node.id);
+    this.tree.touch(node);
+    if (match[3]) this.tree.finish(node.id);
     else {
-      this.stack.unshift(node.id);
+      this.tree.stack.push(node.id);
       if (RAW_TAGS.has(node.name)) this.mode = "code";
     }
   }
 
   append(suffix: string, complete = false): TreeBatch {
+    if (this.stopped) return this.tree.take(true, this.cursor);
     this.source += suffix;
-    this.scan(complete);
-    // At the end of input, unclosed code spans are ordinary prose after all.
-    while (complete && this.mode === "span") {
-      this.abandonSpan(this.source.length);
+    try {
       this.scan(complete);
+      // At the end of input, unclosed code spans are ordinary prose after all.
+      while (complete && this.mode === "span") {
+        this.abandonSpan(this.source.length);
+        this.scan(complete);
+      }
+      if (this.mode === "span") this.flushText(this.span.start);
+      else if (["text", "fence", "literal"].includes(this.mode))
+        this.flushText(this.cursor);
+      if (this.mode === "code") this.codeText();
+      if (complete) {
+        this.finishMarkdown();
+        this.finishIncomplete();
+        this.tree.finish(0);
+      }
+    } catch (error) {
+      if (!(error instanceof ParseLimit)) throw error;
+      this.stopped = true;
+      this.tree.stop(error);
     }
-    if (this.mode === "span") this.flushText(this.span.start);
-    else if (["text", "fence", "literal"].includes(this.mode))
-      this.flushText(this.cursor);
-    if (this.mode === "code") this.codeText();
-    if (complete) {
-      this.finishMarkdown();
-      this.finishIncomplete();
-      this.finish(0);
-    }
-    const batch: TreeBatch = {
-      revision: ++this.revision,
-      nodes: [...this.dirty]
-        .map((id) => structuredClone(this.nodes[id]))
-        .filter((node): node is DilNode => node !== undefined),
-      links: this.links,
-      declarations: this.declarations,
-      issues: this.issues,
-      complete,
-      scanned: this.cursor,
-    };
-    this.dirty.clear();
-    this.links = [];
-    this.declarations = [];
-    this.issues = [];
-    return batch;
+    return this.tree.take(complete || this.stopped, this.cursor);
   }
 
   private scan(complete: boolean) {
@@ -339,7 +277,7 @@ export class DilParser {
       const char = this.source.charAt(this.cursor);
       const next = this.source[this.cursor + 1] ?? "";
       if (this.mode === "code") {
-        const closing = `</${this.nodes[this.parent]?.name ?? ""}>`;
+        const closing = `</${this.tree.nodes[this.tree.parent]?.name ?? ""}>`;
         const end =
           char === "<"
             ? rawClosing(this.source, this.cursor, closing, complete)
@@ -351,7 +289,7 @@ export class DilParser {
           break;
         }
         if (end > 0) {
-          this.closeFrame();
+          this.tree.close();
           this.cursor += end;
           this.textStart = this.blockStart = this.cursor;
           this.mode = "text";
@@ -478,7 +416,9 @@ export class DilParser {
   }
 
   private openTag(complete: boolean): Step {
-    const open = this.parent ? this.nodes[this.parent]?.name : undefined;
+    const open = this.tree.parent
+      ? this.tree.nodes[this.tree.parent]?.name
+      : undefined;
     const rest = complete ? this.source.slice(this.cursor) : "";
     if (rest && cutTag(rest, open, this.vocabulary)) {
       this.flushText(this.cursor);
@@ -507,7 +447,7 @@ export class DilParser {
     this.cursor++;
     this.tokenNode = tag.closing
       ? -1
-      : this.create("pending", tag.name, this.tokenStart).id;
+      : this.tree.create("pending", tag.name, this.tokenStart).id;
   }
 
   private startLiteral(tag: LiteralTag) {
@@ -591,6 +531,6 @@ export class DilParser {
   }
 
   snapshot(): DilNode[] {
-    return structuredClone(this.nodes);
+    return structuredClone(this.tree.nodes);
   }
 }

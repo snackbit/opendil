@@ -91,7 +91,9 @@ export function MermaidDiagram({
     const rejected =
       source.length > SOURCE_LIMIT
         ? "oversized"
-        : /%%\{|click\s|classDef\s|(?:^|\n)\s*(?:style|linkStyle)\s|<|^---/m.test(
+        : // Metadata nodes can load images during Mermaid layout, before SVG
+          // sanitization. Refuse the whole syntax, including quoted/escaped keys.
+          /@\s*\{|%%\{|click\s|classDef\s|(?:^|\n)\s*(?:style|linkStyle)\s|<|^---/m.test(
               source,
             )
           ? "unsupported"

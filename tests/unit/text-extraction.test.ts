@@ -100,9 +100,9 @@ describe("extractDilText", () => {
   });
   it("reads deeply nested containers in document order without overflowing", () => {
     const source =
-      "<box>".repeat(10000) +
+      "<box>".repeat(127) +
       '<First label="Inner"/>Text' +
-      "</box>".repeat(10000) +
+      "</box>".repeat(127) +
       '<Last label="After"/>';
     expect(extractDilText(source)).toEqual({
       text: "Inner\nText\nAfter",
@@ -111,6 +111,13 @@ describe("extractDilText", () => {
         { name: "First", literalAttributes: { label: "Inner" } },
         { name: "Last", literalAttributes: { label: "After" } },
       ],
+    });
+  });
+  it("returns the readable prefix and marks structural limits as truncated", () => {
+    expect(extractDilText("Prefix\n\n" + "<box>".repeat(80000))).toEqual({
+      text: "Prefix",
+      truncated: true,
+      components: [],
     });
   });
   it.each([

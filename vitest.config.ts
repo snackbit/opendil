@@ -5,6 +5,7 @@ export default defineConfig({
     coverage: {
       provider: "v8",
       include: [
+        "examples/*/**/request.ts",
         "packages/opendil/src/dil/parser/**/*.ts",
         "packages/opendil/src/dil/runtime/**/*.ts",
         "packages/opendil/src/dil/markdown/markdown-stream.ts",

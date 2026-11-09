@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import {
+  closeSettings,
   openShowcase,
   previewPane,
   replaceSource,
@@ -13,7 +14,69 @@ async function mode(page: Page, name: "Shadow DOM" | "Host DOM") {
     .getByRole("button", { name: "Demo settings", exact: true })
     .click();
   await page.getByRole("radio", { name, exact: true }).click();
-  await page.keyboard.press("Escape");
+  await closeSettings(page);
+}
+for (const name of ["Iframe", "Shadow DOM", "Host DOM"] as const) {
+  test(`${name} rejects resource-loading diagrams before rendering and bounds nested input`, async ({
+    page,
+  }) => {
+    const requests: string[] = [];
+    await page.route("https://audit.invalid/**", (route) => {
+      requests.push(route.request().url());
+      return route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: '<svg xmlns="http://www.w3.org/2000/svg" width="10" height="10"/>',
+      });
+    });
+    await openShowcase(page);
+    if (name !== "Iframe") await mode(page, name);
+    const ui =
+      name === "Iframe"
+        ? page.frameLocator("iframe").first()
+        : page
+            .locator(
+              `[data-dil-mode="${name === "Host DOM" ? "host" : "shadow"}"]`,
+            )
+            .first();
+    const editor = page.getByRole("textbox", {
+      name: "DIL source",
+      exact: true,
+    });
+    for (const metadata of [
+      'img: "https://audit.invalid/pixel.svg"',
+      '"img": "https://audit.invalid/pixel.svg"',
+      '"\\u0069mg": "https://audit.invalid/pixel.svg"',
+    ]) {
+      const diagram = `flowchart TD\nA@{ ${metadata}, label: "A", h: 60 }`;
+      await replaceSource(
+        page,
+        editor,
+        `<Mermaid source={${JSON.stringify(diagram)}}/>`,
+      );
+      await expect(ui.getByRole("alert")).toContainText("not supported");
+      expect(requests).toEqual([]);
+    }
+    // Exercise both the synchronous first render and the parser worker.
+    for (const depth of [1000, 2000]) {
+      const prefix = `Prefix ${depth}`;
+      await replaceSource(
+        page,
+        editor,
+        prefix + "\n\n" + "<box>".repeat(depth) + "</box>".repeat(depth),
+      );
+      await expect(ui.getByRole("alert")).toContainText("nesting limit");
+      await expect(ui.getByText(prefix, { exact: true })).toBeVisible();
+    }
+    await replaceSource(
+      page,
+      editor,
+      '<Mermaid source={"flowchart TD\\nA-->B"}/>',
+    );
+    await expect(ui.getByLabel("Mermaid diagram").locator("svg")).toBeVisible();
+    await expect(ui.getByRole("alert")).toHaveCount(0);
+    expect(requests).toEqual([]);
+  });
 }
 for (const name of ["Shadow DOM", "Host DOM"] as const) {
   test(`${name} retains stock interactions and scoped overlays`, async ({

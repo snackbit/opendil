@@ -7,6 +7,73 @@ import { SVG_ELEMENTS } from "../../packages/opendil/src/dil/widgets/primitives/
 import { extractApi } from "../../scripts/agent-spec-api.mjs";
 
 describe("DIL incremental parsing", () => {
+  it("rejects a whitespace-heavy each directive without backtracking", () => {
+    const parser = new DilParser();
+    const start = performance.now();
+    const result = parser.append("{#each " + " ".repeat(1500) + "x}", true);
+    expect(result.issues[0]?.message).toBe("Invalid each directive");
+    expect(performance.now() - start).toBeLessThan(300);
+  });
+  it("stops excessive nesting before constructing the rest of the tree", () => {
+    const parser = new DilParser();
+    const result = parser.append(
+      "<box>".repeat(80000) + "</box>".repeat(80000),
+      true,
+    );
+    expect(result.issues).toContainEqual(
+      expect.objectContaining({ kind: "limit", code: "parser-depth-limit" }),
+    );
+    expect(parser.snapshot().length).toBeLessThan(200);
+    expect(result.complete).toBe(true);
+    expect(parser.append("<text>ignored</text>", true).nodes).toEqual([]);
+  });
+  it.each([
+    ['["a  b", "as"] as item', '["a  b", "as"]', "item", ""],
+    ["items as as , index", "items", "as", "index"],
+    ["items\n as\n item,\tindex", "items\n", "item", "index"],
+    ['["a"] // label\n as item', '["a"] // label\n', "item", ""],
+  ])(
+    "keeps each expression text and reads bindings from %s",
+    (source, expression, item, index) => {
+      const batch = new DilParser().append(`{#each ${source}}{/each}`, true);
+      expect(
+        batch.nodes.find((node) => node.kind === "each")?.attributes,
+      ).toEqual({
+        items: { expression },
+        item: { literal: item },
+        index: { literal: index },
+      });
+      expect(batch.issues).toEqual([]);
+    },
+  );
+  it.each([
+    "items as",
+    "as item",
+    "items as ,i",
+    "items as item,",
+    "items as item junk",
+  ])("rejects malformed each bindings: %s", (source) => {
+    expect(
+      new DilParser().append(`{#each ${source}}`, true).issues[0]?.code,
+    ).toBe("malformed-syntax");
+  });
+  it("applies nesting and node limits to fragmented input and directives", () => {
+    for (const token of ["<box>", "{#if true}", "{#each [] as item}"]) {
+      const parser = new DilParser();
+      let limited = false;
+      for (let i = 0; i < 130; i++) {
+        const batch = parser.append(token);
+        limited ||= batch.issues.some(
+          (issue) => issue.code === "parser-depth-limit",
+        );
+      }
+      expect(limited).toBe(true);
+      expect(parser.snapshot().length).toBeLessThan(200);
+    }
+    const batch = new DilParser().append("<text/>".repeat(100001), true);
+    expect(batch.nodes).toHaveLength(100000);
+    expect(batch.issues[0]?.code).toBe("parser-node-limit");
+  });
   it("accepts an empty document and streams plain trailing text", () => {
     const empty = new DilParser();
     expect(empty.append("", true).complete).toBe(true);

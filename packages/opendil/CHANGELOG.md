@@ -1,5 +1,71 @@
 # @snackbit/opendil
 
+## 0.3.0
+
+### Minor Changes
+
+- d7e7823: Make documents settle and respond faster:
+
+  - Expressions evaluate in batches: a document's declarations and evaluations reach QuickJS in one message, and an action's reply carries every result it changed. Results reach the screen together, once per animation frame, and reader actions in the next commit. A result that did not change keeps its value, so nothing renders again. `updateInterval` still limits how often streamed updates appear.
+  - `progressiveReveal` fades in only text that arrives while the renderer streams. Finished answers, history, and the text a stream had when its renderer mounted appear at once, without the controller measuring or touching them. Ending the stream shows queued and fading blocks at once.
+  - `onSettled` (host and Shadow DOM modes) and the `data-dil-settled` attribute report when a finished answer has the final layout readers can see. A chart, graph or diagram outside the visible area keeps its reserved height while it loads and does not delay it; `onSnapshot` then reports again with its height once it has laid out.
+  - `preloadHostRenderer()` returns the same promise on every call and starts an expression runtime ahead of the first answer. Later runtimes reuse the compiled WebAssembly module, and an effect React replays under StrictMode keeps the document and runtime it already has.
+  - A flow short enough to render every child no longer measures itself on scroll.
+  - `cacheKey` (host and Shadow DOM modes) keeps up to 12 unmounted finished answers alive, so a renderer that mounts again with the same key and text shows its final layout in the first commit, without worker work. A streamed answer that receives its key when it finishes is kept too. `clearDocumentCache()` drops the kept answers, for example at sign-out or between test cases. `onSnapshot` and `snapshot` carry an answer's results and widget heights across reloads as JSON; the runtime confirms them in the background.
+  - Text a streaming renderer has at mount, up to 16,384 UTF-16 code units, and the rest of that stream parse in the page, so a renderer mounted mid-answer shows its prefix in the first commit. Longer initial text uses a worker. Mermaid diagrams lay out in an idle callback.
+  - A finished answer that has not settled before keeps the height of its first frame (`data-dil-held`) until it settles, so the page around it moves once. Snapshot widget heights are kept per renderer width (`DilSnapshot` version 2), so a narrow and a wide view each reserve their own. Charts and graphs that receive their values after an answer's first commit, or whose height a snapshot recorded, mount one per task.
+  - An empty answer mounted before its stream starts streams into a new document, so its text reveals instead of failing as a restart.
+
+- d7e7823: Add APIs for hosts that render answers with their own design system and copy them as shown:
+
+  - `uiPrimitives` (host and Shadow DOM modes) replaces the buttons, checkboxes, inputs, sliders, radio and toggle groups, popovers, and tooltips inside stock widgets with your components. Overlays receive a `portalContainer` inside the renderer's scope.
+  - `DilRendererHandle.serialize()`, a `MarkdownRenderer` ref, and `serializeRenderedDocument()` return what an answer shows as sanitized HTML and Markdown, with widgets in their current state. Blocks that are still fading in with progressive reveal are included. Iframe mode returns `null`.
+  - Text that is complete when a host or Shadow DOM renderer mounts, up to 16,384 UTF-16 code units, is parsed in the first render, so the first commit and server rendering show it. Longer initial text uses a worker.
+  - `MarkdownRenderer` accepts `inline` to render phrasing content inside spans; the line breaks between blocks stay in the text, so `white-space: pre-wrap` keeps paragraphs apart. It also accepts `uiPrimitives`.
+  - `markdownComponents.urlTransform` sets which link and image URLs reach your overrides; the default policy is unchanged.
+  - Charts read `--dil-chart-1` to `--dil-chart-8` before `--chart-*`, so palettes of up to eight colors map one to one, and accept `title`, `description`, `xLabel`, and `yLabel`. Copies of the answer show a chart as its title, description, and data table.
+  - New layout and typography tokens (`--dil-font-size`, `--dil-font-mono`, `--dil-item-gap`, heading, list, quote, table, and code tokens) can be set on any ancestor. Segmented controls are styled through stock classes instead of `data-slot`, so injected controls keep their styles.
+  - The clipboard announcement region renders only when the answer has an action control or a clipboard outcome.
+  - Markdown fences render in the `CodeBlock` frame, with highlighting, a language label, word wrap, and copy. `markdownComponents.code` overrides still win, and their `Default` includes the frame. `--dil-code-border`, `--dil-code-font-size`, and `--dil-code-line-height` join the code tokens, which now style fences and `CodeBlock` alike. Copying code past the 65,536-character limit says so instead of pointing at clipboard permissions.
+  - A Mermaid diagram that is too large, uses an unsupported feature, has too many edges, or does not parse now says which, and shows its source with copy instead of a diagram.
+
+- d7e7823: One `@snackbit/opendil/lib` entry, diagram hooks, and steadier layout:
+
+  - **Breaking:** `@snackbit/opendil/ui` and `@snackbit/opendil/agent-spec` are replaced by `@snackbit/opendil/lib`, which also exports `MarkdownRenderer`, `serializeRenderedDocument`, `literalMarkdown`, `extractDilText`, `exportSvg`, and `rasterizeSvg`. The package exports `.`, `./lib`, `./styles.css`, `./tailwind.css`, `./testing`, `./package.json`, and the three spec files. `./lib` imports in Node and server rendering without a DOM, its React half carries `"use client"` and the rest does not, and bundlers remove its unused exports. Change `from "@snackbit/opendil/ui"` and `from "@snackbit/opendil/agent-spec"` to `from "@snackbit/opendil/lib"`.
+  - `onOpenDiagram` (host and Shadow DOM modes, and `MarkdownRenderer`) adds an "Open diagram" button to Mermaid diagrams and hands your function the sanitized standalone SVG, the source, the accessible title, and the natural size. `exportSvg()` and `rasterizeSvg()` turn it into SVG and PNG files (1x, 2x, or 4x, transparent or white), with stable `DilExportError` codes.
+  - The `CodeBlock` editor's textarea and highlight layer share one set of metrics, from the code tokens and the new `--dil-code-tab-size`, even when page CSS reaches the textarea, and the editor is as tall as its code.
+  - Pending `NodeGraph`, `Chart`, and `Mermaid` parts reserve their height, so text below them does not move when they arrive.
+  - The node graph no longer captures the mouse wheel: it zooms on wheel only while focused or with Cmd/Ctrl held.
+  - A host or Shadow DOM renderer that mounted while its code was loading no longer remounts the answer on a later render, and customization props are compared by content, so inline objects no longer re-render every widget.
+  - Mermaid output loses `@import`, `@font-face`, `image-set()`, `image()`, `cross-fade()`, `src()`, and remote `url()` references, and inline SVG attributes refuse them, so answers fetch nothing.
+  - The document root carries `data-dil-document` (`"dil"` or `"markdown"`).
+  - Progressive reveal shows content at once in DOMs without the Web Animations API, such as jsdom, instead of throwing from an animation frame.
+
+- d7e7823: Add host APIs for embedding OpenDIL in applications that own their design system:
+
+  - `markdownComponents` (host and Shadow DOM modes) renders Markdown links, images, code, headings, blockquotes, and tables with your components. Defaults are unchanged: links stay inert and images hidden.
+  - `MarkdownRenderer` renders Markdown only, with no parser or expression worker.
+  - The `<Markdown>` stock component shows its raw body as Markdown only. `literalMarkdown()` builds one with the closing-tag escape.
+  - `diagnostics` controls console warnings and lets a `Problem` component replace the generic error wording. Every `DilRenderError` now has a stable `code`; errors from older iframe runtimes arrive as `unclassified`.
+  - `theme="inherit"` lets the host page's color, radius, and font variables reach the answer.
+  - `extractDilText()` reads an answer's text and host component references without running it.
+  - `@snackbit/opendil/testing` exports `installInlineWorkers()` for jsdom and happy-dom tests.
+  - JSON literal expressions such as `{"Total"}` and `{3}` are read without starting QuickJS.
+  - Replacing `text` with different content of the same or greater length now reports a `source-replaced` error instead of corrupting the document. Headings `h4` to `h6` now substitute expressions.
+
+### Patch Changes
+
+- Iframe resize reports preserve pending scroll corrections for an unchanged reading position instead of discarding corrections during row measurement.
+- Virtualized widgets replace temporary size estimates when their data arrives, including when the final widget has the same height as its placeholder, preventing overlapping rows.
+
+- Bound parser work and prevent Mermaid resource loads before SVG sanitization.
+  Malformed each directives parse without backtracking. Parsing stops before
+  exceeding 100,000 nodes or 128 tree levels and preserves the readable prefix;
+  `onError` reports `parser-node-limit` or `parser-depth-limit`. Initial documents
+  over 16,384 UTF-16 code units use the parser worker. Text extraction reports
+  structural truncation. Mermaid rejects `@{...}` metadata before rendering.
+  Views waiting for an expression refresh resume even when its value is unchanged.
+
 ## 0.2.1
 
 ### Patch Changes

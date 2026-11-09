@@ -10,7 +10,7 @@ This page follows one answer from the first character to an interactive interfac
 Every answer passes through the same five stages. In the default iframe mode, stages 2 to 5 run inside a sandboxed iframe. In host and Shadow DOM modes, the same code runs in your page.
 
 1. Your app passes `DilRenderer` all the text received so far. The text is append-only: each update keeps the previous text as its start. The renderer remembers how much it has forwarded and sends only the new characters on.
-2. A parser worker extends a syntax tree with the new characters and reports only the nodes that changed.
+2. The parser extends a syntax tree with the new characters and reports only the nodes that changed. Initial text up to 16,384 UTF-16 code units parses in the renderer's thread; longer initial text uses a worker. Every path checks depth and node limits before creating nodes.
 3. The renderer applies the parser's reports at most once per animation frame.
 4. React views mount the components. A sandboxed JavaScript engine (QuickJS) in a second Web Worker evaluates the answer's expressions. This page calls it the expression engine.
 5. When a reader types or clicks, the control sends the new value to the expression engine. Only the views that read the changed state update.
