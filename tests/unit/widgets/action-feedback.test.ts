@@ -23,8 +23,10 @@ function mount() {
     incomplete: false,
     revision: 0,
     scanned: 0,
-    error: "",
+    error: null,
+    ending: null,
     clipboard: null,
+    actions: 0,
   }));
   const seen: { feedback: ActionFeedback; track: (result: unknown) => void }[] =
     [];

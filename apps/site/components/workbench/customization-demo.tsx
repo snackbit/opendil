@@ -1,6 +1,11 @@
-import { useCallback, useState } from "react";
+import { useCallback, useState, type CSSProperties } from "react";
 import { DilRenderer, type ProgressiveReveal } from "@snackbit/opendil";
-import { Button } from "@snackbit/opendil/ui";
+import {
+  HOST_PRIMITIVE_STYLES,
+  hostPrimitives,
+  hostPrimitivesSource,
+} from "./host-primitives";
+import { Button } from "@snackbit/opendil/lib";
 import { customizationSource } from "@/lib/examples/customization";
 import { ShellScope } from "./shell-scope";
 import { primaryForeground } from "./appearance";
@@ -82,6 +87,29 @@ export function CustomizationDemo({
         componentConfig={{ button: { variant: "outline" } }}
         classNames={{ button: "consumer-stock-button" }}
       />
+      {/* Page styles reach host mode; a ShadowRoot gets them as shadowStyles. */}
+      <style>{HOST_PRIMITIVE_STYLES}</style>
+      <div
+        data-demo="host-primitives"
+        style={{ "--demo-ds-accent": "rgb(21, 111, 85)" } as CSSProperties}
+      >
+        {mode === "shadow" ? (
+          <DilRenderer
+            mode="shadow"
+            showStatus={false}
+            text={hostPrimitivesSource}
+            uiPrimitives={hostPrimitives}
+            shadowStyles={HOST_PRIMITIVE_STYLES}
+          />
+        ) : (
+          <DilRenderer
+            mode="host"
+            showStatus={false}
+            text={hostPrimitivesSource}
+            uiPrimitives={hostPrimitives}
+          />
+        )}
+      </div>
     </div>
   );
 }

@@ -1,6 +1,7 @@
 "use client";
 import {
   createContext,
+  createElement,
   useContext,
   useState,
   useMemo,
@@ -50,34 +51,44 @@ export function useCollisionPadding(
 }
 export interface UiScopeProps extends ComponentProps<"section"> {
   appearance?: "light" | "dark";
+  /** `"inherit"` takes colors, radius, and font from the host page. */
+  theme?: "stock" | "inherit";
   tokens?: Readonly<Record<`--${string}`, string>>;
   boundary?: Element;
+  /** Renders spans, so the scope can sit inside phrasing content. */
+  inline?: boolean;
 }
 export function UiScope({
   children,
   className,
   style,
   appearance = "light",
+  theme = "stock",
   tokens,
   boundary,
+  inline = false,
   ...props
 }: UiScopeProps) {
-  const [container, setContainer] = useState<HTMLDivElement | null>(null);
+  const [container, setContainer] = useState<HTMLElement | null>(null);
   const portal = useMemo(
     () => ({ container, ...(boundary ? { boundary } : {}) }),
     [container, boundary],
   );
-  return (
-    <section
-      {...props}
-      className={cn("dil-scope", className)}
-      data-theme={appearance}
-      style={{ ...style, ...tokens }}
-    >
-      <PortalScope.Provider value={portal}>
-        {children}
-        <div data-dil-portals ref={setContainer} />
-      </PortalScope.Provider>
-    </section>
+  return createElement(
+    inline ? "span" : "section",
+    {
+      ...props,
+      className: cn("dil-scope", className),
+      "data-theme": appearance,
+      "data-dil-theme": theme,
+      style: { ...style, ...tokens },
+    },
+    <PortalScope.Provider value={portal}>
+      {children}
+      {createElement(inline ? "span" : "div", {
+        "data-dil-portals": "",
+        ref: setContainer,
+      })}
+    </PortalScope.Provider>,
   );
 }

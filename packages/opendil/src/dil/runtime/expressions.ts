@@ -3,6 +3,9 @@ import { ActionReceipt } from "./action-receipt";
 import { PresentationScheduler } from "./presentation-scheduler";
 import {
   EvaluationCache,
+  hasReservedKey,
+  NOT_JSON,
+  parseJson,
   type Scope,
   type EvaluationEntry,
 } from "./evaluation-cache";
@@ -10,13 +13,17 @@ import {
   ExecutionQueue,
   type ExecutionJob,
   type ExecutionReply,
+  type ExecutionResult,
+  type KeyedResult,
 } from "./execution-queue";
+import type { DilRenderErrorCode } from "../render-error";
 import {
   explainRuntimeStartFailure,
   RUNTIME_START_FAILURE,
-  startInlineWorker,
   type InlineWorker,
 } from "./inline-worker";
+import { adoptRuntime } from "./runtime-pool";
+export { warmExpressionRuntime } from "./runtime-pool";
 export type { Scope } from "./evaluation-cache";
 export interface BindingState {
   values: Record<string, unknown>;
@@ -37,6 +44,10 @@ export class ExpressionEngine {
   /** Started by the first job, so documents without expressions or state never load QuickJS. */
   private runtime: InlineWorker | null = null;
   private readonly cache = new EvaluationCache();
+  private readonly literals = new Map<
+    string,
+    { ready: true; value: unknown } | null
+  >();
   private readonly queue: ExecutionQueue;
   private intent = 0;
   private failed = "";
@@ -59,6 +70,16 @@ export class ExpressionEngine {
   markGesture() {
     this.gestureUntil = performance.now() + 750;
   }
+  /**
+   * Queues jobs without starting the worker until release(), as for a
+   * document parsed during a render that React may discard.
+   */
+  hold() {
+    this.queue.hold();
+  }
+  release() {
+    this.queue.release();
+  }
   constructor(
     readonly events = new EventTarget(),
     private readonly updates = new PresentationScheduler(),
@@ -67,16 +88,37 @@ export class ExpressionEngine {
       // Without a worker, the startup report halts the engine before jobs time out.
       (message) => this.start().worker?.postMessage(message),
       (job, reply) => this.receive(job, reply),
-      (message, kind) => this.halt(message, kind),
+      (message, kind, code) => this.halt(message, kind, code),
+      () => this.dependents(),
     );
   }
+  /** Whether no evaluation or action is queued or awaiting the worker. */
+  get idle() {
+    return this.failed !== "" || this.queue.idle;
+  }
+  /**
+   * Retained results a call may invalidate, listed when the call leaves so
+   * the worker refreshes the ones it affects in the same turn.
+   */
+  private dependents() {
+    const dependents: Array<Record<string, unknown>> = [];
+    for (const [key, entry] of this.cache.entries)
+      if (entry.ready && entry.owners > 0)
+        dependents.push({
+          key,
+          source: entry.source,
+          scope: entry.scope,
+          ...(entry.dependencies ? { dependencies: entry.dependencies } : {}),
+        });
+    return dependents;
+  }
   private start(): InlineWorker {
-    this.runtime ??= startInlineWorker(__DIL_VM_WORKER__, {
-      role: "expression runtime",
-      crashMessage: "Message execution worker failed.",
-      onMessage: (data: unknown) => this.queue.reply(data),
-      onStop: (message) => this.halt(message),
-    });
+    if (this.runtime) return this.runtime;
+    const runtime = adoptRuntime();
+    runtime.route.onMessage = (data) => this.queue.reply(data);
+    runtime.route.onStop = (message, code) =>
+      this.halt(message, "runtime", code);
+    this.runtime = runtime.worker;
     return this.runtime;
   }
   private reference(handle: number, delta: number) {
@@ -120,7 +162,7 @@ export class ExpressionEngine {
     if (this.failed) return;
     for (const [key, entry] of this.cache.entries) {
       if (
-        entry.dirty &&
+        (entry.dirty || entry.provisional) &&
         (entry.owners > 0 || entry.oneShot) &&
         !this.queue.has(key)
       ) {
@@ -154,25 +196,49 @@ export class ExpressionEngine {
     if (job.type === "call" && typeof job.payload.handle === "number")
       this.reference(job.payload.handle, -1);
     if (reply.fatal) {
-      this.halt(
-        (reply.fatal === RUNTIME_START_FAILURE &&
-          explainRuntimeStartFailure()) ||
-          "Execution stopped: " + reply.fatal,
-      );
+      const blocked =
+        reply.fatal === RUNTIME_START_FAILURE && explainRuntimeStartFailure();
+      if (blocked) this.halt(blocked, "runtime", "wasm-blocked");
+      else this.halt("Execution stopped: " + reply.fatal);
       return;
     }
-    if (reply.error === "interrupted") {
+    const results = reply.results ?? [];
+    // Every evaluation of a batch settles, so a reply without one cannot
+    // leave it dirty and send it again forever.
+    const answered = new Set(results.map((result) => result.key));
+    for (const key of job.keys ?? [])
+      if (!answered.has(key))
+        results.push({
+          key,
+          revision: reply.revision ?? 0,
+          error: reply.error ?? "Isolated evaluation returned no result",
+        });
+    if (
+      [reply, ...(reply.steps ?? []), ...results].some(
+        (result) => result.error === "interrupted",
+      )
+    ) {
       this.halt(
         "Execution stopped: this action exceeded its time limit.",
         "limit",
+        "execution-timeout",
       );
       return;
     }
-    if (reply.error && !job.key) {
-      const message = "Execution stopped: " + reply.error;
-      this.halt(message);
-      return;
-    }
+    // A call or a declaration that fails leaves the document's state unknown.
+    const steps =
+      job.type === "call" ? [{ job, result: reply }] : this.steps(job, reply);
+    for (const step of steps)
+      if (step.result.error) {
+        this.halt(
+          "Execution stopped: " + step.result.error,
+          "runtime",
+          step.job.type === "declare"
+            ? "declaration-failed"
+            : "expression-failed",
+        );
+        return;
+      }
     // Only an action can copy; its intent lets the calling control show the outcome.
     if (
       reply.copy &&
@@ -184,52 +250,112 @@ export class ExpressionEngine {
           detail: { text: reply.copy, intent: job.payload.intent },
         }),
       );
-    const revision = reply.revision ?? 0;
-    if (reply.changed) {
-      const changed = reply.bindings ? new Set(reply.bindings) : undefined;
-      const invalidated: string[] = [];
-      for (const [key, entry] of this.cache.entries) {
-        if (
-          !changed ||
-          !entry.dependencies ||
-          entry.dependencies.some((name) => changed.has(name))
-        ) {
-          entry.dirty = true;
-          entry.invalidated = revision;
-          invalidated.push(key);
-          if (job.type === "call") this.urgentKeys.add(key);
-        }
-      }
-      this.notify(invalidated, job.type === "call");
+    const urgent = job.type === "call";
+    const invalidated = new Set<string>();
+    const updated = new Set<string>();
+    // A declaration adds a name without changing what existing names hold.
+    // Publish its refreshed results only when values differ or a view waited.
+    for (const step of steps)
+      this.invalidate(
+        step.result,
+        urgent,
+        step.job.type === "declare" ? new Set() : invalidated,
+      );
+    for (const result of results) {
+      this.invalidate(result, urgent, invalidated);
+      if (this.accept(result)) updated.add(result.key);
     }
-    if (job.key) {
-      const key = job.key;
-      const entry = this.cache.entries.get(key);
-      if (entry && (entry.owners > 0 || entry.oneShot)) {
-        const urgent = this.urgentKeys.has(key);
-        if (revision >= entry.invalidated) {
-          entry.value = this.decode(reply);
-          entry.ready = true;
-          entry.dirty = false;
-          entry.revision = revision;
-          if (reply.dependencies) entry.dependencies = reply.dependencies;
-          else delete entry.dependencies;
-          entry.oneShot = false;
-          const handles = reply.handles ?? [];
-          this.replaceHandles(entry, handles);
-          this.cache.touch(job.key);
-          this.urgentKeys.delete(key);
-        }
-        this.notify([key], urgent);
-      } else {
-        for (const handle of reply.handles ?? [])
-          if (!this.handleRefs.has(handle)) this.released.add(handle);
-      }
-    }
+    // A result refreshed to the same value in this reply changes nothing on screen.
+    for (const key of invalidated)
+      if (this.cache.entries.get(key)?.dirty) updated.add(key);
+    if (updated.size)
+      this.notify(
+        updated,
+        urgent || [...updated].some((key) => this.urgentKeys.has(key)),
+      );
+    for (const key of updated)
+      if (!this.cache.entries.get(key)?.dirty) this.urgentKeys.delete(key);
     this.fill();
+    // Hosts wait for this to know a document's values are final.
+    if (this.queue.idle) this.events.dispatchEvent(new Event("dil:idle"));
+  }
+  /** Pairs a batch's declarations and releases with their results. */
+  private steps(job: ExecutionJob, reply: ExecutionReply) {
+    // A batch that failed as a whole fails its first step, or its evaluations.
+    const results = reply.steps ?? (reply.error ? [reply] : []);
+    return (job.steps ?? []).flatMap((step, index) => {
+      const result = results[index];
+      return result ? [{ job: step, result }] : [];
+    });
+  }
+  /** Marks the results that read state this one wrote. */
+  private invalidate(
+    result: ExecutionResult,
+    urgent: boolean,
+    changed: Set<string>,
+  ) {
+    if (!result.changed) return;
+    const revision = result.revision ?? 0;
+    const written = result.bindings ? new Set(result.bindings) : undefined;
+    for (const [key, entry] of this.cache.entries) {
+      if (
+        !written ||
+        !entry.dependencies ||
+        entry.dependencies.some((name) => written.has(name))
+      ) {
+        entry.dirty = true;
+        entry.invalidated = revision;
+        changed.add(key);
+        if (urgent) this.urgentKeys.add(key);
+      }
+    }
+  }
+  /** Stores a result; returns whether views reading it must render again. */
+  private accept(result: KeyedResult) {
+    const key = result.key;
+    const entry = this.cache.entries.get(key);
+    if (!entry || !(entry.owners > 0 || entry.oneShot)) {
+      for (const handle of result.handles ?? [])
+        if (!this.handleRefs.has(handle)) this.released.add(handle);
+      return false;
+    }
+    const revision = result.revision ?? 0;
+    // A result evaluated before a later action invalidated it is stale.
+    if (revision < entry.invalidated) return false;
+    // The same value at the same revision keeps its identity, so controls
+    // and memoized views see no change. A new revision always publishes:
+    // a control waits for it to drop its draft, even when the value stayed.
+    const raw = result.error ?? JSON.stringify(result.value) ?? "undefined";
+    // A snapshot's callback forwards to this result, so it is always replaced.
+    const same =
+      entry.ready &&
+      entry.raw === raw &&
+      entry.revision === revision &&
+      !(entry.provisional && result.handles?.length);
+    entry.provisional = false;
+    if (!same) {
+      entry.value = this.decode(result);
+      entry.raw = raw;
+    }
+    const awaitingFreshness = entry.awaitingFreshness;
+    entry.awaitingFreshness = false;
+    entry.ready = true;
+    entry.dirty = false;
+    entry.revision = revision;
+    if (result.dependencies) entry.dependencies = result.dependencies;
+    else delete entry.dependencies;
+    entry.oneShot = false;
+    this.replaceHandles(entry, result.handles ?? []);
+    this.cache.touch(key);
+    return !same || awaitingFreshness;
   }
   /** Stops the runtime; a reported halt reaches the document as a dil:error event. */
-  halt(reason: string, kind: "runtime" | "limit" = "runtime", report = true) {
+  halt(
+    reason: string,
+    kind: "runtime" | "limit" = "runtime",
+    code: DilRenderErrorCode = "runtime-crashed",
+    report = true,
+  ) {
     if (this.failed) return;
     this.failed = reason;
     this.queue.stop();
@@ -240,11 +366,13 @@ export class ExpressionEngine {
     this.store.setState((state) => ({ catalog: state.catalog + 1 }));
     if (report)
       this.events.dispatchEvent(
-        new CustomEvent("dil:error", { detail: { message: reason, kind } }),
+        new CustomEvent("dil:error", {
+          detail: { message: reason, kind, code },
+        }),
       );
   }
   dispose() {
-    this.halt("Message disposed", "runtime", false);
+    this.halt("Message disposed", "runtime", "runtime-crashed", false);
     this.failed = "Message disposed";
     this.cache.entries.clear();
     this.handleRefs.clear();
@@ -255,6 +383,7 @@ export class ExpressionEngine {
   retain(expressions: readonly string[], scope: Scope = {}) {
     const keys = new Set<string>();
     for (const source of expressions) {
+      if (this.literal(source)) continue;
       this.check(source);
       const { key, entry } = this.cache.ensure(source, scope);
       if (!keys.has(key)) {
@@ -275,20 +404,104 @@ export class ExpressionEngine {
     };
   }
   read(source: string, scope: Scope = {}): unknown {
-    const entry = this.cache.entries.get(this.cache.key(source, scope));
+    const entry =
+      this.literal(source) ??
+      this.cache.entries.get(this.cache.key(source, scope));
     if (!entry?.ready) throw new EvaluationPending();
     if (entry.value instanceof Error) throw entry.value;
     return entry.value;
   }
   hasValue(source: string, scope: Scope = {}) {
-    const entry = this.cache.entries.get(this.cache.key(source, scope));
+    const entry =
+      this.literal(source) ??
+      this.cache.entries.get(this.cache.key(source, scope));
     return !!entry?.ready && !(entry.value instanceof Error);
   }
   isFresh(source: string, scope: Scope = {}) {
+    if (this.literal(source)) return true;
     const entry = this.cache.entries.get(this.cache.key(source, scope));
+    // A remounted view can observe a refresh while its old value is cached.
+    // Wake it when freshness returns, even if the value itself is unchanged.
+    if (entry?.dirty && !this.stopped) entry.awaitingFreshness = true;
     return !!entry?.ready && (this.stopped || !entry.dirty);
   }
+  /**
+   * A JSON literal spells the same value as JavaScript, so it is read here
+   * without starting QuickJS: converted documents and plain values stay inert.
+   * Output limits still apply. The document source limit bounds its length.
+   */
+  private literal(source: string): { ready: true; value: unknown } | null {
+    let literal = this.literals.get(source);
+    if (literal !== undefined) return literal;
+    literal = null;
+    // A "__proto__" key means something else in JavaScript, and a handler
+    // marker would revive as a callback; QuickJS evaluates both. Keys are
+    // checked after parsing because JSON escapes such as "$dilHandler"
+    // spell the same key.
+    const parsed = parseJson(source.trim());
+    if (parsed !== NOT_JSON && !hasReservedKey(parsed, 0)) {
+      let value: unknown;
+      try {
+        value = this.revive(parsed);
+      } catch {
+        value = new Error("Message output exceeds structural limits");
+      }
+      literal = { ready: true, value };
+    }
+    if (this.literals.size >= 1024) this.literals.clear();
+    this.literals.set(source, literal);
+    return literal;
+  }
+  /**
+   * The JSON results of evaluations that are current, by cache key, for a
+   * snapshot. Errors are left out; callbacks keep their encoded form.
+   */
+  results(): Record<string, unknown> {
+    const values: Record<string, unknown> = {};
+    for (const [key, entry] of this.cache.entries)
+      if (
+        entry.ready &&
+        !entry.dirty &&
+        entry.raw !== undefined &&
+        !(entry.value instanceof Error)
+      )
+        values[key] = parseJson(entry.raw);
+    return values;
+  }
+  /**
+   * Shows a snapshot's results before the worker has evaluated anything.
+   * Each stays provisional until its first evaluation confirms or replaces
+   * it; a callback forwards to the confirmed one, and does nothing before.
+   */
+  seed(values: Readonly<Record<string, unknown>>) {
+    for (const [key, value] of Object.entries(values)) {
+      const parsed = this.cache.parseKey(key);
+      if (!parsed || this.literal(parsed[0])) continue;
+      const [source, scope] = parsed;
+      const { key: actual, entry } = this.cache.ensure(source, scope);
+      if (actual !== key || entry.ready) continue;
+      let revived: unknown;
+      try {
+        revived = this.revive(value);
+      } catch {
+        continue;
+      }
+      if (typeof revived === "function") {
+        const forward = (argument: unknown): unknown =>
+          entry.value !== forward && typeof entry.value === "function"
+            ? (entry.value as (argument: unknown) => unknown)(argument)
+            : undefined;
+        revived = forward;
+      }
+      entry.value = revived;
+      entry.raw = JSON.stringify(value);
+      entry.ready = true;
+      entry.dirty = false;
+      entry.provisional = true;
+    }
+  }
   evaluate(source: string, scope: Scope = {}): unknown {
+    if (this.literal(source)) return this.read(source);
     this.check(source);
     if (this.failed) throw new Error(this.failed);
     const { key, entry } = this.cache.ensure(source, scope);
@@ -342,7 +555,7 @@ export class ExpressionEngine {
       this.reference(replaced.payload.handle, -1);
     return new ActionReceipt(intent);
   }
-  private decode(reply: ExecutionReply): unknown {
+  private decode(reply: ExecutionResult): unknown {
     try {
       return reply.error ? new Error(reply.error) : this.revive(reply.value);
     } catch {

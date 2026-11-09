@@ -7,7 +7,11 @@ import useEmblaCarousel, {
 } from "embla-carousel-react";
 import { ArrowLeft, ArrowRight } from "lucide-react";
 
-import { Button } from "../controls/button";
+// The arrows are stock widget controls, so a host's Button replaces them too.
+import {
+  useUiPrimitives,
+  type DilButtonProps,
+} from "../../../dil/ui-primitives";
 
 type CarouselApi = UseEmblaCarouselType[1];
 type UseCarouselParameters = Parameters<typeof useEmblaCarousel>;
@@ -179,8 +183,9 @@ function CarouselPrevious({
   variant = "outline",
   size = "icon",
   ...props
-}: React.ComponentProps<typeof Button>) {
+}: DilButtonProps) {
   const { orientation, scrollPrev, canScrollPrev } = useCarousel();
+  const { Button } = useUiPrimitives();
 
   return (
     <Button
@@ -209,8 +214,9 @@ function CarouselNext({
   variant = "outline",
   size = "icon",
   ...props
-}: React.ComponentProps<typeof Button>) {
+}: DilButtonProps) {
   const { orientation, scrollNext, canScrollNext } = useCarousel();
+  const { Button } = useUiPrimitives();
 
   return (
     <Button

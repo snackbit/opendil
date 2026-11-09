@@ -40,21 +40,32 @@ bun add @snackbit/opendil
 
 - **React 19.** `react` and `react-dom` `^19.0.0` are peer dependencies; your app provides them.
 - **Node.js 22 or newer** for the `opendil` command (`engines.node` is `>=22`).
-- **ES modules.** The package is ESM only. `import` works everywhere; `require("@snackbit/opendil")` and `require("@snackbit/opendil/ui")` fail with `ERR_PACKAGE_PATH_NOT_EXPORTED`. `@snackbit/opendil/agent-spec` also loads with `require()` in Node versions that can require ES modules (22.12 and later).
-- **A bundler that reads package `exports` and CSS imports**, such as Next.js or Vite. The renderer and UI entries start with `"use client"`, so the Next.js App Router treats them as Client Components.
+- **ES modules.** The package is ESM only. `import` works everywhere; `require("@snackbit/opendil")` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED`. `@snackbit/opendil/lib` also loads with `require()` in Node versions that can require ES modules (22.12 and later).
+- **A bundler that reads package `exports` and CSS imports**, such as Next.js or Vite. The renderer entry and the React half of `@snackbit/opendil/lib` start with `"use client"`, so the Next.js App Router treats them as Client Components. The rest of `@snackbit/opendil/lib` has no directive, so server code can call `extractDilText` and read the agent spec.
 - **Browsers** with Web Workers, WebAssembly, and sandboxed iframes. Shadow DOM mode also needs constructable stylesheets (`adoptedStyleSheets`).
 
 ## Entry points
 
-| Import path                             | Use it for                                                      | Notes                                                                           |
-| --------------------------------------- | --------------------------------------------------------------- | ------------------------------------------------------------------------------- |
-| `@snackbit/opendil`                     | `DilRenderer`, `preloadHostRenderer`, and their types           | See [DilRenderer](/docs/renderer/)                                              |
-| `@snackbit/opendil/styles.css`          | Compiled styles for the renderer and the UI components          | Import this or `tailwind.css`, not both                                         |
-| `@snackbit/opendil/tailwind.css`        | The same styles as Tailwind CSS 4 source                        | For apps that compile Tailwind CSS 4. See [Theming](/docs/theming/#tailwind-v4) |
-| `@snackbit/opendil/ui`                  | React components such as `Button`, `Select`, and `UiScope`      | See [React UI exports](/docs/ui/)                                               |
-| `@snackbit/opendil/agent-spec`          | `agentSpec`, `agentSpecFull`, `agentSpecExamples` strings       | Has no imports; works on servers and edge runtimes                              |
-| `@snackbit/opendil/spec/genui.agent.md` | The primary spec as a Markdown file                             | Also `genui.agent.full.md` and `genui.examples.md`                              |
-| `@snackbit/opendil/package.json`        | The package manifest, for example to read the installed version |                                                                                 |
+| Import path                             | Use it for                                                                         | Notes                                                                                                |
+| --------------------------------------- | ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- |
+| Import path                             | Use it for                                                                         | Notes                                                                                                |
+| --------------------------------------- | --------------------------------------------------------------------------------   | ---------------------------------------------------------------------------------------------------- |
+| `@snackbit/opendil`                     | `DilRenderer`, `preloadHostRenderer`, `clearDocumentCache`, and the renderer types | See [DilRenderer](/docs/renderer/)                                                                   |
+| `@snackbit/opendil/lib`                 | Everything else that runs in your code; see the list below                         | Imports in Node and server rendering without a DOM. Unused exports are removed by your bundler       |
+| `@snackbit/opendil/styles.css`          | Compiled styles for the renderer and the UI components                             | Import this or `tailwind.css`, not both                                                              |
+| `@snackbit/opendil/tailwind.css`        | The same styles as Tailwind CSS 4 source                                           | For apps that compile Tailwind CSS 4. See [Theming](/docs/theming/#tailwind-v4)                      |
+| `@snackbit/opendil/testing`             | `installInlineWorkers`                                                             | For jsdom and happy-dom tests. See [Troubleshooting](/docs/troubleshooting/#tests-without-workers)   |
+| `@snackbit/opendil/spec/genui.agent.md` | The primary spec as a Markdown file                                                | Also `genui.agent.full.md` and `genui.examples.md`                                                   |
+| `@snackbit/opendil/package.json`        | The package manifest, for example to locate the installed package or its version   |                                                                                                      |
+
+`@snackbit/opendil/lib` exports:
+
+- React components such as `Button`, `Select`, and `UiScope`. See [React UI exports](/docs/ui/).
+- `MarkdownRenderer`, which renders Markdown without a parser or expression worker. See [Render Markdown without DIL](/docs/renderer/#render-markdown-without-dil).
+- `serializeRenderedDocument`, which copies what an answer shows as HTML and Markdown.
+- `exportSvg` and `rasterizeSvg`, which turn a rendered diagram into an SVG or PNG file. See [Diagrams](/docs/components/diagrams/#open-and-export-diagrams).
+- `extractDilText` and `literalMarkdown`, which need no React or workers. See [Read an answer's text](/docs/renderer/#read-an-answers-text-without-running-it).
+- The agent spec strings `agentSpec`, `agentSpecFull`, and `agentSpecExamples`.
 
 The `opendil` command is the package's only binary. The iframe runtime it copies, `frame.html` and `frame.js`, is not an import path: your app serves it as static files.
 
@@ -72,7 +83,7 @@ Import one of them in every app that uses OpenDIL, unless it renders only in Sha
 The agent spec, the instructions that teach a model to write DIL, ships with the package, so the prompt always matches the installed renderer:
 
 ```ts title="lib/system-prompt.ts"
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 export const systemPrompt = [
   agentSpec,
@@ -80,7 +91,7 @@ export const systemPrompt = [
 ].join("\n\n");
 ```
 
-`agentSpec` is the primary spec, `agentSpecFull` the full spec, and `agentSpecExamples` the examples catalog. Your renderer bundle never includes them unless you import this entry in client code. Tools that read files can resolve the raw Markdown from `@snackbit/opendil/spec/genui.agent.md`, `genui.agent.full.md`, and `genui.examples.md`. [Agent Spec](/docs/agent-spec/) explains which one to use and how to add your own instructions.
+`agentSpec` is the primary spec, `agentSpecFull` the full spec, and `agentSpecExamples` the examples catalog. Client bundles include them only if client code uses them: bundlers remove the unused exports of `@snackbit/opendil/lib`. Tools that read files can resolve the raw Markdown from `@snackbit/opendil/spec/genui.agent.md`, `genui.agent.full.md`, and `genui.examples.md`. [Agent Spec](/docs/agent-spec/) explains which one to use and how to add your own instructions.
 
 ## opendil copy-assets
 

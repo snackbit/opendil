@@ -9,6 +9,9 @@ import type {
 } from "../../packages/opendil/src/dil/parser/types";
 import { DilDocument } from "../../packages/opendil/src/dil/runtime/document";
 import { NodeView } from "../../packages/opendil/src/dil/view/node-view";
+import { DilRenderer } from "../../packages/opendil/src/dil/dil-renderer";
+import { installInlineWorkers } from "../../packages/opendil/src/testing";
+import type { DilProblemProps } from "../../packages/opendil/src/dil/render-error";
 import {
   readRenderError,
   UNREPORTED_PROBLEMS,
@@ -46,6 +49,7 @@ describe("parsing a document that ended early", () => {
     expect(batch.issues).toEqual([
       {
         kind: "incomplete",
+        code: "unfinished-structure",
         message:
           "The document ended before it was finished. Unfinished: " +
           `<grid> at character ${INTRO.length}, <box> at character ${SECOND_BOX}.`,
@@ -124,6 +128,7 @@ describe("parsing a document that ended early", () => {
         expect(issues).toEqual([
           {
             kind: "incomplete",
+            code: "unfinished-structure",
             message: `The document ended before it was finished. Unfinished: ${label} at character ${offset}.`,
             offset,
           },
@@ -159,14 +164,14 @@ describe("parsing a document that ended early", () => {
   });
 
   it("summarizes deep nesting instead of listing every open element", () => {
-    const source = "<box>".repeat(20000);
+    const source = "<box>".repeat(128);
     const message = new DilParser().append(source, true).issues[0]?.message;
     expect(message).toBe(
       "The document ended before it was finished. Unfinished: " +
         "<box> at character 0, <box> at character 5, <box> at character 10, " +
-        "<box> at character 15, 19992 more, <box> at character 99980, " +
-        "<box> at character 99985, <box> at character 99990, " +
-        "<box> at character 99995.",
+        "<box> at character 15, 120 more, <box> at character 620, " +
+        "<box> at character 625, <box> at character 630, " +
+        "<box> at character 635.",
     );
   });
 
@@ -234,6 +239,7 @@ describe("presenting problems to readers and hosts", () => {
     expect(mount.textContent).not.toContain("character");
     const issue = {
       kind: "syntax",
+      code: "malformed-syntax",
       message: "Expected quoted value or expression for max",
       offset: 15,
     } as const;
@@ -267,17 +273,27 @@ describe("presenting problems to readers and hosts", () => {
     ).toBe(true);
     expect(reported[20]).toEqual({
       kind: "limit",
+      code: "problem-limit",
       message: UNREPORTED_PROBLEMS,
     });
     // The end of the document is reported even after the budget ran out.
     expect(reported[21]?.kind).toBe("incomplete");
     expect(warn).toHaveBeenCalledTimes(22);
-    model.report({ kind: "syntax", message: "Later", offset: 1 });
+    model.report({
+      kind: "syntax",
+      code: "malformed-syntax",
+      message: "Later",
+      offset: 1,
+    });
     expect(reported).toHaveLength(22);
   });
 
   it("bounds report messages in every mode", () => {
-    model.report({ kind: "runtime", message: "x".repeat(5000) });
+    model.report({
+      kind: "runtime",
+      code: "expression-failed",
+      message: "x".repeat(5000),
+    });
     expect(reported[0]?.message).toHaveLength(2000);
   });
 
@@ -304,19 +320,25 @@ describe("presenting problems to readers and hosts", () => {
     model.engine.halt(
       "Execution stopped: too many actions were requested.",
       "limit",
+      "action-limit",
     );
     expect(reported).toEqual([
       {
         kind: "limit",
+        code: "action-limit",
         message: "Execution stopped: too many actions were requested.",
       },
     ]);
-    expect(model.status.getState().error).toContain("too many actions");
+    expect(model.status.getState().error?.message).toContain(
+      "too many actions",
+    );
     const other = new DilDocument();
     const errors: DilRenderError[] = [];
     other.onError = (error) => errors.push(error);
     other.engine.halt("Message execution worker failed.");
-    expect(errors.map((error) => error.kind)).toEqual(["runtime"]);
+    expect(errors.map(({ kind, code }) => [kind, code])).toEqual([
+      ["runtime", "runtime-crashed"],
+    ]);
     other.engine.dispose();
     // Neither is logged: readers already see these messages.
     expect(warn).not.toHaveBeenCalled();
@@ -326,16 +348,21 @@ describe("presenting problems to readers and hosts", () => {
 describe("reading errors forwarded by the iframe runtime", () => {
   it.each([
     [
-      { kind: "syntax", message: "Bad", offset: 4 },
-      { kind: "syntax", message: "Bad", offset: 4 },
+      { kind: "syntax", code: "malformed-syntax", message: "Bad", offset: 4 },
+      { kind: "syntax", code: "malformed-syntax", message: "Bad", offset: 4 },
     ],
+    // A frame from an earlier release sends no code, or one it later dropped.
     [
       { kind: "runtime", message: "Stopped" },
-      { kind: "runtime", message: "Stopped" },
+      { kind: "runtime", code: "unclassified", message: "Stopped" },
+    ],
+    [
+      { kind: "runtime", code: "retired-code", message: "Stopped" },
+      { kind: "runtime", code: "unclassified", message: "Stopped" },
     ],
     [
       { kind: "incomplete", message: "Cut", offset: 0, extra: true },
-      { kind: "incomplete", message: "Cut", offset: 0 },
+      { kind: "incomplete", code: "unclassified", message: "Cut", offset: 0 },
     ],
   ])("accepts %j", (value, expected) => {
     expect(readRenderError(value)).toEqual(expected);
@@ -356,5 +383,82 @@ describe("reading errors forwarded by the iframe runtime", () => {
     expect(
       readRenderError({ kind: "limit", message: "x".repeat(5000) })?.message,
     ).toHaveLength(2000);
+  });
+});
+
+describe("host-controlled diagnostics", () => {
+  let mount: HTMLDivElement;
+  let root: Root;
+  let uninstall: () => void;
+  let warn: ReturnType<typeof vi.spyOn>;
+  const shown: DilProblemProps[] = [];
+  function Problem(props: DilProblemProps) {
+    shown.push(props);
+    return createElement(
+      "span",
+      { "data-problem": props.scope, "data-error-code": props.error.code },
+      props.error.message,
+    );
+  }
+  const diagnostics = { console: false, Problem };
+  function Broken(): never {
+    throw new Error("Host component failed");
+  }
+  beforeEach(() => {
+    shown.length = 0;
+    vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
+    vi.stubGlobal("__DIL_PARSER_WORKER__", "");
+    vi.stubGlobal("__DIL_VM_WORKER__", "");
+    warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    uninstall = installInlineWorkers();
+    mount = document.createElement("div");
+    document.body.append(mount);
+    root = createRoot(mount);
+  });
+  afterEach(async () => {
+    await act(() => root.unmount());
+    mount.remove();
+    uninstall();
+    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
+  });
+  const show = (text: string, isStreaming = false) =>
+    act(() =>
+      root.render(
+        createElement(DilRenderer, {
+          mode: "host",
+          text,
+          isStreaming,
+          showStatus: false,
+          diagnostics,
+          components: { Broken },
+        }),
+      ),
+    );
+  const codes = (scope: string) =>
+    [...mount.querySelectorAll(`[data-problem="${scope}"]`)].map((element) =>
+      element.getAttribute("data-error-code"),
+    );
+  it("renders part and document problems with their codes and logs nothing", async () => {
+    await show("<slider max=5/><Unknown/><Broken/>\n\n<grid><box>Cut");
+    await vi.waitFor(() =>
+      expect(codes("document")).toEqual(["unfinished-structure"]),
+    );
+    expect(codes("part")).toEqual([
+      "malformed-syntax",
+      "unknown-component",
+      "component-render-failed",
+    ]);
+    expect(mount.textContent).not.toContain("couldn't be shown");
+    expect(mount.textContent).not.toContain("This response ended before");
+    expect(warn).not.toHaveBeenCalled();
+  });
+  it("shows a replaced source as a document problem", async () => {
+    await show("First draft", true);
+    await vi.waitFor(() => expect(mount.textContent).toContain("First"));
+    await show("Final draft", true);
+    expect(codes("document")).toEqual(["source-replaced"]);
+    expect(shown.at(-1)?.error.kind).toBe("source");
   });
 });

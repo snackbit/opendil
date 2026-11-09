@@ -27,8 +27,9 @@ explicit API and invocation rules in section 6. Do not request weaker containmen
 Use headings, paragraphs, lists, emphasis, blockquotes, fenced code, and GFM
 tables, strikethrough, and task lists. Markdown task lists are presentation, not
 state-bound inputs. Links render their labels as inert text; Markdown images are
-suppressed. Use a visible URL as text when the destination matters. No authored
-HTML link or image tag is supported. Mermaid fences render diagrams.
+suppressed. Use a visible URL as text when the destination matters. A host may
+state that links or images work in its renderer; follow its instructions. No
+authored HTML link or image tag is supported. Mermaid fences render diagrams.
 
 Keep fences on separate lines with at most three leading spaces. Fences and
 inline code spans protect their contents from DIL parsing: braces, tags, and
@@ -177,6 +178,7 @@ text; color alone must not communicate status.
 - <badge>: color?:string; children: inline
 - <label>: no props; children: inline
 - <CodeBlock>: language?:string="", editable?:boolean=false; children: raw
+- <Markdown>: no props; children: raw
 
 Text sizes xs/sm/md/lg/xl/2xl are 12/14/16/18/24/30px at the normal root size.
 Title renders h3, defaults to 18px/600, and ignores weight overrides. Caption
@@ -190,6 +192,12 @@ never executed and not readable from DIL state. Its copy/wrap controls are built
 in. Avoid embedding its closing delimiter in its raw source; use fenced code
 instead. Keep source below 131,072 characters and copyable content at 65,536 or
 fewer characters. Fenced code is another display option, not a runnable program.
+
+Markdown renders its raw children as Markdown only, up to the exact
+`</Markdown>` delimiter: braces, tags, and directives inside display literally
+and never evaluate. Use it to quote supplied Markdown. Inside it, a `<` followed
+by one or more backslashes and `/Markdown` displays with one backslash fewer, so
+write `<\/Markdown>` to show the delimiter.
 
 ### Media components
 
@@ -354,13 +362,16 @@ is exposed. Never simulate interactive controls with SVG.
 
 Chart content for line/bar/scatter:
 `{chartType:"line"|"bar"|"scatter",data:object[],xKey:string,
-series:{dataKey:string,label?:string}[]}`.
-For pie: `{chartType:"pie",data:object[],nameKey:string,valueKey:string}`.
+series:{dataKey:string,label?:string}[],title?:string,description?:string,
+xLabel?:string,yLabel?:string}`.
+For pie: `{chartType:"pie",data:object[],nameKey:string,valueKey:string,
+title?:string,description?:string}`. title names the chart above it;
+description is a short caption; axis labels carry units, as in "Revenue (USD)".
 Supply chartType explicitly; omission currently falls back to line. Series keys
 must identify numeric fields. Scatter xKey is numeric; line/bar may use category
 strings. Keep values finite, units consistent, and keys/labels distinct. Pie
-values should be nonnegative and names unique. No axes, palette, size, tooltip,
-legend, or callback customization props exist. Legend selection for multi-series
+values should be nonnegative and names unique. No palette, size, tick, domain,
+tooltip, legend, or callback customization props exist. Legend selection for multi-series
 line/bar charts is internal; it is not DIL state. Supply a nearby textual summary.
 
 NodeGraph content:
@@ -374,7 +385,8 @@ are built in. No custom node types, styles, or edge handlers are authorable.
 
 Mermaid accepts source text as a string, also through a fenced mermaid block.
 Keep it within 8,192 characters and 100 edges. Do not include configuration
-directives, frontmatter, authored CSS, HTML, click actions, or external links.
+directives, frontmatter, authored CSS, HTML, click actions, external links, or
+`@{...}` metadata nodes (including image and icon nodes).
 Output is sanitized. Mermaid is a diagram display, not an interaction surface.
 
 ### Maps

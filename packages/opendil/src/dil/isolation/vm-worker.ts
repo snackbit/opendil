@@ -2,6 +2,7 @@ import {
   RELEASE_SYNC,
   newVariant,
   newQuickJSWASMModuleFromVariant,
+  type QuickJSWASMModule,
 } from "quickjs-emscripten";
 /** A host exception escaped QuickJS; its interpreter state is no longer trustworthy. */
 class RuntimeFailure extends Error {}
@@ -16,13 +17,29 @@ function guard<T>(action: () => T): T {
 }
 // The build inlines __DIL_WASM__ at each use, so it is read once.
 const encoded = __DIL_WASM__;
-const bytes = Uint8Array.from(atob(encoded), (c) => c.charCodeAt(0));
-const ready = newQuickJSWASMModuleFromVariant(
-  newVariant(RELEASE_SYNC, {
-    wasmBinary: bytes.buffer,
-    locateFile: () => "data:application/wasm;base64," + encoded,
-  }),
-).then((module) => {
+function decode() {
+  const native = (
+    Uint8Array as { fromBase64?: (text: string) => Uint8Array<ArrayBuffer> }
+  ).fromBase64;
+  if (native) return native(encoded);
+  const text = atob(encoded);
+  const bytes = new Uint8Array(text.length);
+  for (let index = 0; index < text.length; index++)
+    bytes[index] = text.charCodeAt(index);
+  return bytes;
+}
+/**
+ * Every document runs its own worker. The first compiles the embedded module
+ * and hands it to the page, which passes it to later workers in their first
+ * message, so they skip decoding and compiling about 500 KB of WebAssembly.
+ */
+async function compile(shared: WebAssembly.Module | undefined, share: boolean) {
+  if (shared) return shared;
+  const module = await WebAssembly.compile(decode());
+  if (share) self.postMessage({ type: "module", module });
+  return module;
+}
+function setup(module: QuickJSWASMModule) {
   const runtime = module.newRuntime();
   runtime.setMemoryLimit(64 * 1024 * 1024);
   // QuickJS must detect recursion before the browser's native stack does: a host
@@ -98,10 +115,21 @@ const ready = newQuickJSWASMModuleFromVariant(
       gesture = value;
     },
   };
-});
+}
+type VM = ReturnType<typeof setup>;
+let ready: Promise<VM> | undefined;
+function boot(shared?: WebAssembly.Module, share = false) {
+  ready ??= compile(shared, share)
+    .then((wasmModule) =>
+      newQuickJSWASMModuleFromVariant(newVariant(RELEASE_SYNC, { wasmModule })),
+    )
+    .then(setup);
+  return ready;
+}
 interface Request {
   id: number;
   type: string;
+  key?: string;
   source?: string;
   scope?: Record<string, unknown>;
   handle?: number;
@@ -109,6 +137,14 @@ interface Request {
   gesture?: boolean;
   intent?: number;
   handles?: number[];
+  /** A batch: declarations and releases, then evaluations. */
+  steps?: Request[];
+  evaluations?: Request[];
+  /**
+   * A call: retained evaluations with the bindings they last read. Those that
+   * read a binding the call wrote are evaluated again in the same turn.
+   */
+  dependents?: Array<Request & { dependencies?: string[] }>;
 }
 function declaration(source: string) {
   const state =
@@ -135,10 +171,64 @@ function expression(request: Request) {
 let sequence = Promise.resolve();
 let revision = 0;
 let failure = "";
-async function execute(request: Request) {
-  const vm = await ready.catch(() => {
-    throw new RuntimeFailure("QuickJS failed to start");
-  });
+function message(error: unknown) {
+  return error instanceof Error
+    ? error.message.slice(0, 2048)
+    : "Isolated evaluation failed";
+}
+/** One job of a batch; a runtime failure still stops the whole worker. */
+function attempt(vm: VM, request: Request): Record<string, unknown> {
+  try {
+    return execute(vm, request);
+  } catch (error) {
+    if (error instanceof RuntimeFailure) throw error;
+    return { revision, error: message(error) };
+  }
+}
+/** Interrupted work halts the document, so the rest of its batch is skipped. */
+function interrupted(result: Record<string, unknown>) {
+  return result.error === "interrupted";
+}
+function batch(vm: VM, request: Request) {
+  const steps: Record<string, unknown>[] = [];
+  const results: Record<string, unknown>[] = [];
+  for (const step of request.steps ?? []) {
+    const result = attempt(vm, step);
+    steps.push(result);
+    if (interrupted(result)) return { id: request.id, revision, steps };
+  }
+  for (const evaluation of request.evaluations ?? []) {
+    const result = attempt(vm, { ...evaluation, type: "evaluate" });
+    results.push({ ...result, key: evaluation.key });
+    if (interrupted(result)) break;
+  }
+  return { id: request.id, revision, steps, results };
+}
+function call(vm: VM, request: Request) {
+  const reply = execute(vm, request);
+  const written = reply.changed === true && Array.isArray(reply.bindings);
+  const bindings = new Set(written ? (reply.bindings as string[]) : []);
+  const results: Record<string, unknown>[] = [];
+  if (reply.changed === true)
+    for (const dependent of request.dependents ?? []) {
+      if (
+        written &&
+        dependent.dependencies &&
+        !dependent.dependencies.some((name) => bindings.has(name))
+      )
+        continue;
+      const result = attempt(vm, { ...dependent, type: "evaluate" });
+      results.push({ ...result, key: dependent.key });
+      if (interrupted(result)) break;
+    }
+  return { ...reply, results };
+}
+function respond(vm: VM, request: Request) {
+  if (request.type === "batch") return batch(vm, request);
+  if (request.type === "call") return call(vm, request);
+  return execute(vm, request);
+}
+function execute(vm: VM, request: Request): Record<string, unknown> {
   if (request.type === "release") {
     vm.run(
       `for(const id of ${JSON.stringify(request.handles ?? [])}){if(__handlers[id]!==undefined){__handlers[id]=undefined;__freeHandles.push(id)}}`,
@@ -178,21 +268,32 @@ async function execute(request: Request) {
     copy: vm.getCopy(),
   };
 }
-self.onmessage = (event: MessageEvent<Request>) => {
+self.onmessage = (
+  event: MessageEvent<Request & { module?: unknown; share?: boolean }>,
+) => {
   const request = event.data;
+  // The page's first message passes the module it already holds, or asks for
+  // the one this worker compiles. A spare worker boots before it has work.
+  if (request.type === "init") {
+    void boot(
+      request.module instanceof WebAssembly.Module ? request.module : undefined,
+      request.share === true,
+    ).catch(() => {});
+    return;
+  }
   sequence = sequence.then(async () => {
     try {
       if (failure) throw new RuntimeFailure(failure);
-      self.postMessage(await execute(request));
+      const vm = await boot().catch(() => {
+        throw new RuntimeFailure("QuickJS failed to start");
+      });
+      self.postMessage({ ...respond(vm, request), id: request.id });
     } catch (error) {
-      const message =
-        error instanceof Error
-          ? error.message.slice(0, 2048)
-          : "Isolated evaluation failed";
+      const reason = message(error);
       if (error instanceof RuntimeFailure) {
-        failure = message;
-        self.postMessage({ id: request.id, revision, fatal: message });
-      } else self.postMessage({ id: request.id, revision, error: message });
+        failure = reason;
+        self.postMessage({ id: request.id, revision, fatal: reason });
+      } else self.postMessage({ id: request.id, revision, error: reason });
     }
   });
 };

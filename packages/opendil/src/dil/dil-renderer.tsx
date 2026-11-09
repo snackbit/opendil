@@ -1,11 +1,12 @@
 "use client";
-import { Suspense, use, type Ref } from "react";
+import { Suspense, use, useState, type Ref } from "react";
 import type { DilRendererHandle } from "./renderer-handle";
 import type { DilCustomization } from "./customization";
 import { IsolatedRenderer } from "./isolation/isolated-renderer";
 import type { RendererMetrics } from "./renderer-environment";
 import type { DilRenderError } from "./render-error";
 import type { ProgressiveReveal } from "./view/reveal-options";
+import type { DilSnapshot } from "./document-cache";
 import type { AutoScroll, ScrollContainer } from "./view/scroll-options";
 import {
   parseUpdateInterval,
@@ -19,11 +20,13 @@ type StyledModule = typeof StyledRendererModule;
 // React's use() returns the value of a promise marked as fulfilled without
 // suspending, so a loaded module renders synchronously on every later render.
 let styledLoad: Promise<StyledModule> | undefined;
+let styledModule: StyledModule | undefined;
 function loadStyledRenderer() {
   if (!styledLoad) {
     const load: Promise<StyledModule> = import("./styled-renderer").then(
       (module) => {
         Object.assign(load, { status: "fulfilled", value: module });
+        styledModule = module;
         return module;
       },
       (error: unknown) => {
@@ -36,18 +39,66 @@ function loadStyledRenderer() {
   }
   return styledLoad;
 }
+let preload: Promise<void> | undefined;
 /**
  * Starts loading the code that `mode="host"` and `mode="shadow"` share. Once
  * it resolves, those modes render synchronously: their `ref` is set in the
- * first commit and `renderToString` includes them.
+ * first commit and `renderToString` includes them. Every call returns the
+ * same promise, so a host can `use()` it in one boundary above its answers.
+ * Loading also starts the expression runtime that the first answer adopts.
  */
-export async function preloadHostRenderer(): Promise<void> {
-  await loadStyledRenderer();
+export function preloadHostRenderer(): Promise<void> {
+  if (!preload) {
+    const promise: Promise<void> = loadStyledRenderer().then(
+      (module) => {
+        // After the caller's current work, such as a test installing its
+        // worker replacements. Pages without workers never boot one, and
+        // neither do server runtimes that have workers but no window.
+        if (typeof window !== "undefined" && typeof Worker === "function")
+          setTimeout(() => module.warmExpressionRuntime(), 0);
+        // use() then reads it without suspending.
+        Object.assign(promise, { status: "fulfilled", value: undefined });
+      },
+      (error: unknown) => {
+        // A later call retries a chunk that failed to load.
+        preload = undefined;
+        throw error;
+      },
+    );
+    preload = promise;
+  }
+  return preload;
 }
-/** Suspends only while the shared host and Shadow DOM code loads. */
+/**
+ * Drops the finished answers that `cacheKey` keeps in host and Shadow DOM
+ * modes: later renderers parse and evaluate again, and answers on screen keep
+ * working until they unmount. For hosts that end a user's session, and for
+ * tests and story runners that must not carry one case's answers and reader
+ * state into the next.
+ */
+export function clearDocumentCache(): void {
+  // Nothing is cached before the host code loads.
+  styledModule?.clearDocumentCache();
+}
+/**
+ * Suspends only while the shared host and Shadow DOM code loads. Each
+ * instance keeps the path it mounted with: switching from the awaiting path
+ * to the loaded one would change the component type and remount the answer,
+ * losing its state.
+ */
 function StyledRenderer(props: StyledRendererModule.StyledRendererProps) {
-  // Call use() on every render: React rejects a component that stops calling
-  // use() after it suspended on it.
+  // Loaded code renders without use(): inside a test's synchronous act(),
+  // use() makes React defer the retries of Suspense boundaries in the answer
+  // (a lazy host component, say) to act's queue, where they never resume.
+  const [awaiting] = useState(() => styledModule === undefined);
+  if (awaiting || !styledModule) return <AwaitStyledRenderer {...props} />;
+  return <styledModule.StyledRenderer {...props} />;
+}
+/**
+ * Suspends until the code loads. It keeps calling use(), which returns the
+ * loaded module without suspending, for as long as its instance lives.
+ */
+function AwaitStyledRenderer(props: StyledRendererModule.StyledRendererProps) {
   const module = use(loadStyledRenderer());
   return <module.StyledRenderer {...props} />;
 }
@@ -92,10 +143,12 @@ interface DilCommonProps {
   onInput?: (detail: { length: number }) => void;
   onCommit?: (detail: RendererMetrics) => void;
   /**
-   * Receives each distinct problem once, with a developer-facing message and,
-   * for parse problems, the offset in `text`. Readers see short generic
-   * wording instead. Syntax problems and documents that ended with unfinished
-   * structure are also logged with `console.warn`. One message reports at most
+   * Receives each distinct problem once, with a stable `code`, a
+   * developer-facing message and, for parse problems, the offset in `text`.
+   * Readers see short generic wording instead, or the `diagnostics.Problem`
+   * component. Syntax problems and documents that ended with unfinished
+   * structure are also logged with `console.warn` unless
+   * `diagnostics.console` is false. One message reports at most
    * 20 problems, then one `limit` error; the `incomplete` report always
    * arrives. An exception thrown here is rethrown asynchronously and does not
    * interrupt rendering.
@@ -108,11 +161,55 @@ export interface DilIsolatedRendererProps extends DilCommonProps {
   componentConfig?: undefined;
   classNames?: undefined;
   slots?: undefined;
+  markdownComponents?: undefined;
+  diagnostics?: undefined;
+  uiPrimitives?: undefined;
+  onOpenDiagram?: undefined;
+  onSettled?: undefined;
+  cacheKey?: undefined;
+  snapshot?: undefined;
+  onSnapshot?: undefined;
   className?: undefined;
+  theme?: undefined;
   shadowStyles?: undefined;
 }
 interface DilStyledRendererProps extends DilCommonProps, DilCustomization {
+  /**
+   * Called once, when the complete document has the final layout readers
+   * can see: no evaluation is queued or running and no placeholder in view is
+   * pending, including lazily loaded widgets. A widget outside the visible
+   * area keeps its reserved height while it loads and does not delay it. The
+   * renderer root carries `data-dil-settled` ("false", then "true") for hosts
+   * that watch the DOM instead.
+   */
+  onSettled?: (() => void) | undefined;
+  /**
+   * Your identity for a finished answer, such as a message id with a hash of
+   * its text. A renderer that mounts with the key and text of one that
+   * unmounted adopts its live document, results and state: no placeholder
+   * and no worker job. OpenDIL keeps up to 12 such documents.
+   */
+  cacheKey?: string | undefined;
+  /**
+   * A snapshot from `onSnapshot` for this text. Its results show in the
+   * first commit and the expression runtime then confirms them; a snapshot
+   * of other text is ignored.
+   */
+  snapshot?: DilSnapshot | undefined;
+  /**
+   * Receives the answer's snapshot when a finished answer first settles. If
+   * widgets out of view were still loading then, it receives the snapshot
+   * again with their heights once they have laid out; keep the latest.
+   */
+  onSnapshot?: ((snapshot: DilSnapshot) => void) | undefined;
   className?: string | undefined;
+  /**
+   * `"stock"` (default) applies OpenDIL's colors, radius, and font. `"inherit"`
+   * leaves those design variables (`--background`, `--foreground`, `--primary`,
+   * `--border`, `--radius`, `--chart-1`…) to the host page, which must then
+   * define them; `tokens` still applies on top.
+   */
+  theme?: "stock" | "inherit" | undefined;
 }
 export interface DilHostRendererProps extends DilStyledRendererProps {
   mode: "host";
@@ -130,7 +227,16 @@ const styledOnly = [
   "componentConfig",
   "classNames",
   "slots",
+  "markdownComponents",
+  "diagnostics",
+  "uiPrimitives",
+  "onOpenDiagram",
+  "onSettled",
+  "cacheKey",
+  "snapshot",
+  "onSnapshot",
   "className",
+  "theme",
   "shadowStyles",
 ] as const;
 export function DilRenderer(props: DilRendererProps) {
@@ -162,12 +268,21 @@ export function DilRenderer(props: DilRendererProps) {
         onFollowChange={props.onFollowChange}
         onInput={props.onInput}
         onCommit={props.onCommit}
+        onSettled={props.onSettled}
+        cacheKey={props.cacheKey}
+        snapshot={props.snapshot}
+        onSnapshot={props.onSnapshot}
         onError={props.onError}
         components={props.components}
         componentConfig={props.componentConfig}
         classNames={props.classNames}
         slots={props.slots}
+        markdownComponents={props.markdownComponents}
+        diagnostics={props.diagnostics}
+        uiPrimitives={props.uiPrimitives}
+        onOpenDiagram={props.onOpenDiagram}
         className={props.className}
+        theme={props.theme ?? "stock"}
         appearance={props.appearance ?? "light"}
         tokens={props.tokens}
         shadowStyles={props.mode === "shadow" ? props.shadowStyles : undefined}

@@ -2,14 +2,6 @@
 .dil-scope {
   --dil-text-color: #0d0d0d;
   --dil-muted-text-color: #5d5d5d;
-  --foreground: #0d0d0d;
-  --muted-foreground: #5d5d5d;
-  --secondary: #f4f4f4;
-  --muted: #f7f7f7;
-  --border: #e5e5e5;
-  --font-dil:
-    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
-    sans-serif;
   --dil-control-radius: 12px;
   --dil-item-radius: 8px;
   --dil-success: #22825e;
@@ -23,10 +15,24 @@
   --dil-chart-height: 280px;
   --dil-spacing: 4px;
 }
-[data-slot="toggle-group"] {
+/* Shared design variables; theme="inherit" takes them from the host page.
+   :where() keeps the specificity of .dil-scope, so host class overrides still win. */
+.dil-scope:where(:not([data-dil-theme="inherit"])) {
+  --foreground: #0d0d0d;
+  --muted-foreground: #5d5d5d;
+  --secondary: #f4f4f4;
+  --muted: #f7f7f7;
+  --border: #e5e5e5;
+  --font-dil:
+    ui-sans-serif, system-ui, -apple-system, "Segoe UI", Helvetica, Arial,
+    sans-serif;
+}
+/* Stock classes rather than data-slot, so host primitives that share shadcn's
+   data-slot names keep their own styles. */
+.dil-toggle-group {
   border-radius: var(--dil-control-radius);
   gap: var(--dil-spacing);
 }
-[data-slot="toggle-group-item"] {
+.dil-toggle-group-item {
   border-radius: var(--dil-item-radius);
 }

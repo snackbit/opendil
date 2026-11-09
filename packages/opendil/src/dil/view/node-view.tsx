@@ -3,14 +3,14 @@ import { memo, useCallback, useContext, useMemo, useLayoutEffect } from "react";
 import { useStore } from "zustand";
 import type { DilDocument } from "../runtime/document";
 import type { BindingState, Scope } from "../runtime/expressions";
-import { MarkdownNode } from "./markdown-node";
+import { MarkdownNode } from "../markdown/markdown-node";
 import { NodeChildren } from "./node-children";
 import { Primitive } from "../widgets/primitives/primitive";
 import { RepeatedNodes } from "./repeated-nodes";
 import { RenderBoundary, useReportProblem } from "./render-boundary";
-import { UNSHOWN_PART_MESSAGE } from "../render-error";
+import { UNSHOWN_PART_MESSAGE, type DilRenderError } from "../render-error";
 import { TableScope } from "./table-context";
-import { LoadingBlock } from "./loading-block";
+import { LoadingBlock, NodePlaceholder } from "./loading-block";
 import { RenderLimit } from "./render-limit";
 import { ControlRevisionContext } from "../widgets/control-revision";
 import { usePresentationKey } from "./reveal/presentation";
@@ -83,13 +83,23 @@ const NodeContent = memo(function NodeContent({
   const evaluated = useMemo(() => {
     // The signature is the selective dependency on document-owned mutable state.
     void version;
+    // Read with the values it belongs to, so a control sees one revision per batch.
+    const revision = document.engine.evaluationRevision(
+      node.attributes.value?.expression ?? node.attributes.checked?.expression,
+      scope,
+    );
     try {
-      return { attributes: document.attributes(node, scope), error: "" };
+      return {
+        attributes: document.attributes(node, scope),
+        error: "",
+        revision,
+      };
     } catch (error) {
       return {
         attributes: {},
         error:
           error instanceof Error ? error.message : "Cannot evaluate component",
+        revision,
       };
     }
   }, [node, document, scope, version]);
@@ -107,20 +117,20 @@ const NodeContent = memo(function NodeContent({
     !previous &&
     !evaluated.error.startsWith("Waiting for isolated") &&
     !document.engine.stopped;
-  useReportProblem(
-    document,
-    failed
-      ? {
-          kind: "runtime",
-          message: `Cannot evaluate the attributes of <${node.name}>: ${evaluated.error}`,
-          offset: node.offset,
-        }
-      : undefined,
-  );
+  const attributeProblem: DilRenderError | undefined = failed
+    ? {
+        kind: "runtime",
+        code: "attributes-failed",
+        message: `Cannot evaluate the attributes of <${node.name}>: ${evaluated.error}`,
+        offset: node.offset,
+      }
+    : undefined;
+  useReportProblem(document, attributeProblem);
   const reportRenderError = useCallback(
     (message: string) =>
       document.report({
         kind: "runtime",
+        code: "component-render-failed",
         message: `Cannot render <${node.name}>: ${message}`,
         offset: node.offset,
       }),
@@ -135,19 +145,36 @@ const NodeContent = memo(function NodeContent({
         table={table}
         svg={svg}
         error={UNSHOWN_PART_MESSAGE}
+        problem={{
+          kind: "syntax",
+          code: "malformed-syntax",
+          message: node.error,
+          offset: node.offset,
+        }}
       />
     );
   if (evaluated.error && !previous)
     return (
-      <LoadingBlock
+      <NodePlaceholder
+        document={document}
+        nodeId={node.id}
         name={node.name}
         table={table}
         svg={svg}
         error={complete && failed ? UNSHOWN_PART_MESSAGE : undefined}
+        problem={attributeProblem}
       />
     );
   if (node.kind === "pending")
-    return <LoadingBlock name={node.name} table={table} svg={svg} />;
+    return (
+      <NodePlaceholder
+        document={document}
+        nodeId={node.id}
+        name={node.name}
+        table={table}
+        svg={svg}
+      />
+    );
   if (node.kind === "markdown")
     return (
       <RenderBoundary
@@ -218,13 +245,7 @@ const NodeContent = memo(function NodeContent({
       streaming={!complete}
       onError={reportRenderError}
     >
-      <ControlRevisionContext.Provider
-        value={document.engine.evaluationRevision(
-          node.attributes.value?.expression ??
-            node.attributes.checked?.expression,
-          scope,
-        )}
-      >
+      <ControlRevisionContext.Provider value={evaluated.revision}>
         <Primitive
           node={node}
           attributes={attributes}

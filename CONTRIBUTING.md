@@ -18,6 +18,14 @@ Good starting points in the package source (`packages/opendil/src/dil`): `dil-re
 
 Use Node 24 and npm.
 
+`npm ci` installs the tracked `.githooks/pre-commit` hook for this checkout.
+If dependencies were installed with `--ignore-scripts`, run `npm run hooks:install`.
+Stage all tracked edits before committing. Every commit runs `npm run ci:local`,
+the same build, quality, browser, package, rebuild, site, links, and example checks
+as GitHub CI. Install Chromium with the setup command below before the first commit.
+The shared runner sets `CI=true` locally too, including the existing CI performance
+budgets and a fresh Playwright server rather than reusing a running site.
+
 ```sh
 npm ci
 npm run build

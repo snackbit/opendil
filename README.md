@@ -32,7 +32,7 @@ The default rendering mode draws each answer in a sandboxed iframe that loads `f
 Put the agent spec first in your system prompt:
 
 ```ts
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
 
 export const systemPrompt = [
   agentSpec,
@@ -76,7 +76,7 @@ Three rules apply to every streamed answer:
 
 An integration has two halves, one on each side of your existing chat.
 
-**Teach the model DIL.** The agent spec is a Markdown document that teaches a model the syntax, the stock components, and the output rules. It ships in the package, so the prompt always matches your renderer version. `@snackbit/opendil/agent-spec` exports three strings: `agentSpec` (the primary spec, about 23 KB), `agentSpecFull` (about 83 KB, with a block per component and task), and `agentSpecExamples` (a runnable example per component). The same files are exported as Markdown under `@snackbit/opendil/spec/`, and the source lives in [`spec/`](https://github.com/snackbit/opendil/tree/main/spec).
+**Teach the model DIL.** The agent spec is a Markdown document that teaches a model the syntax, the stock components, and the output rules. It ships in the package, so the prompt always matches your renderer version. `@snackbit/opendil/lib` exports three strings: `agentSpec` (the primary spec, about 23 KB), `agentSpecFull` (about 83 KB, with a block per component and task), and `agentSpecExamples` (a runnable example per component). The same files are exported as Markdown under `@snackbit/opendil/spec/`, and the source lives in [`spec/`](https://github.com/snackbit/opendil/tree/main/spec).
 
 - [Agent spec](https://opendil.com/docs/agent-spec/): load the spec, choose primary or full, and add your own rules.
 - [Prompting and evaluation](https://opendil.com/docs/prompting/): decide when the model should use UI, supply data, and test generated answers.

@@ -1,4 +1,8 @@
-export { DilRenderer, preloadHostRenderer } from "./dil/dil-renderer";
+export {
+  clearDocumentCache,
+  DilRenderer,
+  preloadHostRenderer,
+} from "./dil/dil-renderer";
 export type { DilRendererHandle } from "./dil/renderer-handle";
 export type {
   AutoScroll,
@@ -12,9 +16,43 @@ export type {
   DilShadowRendererProps,
   DilIsolatedRendererProps,
 } from "./dil/dil-renderer";
-export type { DilComponentProps, DilCustomization } from "./dil/customization";
+export type {
+  DilComponentProps,
+  DilCustomization,
+  DilDiagram,
+} from "./dil/customization";
 export type { RendererMetrics } from "./dil/renderer-environment";
-export type { DilRenderError, DilRenderErrorKind } from "./dil/render-error";
+export type { DilSnapshot } from "./dil/document-cache";
+export type {
+  DilDiagnostics,
+  DilProblemProps,
+  DilRenderError,
+  DilRenderErrorCode,
+  DilRenderErrorKind,
+} from "./dil/render-error";
+export type {
+  DilMarkdownCodeProps,
+  DilMarkdownComponents,
+  DilMarkdownHeadingProps,
+  DilMarkdownImageProps,
+  DilMarkdownLinkProps,
+  DilMarkdownUrlTransform,
+} from "./dil/markdown/markdown-components";
+export type {
+  DilButtonProps,
+  DilCheckboxProps,
+  DilInputProps,
+  DilPopoverContentProps,
+  DilPopoverProps,
+  DilPopoverTriggerProps,
+  DilRadioGroupItemProps,
+  DilRadioGroupProps,
+  DilSliderProps,
+  DilToggleGroupItemProps,
+  DilToggleGroupProps,
+  DilTooltipProps,
+  DilUiPrimitives,
+} from "./dil/ui-primitives";
 export type {
   ProgressiveRevealOptions,
   ProgressiveReveal,

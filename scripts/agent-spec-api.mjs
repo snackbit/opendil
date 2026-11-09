@@ -68,6 +68,7 @@ export function extractApi() {
     "segmented-control": "SegmentedControl",
     "radio-group": "RadioGroupControl",
     radio: "RadioControl",
+    "popover-content": "PopoverContentControl",
   };
   const api = new Map();
   visit(primitive, (n) => {

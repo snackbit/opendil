@@ -79,10 +79,11 @@ The frame runs only OpenDIL's own scripts, WebAssembly for QuickJS, and `blob:` 
 
 The built-in components accept no URLs and do not render raw HTML.
 
-- Markdown links render as plain text without navigation. Markdown images are not rendered.
+- Markdown links render as plain text without navigation. Markdown images are not rendered. In host and Shadow DOM modes your `markdownComponents` can render them; the URLs then come from the answer, so check the scheme and decide what may load. By default only relative, `http`, `https`, `mailto`, `irc`, `ircs`, and `xmpp` URLs reach your components; a `urlTransform` you pass replaces that policy and must refuse what you do not handle. A URL that contains an expression is never passed to your component or your policy.
+- `<Markdown>` blocks and `MarkdownRenderer` render Markdown only: tags, braces, and directives in them never become components or expressions.
 - `AsyncImage` draws a local SVG illustration from its query. It never fetches an image.
-- `Mermaid` runs at Mermaid's strict security level and refuses directives, click handlers, class and style definitions, and `<` characters. DOMPurify then removes scripts, `foreignObject`, links, and `href` attributes from the output.
-- SVG elements keep only an allowlist of presentation attributes. Values that contain `javascript:`, `http:`, `https:`, `data:`, or a `url()` other than a local `url(#id)` reference are dropped.
+- `Mermaid` runs at Mermaid's strict security level and refuses directives, click handlers, class and style definitions, `<` characters, and `@{...}` metadata nodes. Metadata is rejected before rendering because image nodes can load resources during layout, before SVG sanitization. DOMPurify then removes scripts, `foreignObject`, `image`, `use`, links, and `href` attributes from the output, and OpenDIL removes `@import`, `@font-face`, `image-set()`, `image()`, `cross-fade()`, `src()`, and every `url()` other than a local `url(#id)` from its styles and attributes, and drops styles that contain CSS escapes, so a diagram fetches nothing.
+- SVG elements keep only an allowlist of presentation attributes, without `style`, `href`, `filter`, `mask`, or `clip-path`. Values that contain `javascript:`, `http:`, `https:`, `data:`, `//`, `@import`, `image-set()`, `image()`, `cross-fade()`, `src()`, escapes, or a `url()` other than a local `url(#id)` reference are dropped.
 - Color attributes must be a named color from the spec or a valid CSS color without `url`, `var(`, `;`, or braces. Other values are ignored.
 - In iframe mode the frame validates theme tokens and ignores values that could load a resource. In host and Shadow DOM modes tokens are not validated, because they come from your code, not from the answer.
 
@@ -108,6 +109,8 @@ Content-Security-Policy: sandbox allow-scripts; frame-ancestors 'self'
 - Allow `worker-src blob:` and `script-src 'wasm-unsafe-eval'`. If your page's `trusted-types` directive lists policy names, add `opendil`.
 - Validate every attribute your [custom components](/docs/custom-components/) read, including URLs. Never spread attributes onto DOM elements, and never render attribute values as raw HTML.
 - Use these modes only where you accept that the answer renders with your page's privileges.
+- Injected [UI primitives](/docs/custom-components/#design-system-controls) are your code: they receive values from the answer, such as input text and option labels, through OpenDIL's props. Render them as text.
+- `serialize()` builds its HTML from the rendered document's semantics, not by copying markup: it keeps only `http(s)` and `mailto` links and `http(s)` images, and no attributes that could carry handlers or styles. Paste targets still treat it as untrusted HTML.
 
 [Rendering modes](/docs/rendering-modes/#set-a-content-security-policy) shows the CSP and header setup for each mode and framework.
 

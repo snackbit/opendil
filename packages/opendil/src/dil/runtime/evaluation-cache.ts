@@ -6,7 +6,13 @@ export interface EvaluationEntry {
   oneShot: boolean;
   ready: boolean;
   dirty: boolean;
+  /** A view withheld rendering until this entry became fresh again. */
+  awaitingFreshness: boolean;
   value: unknown;
+  /** The result as the worker encoded it, to recognize an unchanged value. */
+  raw?: string;
+  /** Shown from a snapshot until the worker evaluates it once. */
+  provisional?: boolean;
   dependencies?: readonly string[];
   revision: number;
   invalidated: number;
@@ -16,6 +22,18 @@ export class EvaluationCache {
   readonly entries = new Map<string, EvaluationEntry>();
   key(source: string, scope: Scope) {
     return JSON.stringify([source, scope]);
+  }
+  /** The source and scope a key names, or undefined for a malformed key. */
+  parseKey(key: string): [string, Scope] | undefined {
+    const parsed = parseJson(key);
+    return Array.isArray(parsed) &&
+      parsed.length === 2 &&
+      typeof parsed[0] === "string" &&
+      parsed[1] &&
+      typeof parsed[1] === "object" &&
+      !Array.isArray(parsed[1])
+      ? [parsed[0], parsed[1] as Scope]
+      : undefined;
   }
   ensure(source: string, scope: Scope) {
     const key = this.key(source, scope);
@@ -28,6 +46,7 @@ export class EvaluationCache {
         oneShot: false,
         ready: false,
         dirty: true,
+        awaitingFreshness: false,
         value: undefined,
         revision: 0,
         invalidated: 0,
@@ -59,4 +78,28 @@ export class EvaluationCache {
       inactive--;
     }
   }
+}
+
+/** JSON literals read without QuickJS; see ExpressionEngine.literal(). */
+export const NOT_JSON = Symbol("not JSON");
+export function parseJson(source: string): unknown {
+  try {
+    return JSON.parse(source);
+  } catch {
+    return NOT_JSON;
+  }
+}
+const RESERVED_KEYS: ReadonlySet<string> = new Set([
+  "__proto__",
+  "$dilHandler",
+]);
+/** Past revive's nesting limit the value is refused anyway, so the walk stops there. */
+export function hasReservedKey(value: unknown, depth: number): boolean {
+  if (!value || typeof value !== "object" || depth > 65) return false;
+  if (Array.isArray(value))
+    return value.some((entry) => hasReservedKey(entry, depth + 1));
+  return Object.entries(value).some(
+    ([key, entry]) =>
+      RESERVED_KEYS.has(key) || hasReservedKey(entry, depth + 1),
+  );
 }

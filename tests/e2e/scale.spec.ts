@@ -49,6 +49,9 @@ test("virtualizes thousands of blocks while preserving focus and offscreen state
 test("virtualizes repeated templates and table rows without invalid HTML", async ({
   page,
 }) => {
+  // Separate iframe measurement and host scroll messages as on a slower CI runner.
+  const session = await page.context().newCDPSession(page);
+  await session.send("Emulation.setCPUThrottlingRate", { rate: 4 });
   const ui = dilPage(page);
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));

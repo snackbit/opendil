@@ -32,27 +32,48 @@ it("publishes latest source throughout a continuous stream without waiting for a
   expect(commits.at(-1)).toEqual({ time: 800, value: 20 });
   scheduler.dispose();
 });
-it("keeps actions immediate while stream work remains coalesced, and supports live interval changes", () => {
+it("publishes instant work once per frame and actions in a microtask, and supports live interval changes", async () => {
+  const frames: FrameRequestCallback[] = [];
+  vi.stubGlobal("requestAnimationFrame", (callback: FrameRequestCallback) =>
+    frames.push(callback),
+  );
+  vi.stubGlobal("cancelAnimationFrame", (id: number) => {
+    frames[id - 1] = () => {};
+  });
   const scheduler = new PresentationScheduler(),
     events: string[] = [];
-  scheduler.enqueue("first", () => events.push("instant"));
+  scheduler.enqueue("source", () => events.push("source"));
+  scheduler.enqueue("bindings", () => events.push("bindings"));
+  scheduler.enqueue("bindings", () => events.push("latest bindings"));
+  expect(events).toEqual([]);
+  frames.splice(0).forEach((frame) => frame(0));
+  expect(events).toEqual(["source", "latest bindings"]);
+  expect(vi.getTimerCount()).toBe(0);
+  // Without a frame, as in a background tab, a timer publishes.
+  scheduler.enqueue("source", () => events.push("unpainted"));
+  vi.advanceTimersByTime(50);
+  expect(events.at(-1)).toBe("unpainted");
   scheduler.configure(200);
-  scheduler.enqueue("source", () => events.push("first source"));
-  vi.advanceTimersByTime(0);
   scheduler.enqueue("source", () => events.push("pending source"));
   scheduler.enqueue("bindings", () => events.push("pending bindings"));
-  vi.advanceTimersByTime(50);
   scheduler.enqueue("bindings", () => events.push("action"), true);
-  expect(events).toEqual(["instant", "first source", "action"]);
+  // A later non-urgent task joins the action's microtask.
+  scheduler.enqueue("bindings", () => events.push("action, latest"));
+  await Promise.resolve();
+  expect(events.slice(3)).toEqual(["action, latest"]);
   scheduler.configure(400);
   vi.advanceTimersByTime(349);
-  expect(events).toHaveLength(3);
+  expect(events).toHaveLength(4);
   scheduler.configure("instant");
+  frames.splice(0).forEach((frame) => frame(0));
   expect(events.at(-1)).toBe("pending source");
-  expect(vi.getTimerCount()).toBe(0);
   scheduler.dispose();
+  expect(vi.getTimerCount()).toBe(0);
   scheduler.enqueue("ignored", () => events.push("disposed"));
+  scheduler.enqueue("ignored", () => events.push("disposed"), true);
+  await Promise.resolve();
   expect(events).not.toContain("disposed");
+  vi.unstubAllGlobals();
 });
 it("cancels abandoned work and validates public and frame-boundary values", () => {
   expect(parseUpdateInterval(undefined)).toBe("instant");

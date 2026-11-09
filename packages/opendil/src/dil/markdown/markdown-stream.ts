@@ -19,6 +19,24 @@ export const EMPTY_MARKDOWN: MarkdownSnapshot = {
   blocks: [],
   complete: false,
 };
+/** Block splits of finished prose, most recently used last. */
+const SPLIT = new Map<string, MarkdownSnapshot>();
+// A few hundred prose nodes: the dozen finished answers the document cache
+// keeps. Each entry holds its source about twice (key and blocks), so the
+// character budget bounds what a long history of large answers keeps alive.
+const SPLIT_LIMIT = 512;
+const SPLIT_CHARACTERS = 4_000_000;
+let splitCharacters = 0;
+function rememberSplit(snapshot: MarkdownSnapshot) {
+  if (snapshot.source.length > SPLIT_CHARACTERS) return;
+  SPLIT.set(snapshot.source, snapshot);
+  splitCharacters += snapshot.source.length;
+  for (const [oldest, { source }] of SPLIT) {
+    if (SPLIT.size <= SPLIT_LIMIT && splitCharacters <= SPLIT_CHARACTERS) break;
+    SPLIT.delete(oldest);
+    splitCharacters -= source.length;
+  }
+}
 /** Only the trailing block is reparsed; completed blocks keep their values and keys. */
 export function advanceMarkdown(
   previous: MarkdownSnapshot,
@@ -27,7 +45,21 @@ export function advanceMarkdown(
 ): MarkdownSnapshot {
   if (previous.source === source && previous.complete === complete)
     return previous;
-  const base = source.startsWith(previous.source) ? previous : EMPTY_MARKDOWN;
+  // Once complete, even an appended character can change the last block.
+  const base =
+    !previous.complete && source.startsWith(previous.source)
+      ? previous
+      : EMPTY_MARKDOWN;
+  if (complete && base === EMPTY_MARKDOWN) {
+    // A finished answer that mounts again, as a virtualized row, splits
+    // its prose into the same blocks.
+    const known = SPLIT.get(source);
+    if (known) {
+      SPLIT.delete(source);
+      SPLIT.set(source, known);
+      return known;
+    }
+  }
   const tail = source.slice(base.offset);
   const nodes = parser.parse(tail).children;
   // remark-parse always supplies offsets; this parser has no transforms that remove positions.
@@ -43,13 +75,15 @@ export function advanceMarkdown(
     ? lastFinal.offset + lastFinal.text.length
     : base.offset;
   const trailing = complete ? undefined : next.at(-1);
-  return {
+  const snapshot: MarkdownSnapshot = {
     source,
     offset,
     complete,
     blocks: [...base.blocks, ...finalized],
     ...(trailing ? { trailing } : {}),
   };
+  if (complete && base === EMPTY_MARKDOWN) rememberSplit(snapshot);
+  return snapshot;
 }
 export function currentMarkdown(
   snapshot: MarkdownSnapshot,

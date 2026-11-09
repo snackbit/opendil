@@ -24,7 +24,12 @@ export interface DilNode {
 }
 /** A parse problem reported to the host once, with its source offset. */
 export interface ParseIssue {
-  kind: "syntax" | "incomplete";
+  kind: "syntax" | "incomplete" | "limit";
+  code:
+    | "malformed-syntax"
+    | "unfinished-structure"
+    | "parser-node-limit"
+    | "parser-depth-limit";
   message: string;
   offset: number;
 }
@@ -37,12 +42,6 @@ export interface TreeBatch {
   complete: boolean;
   scanned: number;
 }
-/** The parser's last reply when a message exceeds its node limit. */
-export interface ParserStop {
-  stopped: "limit";
-  message: string;
-}
-export type ParserReply = TreeBatch | ParserStop;
 export interface StreamInput {
   suffix: string;
   complete: boolean;

@@ -6,7 +6,7 @@ import {
   Collapsible,
   CollapsibleContent,
   CollapsibleTrigger,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import { ChevronRight } from "lucide-react";
 import { ShellScope } from "@/components/workbench/shell-scope";
 

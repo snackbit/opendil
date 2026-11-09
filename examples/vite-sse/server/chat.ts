@@ -1,13 +1,13 @@
-import { agentSpec } from "@snackbit/opendil/agent-spec";
+import { agentSpec } from "@snackbit/opendil/lib";
+import { readChatRequest } from "./request.ts";
 
 // Any provider with an OpenAI-compatible Chat Completions endpoint works.
 const baseUrl = process.env.LLM_BASE_URL ?? "https://api.openai.com/v1";
 const encoder = new TextEncoder();
 
-type Message = { role: "user" | "assistant"; content: string };
-
 export async function POST(req: Request) {
-  const { messages }: { messages: Message[] } = await req.json();
+  const messages = await readChatRequest(req);
+  if (messages instanceof Response) return messages;
   const body = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (event: object) =>

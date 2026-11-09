@@ -7,7 +7,7 @@ Data is synthetic unless a recipe explicitly describes supplied records.
 
 Lookup index:
 
-- Text: text, title, caption, badge, label, CodeBlock.
+- Text: text, title, caption, badge, label, CodeBlock, Markdown.
 - Media: AsyncImage.
 - Layout: box, row, grid, grid-item, spacer, divider, table, table-row,
   table-cell, popover, popover-trigger, popover-content, carousel, carousel-item.
@@ -224,6 +224,16 @@ update an authored state binding.
 const message = "Hello";
 console.log(message);
 </CodeBlock>
+```
+
+#### Component: Markdown
+
+Braces, tags, and directives inside display literally.
+
+```dil
+<Markdown>
+**Template:** Dear {name}, your order <Order id="1"/> has shipped.
+</Markdown>
 ```
 
 ### Media components

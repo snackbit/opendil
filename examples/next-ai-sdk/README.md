@@ -4,6 +4,8 @@ A streaming chat built with the Next.js App Router and the [Vercel AI SDK](https
 
 It is the code from [Add OpenDIL to your chat app](https://opendil.com/docs/chat-integration/) (AI SDK and Next.js tabs) in a runnable app.
 
+This example is for local development. The server binds to `127.0.0.1`; the chat route accepts only development requests with a loopback URL and no external browser origin. Its request reader limits JSON to 64 KiB, 40 messages, and 16,000 characters per text part, and accepts only user/assistant text. Do not expose the development server through a public proxy. Before adapting it for production, add application authentication, per-user usage limits, and provider spending controls.
+
 ## Run it
 
 Node.js 24 or later:
@@ -16,7 +18,7 @@ npm run dev
 
 Open http://localhost:3000 and ask for something visual, such as "a pricing calculator for 5 to 50 seats".
 
-`npm install` also runs `opendil copy-assets` (the `postinstall` script), which copies the iframe runtime into `public/opendil/`. Run `npm run build` and `npm start` for a production build, and `npm run typecheck` to check the types.
+`npm install` also runs `opendil copy-assets` (the `postinstall` script), which copies the iframe runtime into `public/opendil/`. `npm run build` and `npm start` can verify the production UI locally, but the production chat route refuses requests before calling the provider. Run `npm run typecheck` to check the types.
 
 ## Where to look
 

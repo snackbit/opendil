@@ -16,7 +16,7 @@ import {
   PopoverContent,
   ToggleGroupItem,
   Tooltip,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import { SegmentedControl } from "@/components/workbench/shell-scope";
 import type { StressSpeed } from "./replay-delivery";
 import type { RenderMode } from "./demo-renderer";

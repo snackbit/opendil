@@ -2,6 +2,7 @@
   "extends": "@opendil/tsconfig/base.json",
   "compilerOptions": {
     "noEmit": true,
+    "allowImportingTsExtensions": true,
     "types": ["vite/client", "node"],
     "paths": { "@/*": ["./apps/site/*"] }
   },

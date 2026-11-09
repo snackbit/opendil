@@ -157,7 +157,7 @@ isStreaming={
 
 ## Fade in new content
 
-`progressiveReveal` fades in each new block once, instead of letting it pop in. It is off by default.
+`progressiveReveal` fades in each new block once, instead of letting it pop in. It is off by default. Only text that arrives while the renderer streams fades in: an answer that is finished when it mounts, and the text a streaming answer already had when its renderer mounted, appear at once. So you can pass the same value for every message in a chat, including its history.
 
 ```tsx
 <DilRenderer text={text} isStreaming={isStreaming} progressiveReveal />
@@ -177,6 +177,7 @@ isStreaming={
 - A wave of blocks that arrives together is staggered for at most six stagger intervals, so a large chunk does not trickle in.
 - Readers who ask for reduced motion see content at once.
 - Content that was already shown does not fade again, for example when it scrolls back into view in a [virtualized](/docs/performance/) list.
+- When `isStreaming` turns `false`, blocks still waiting or fading show at once, and values, charts, and diagrams that arrive later never fade.
 
 A [custom component](/docs/custom-components/#read-attributes-and-call-back-into-the-answer) joins the reveal when it forwards `presentationRef` to its visual root.
 
@@ -293,14 +294,14 @@ While following, the renderer sets `overflow-anchor: none` on the element it scr
 
 ## Control how often the screen updates
 
-By default the renderer applies new text as fast as it arrives, at most once per animation frame. For very fast streams or slow devices, set `updateInterval` to a number of milliseconds:
+By default the renderer applies new text and expression results as fast as they arrive, together, at most once per animation frame. For very fast streams or slow devices, set `updateInterval` to a number of milliseconds:
 
 ```tsx
 <DilRenderer text={text} isStreaming={isStreaming} updateInterval={100} />
 ```
 
-- The renderer then updates the screen for streamed text at most once per interval. It does not wait for the stream to go quiet.
-- Typing, clicks, and the updates they cause stay immediate.
+- The renderer then updates the screen for streamed text and expression results at most once per interval. It does not wait for the stream to go quiet.
+- Typing, clicks, and the updates they cause stay immediate: their results reach the screen in the next commit, without waiting for a frame.
 - `"instant"` (default) and `0` both mean no limit. Any value other than `"instant"` or a finite number of 0 or more throws "Update interval must be instant or a finite nonnegative number of milliseconds."
 
 [Long conversations and performance](/docs/performance/) covers other ways to keep long chats fast.
@@ -324,6 +325,10 @@ Two callbacks report progress. Use them for tests and metrics, not to time anima
 - `onCommit` runs after the renderer applies parsed text, at most once per animation frame. `scanned` is how much of the text has been parsed. `complete` is `true` once the final text is applied, and `incomplete` is `true` when the answer [stopped early](#when-an-answer-stops-early).
 
 `onCommit` does not mean the screen has painted, or that charts have finished their layout.
+
+In host and Shadow DOM modes, `onSettled` runs once when a finished answer has the final layout readers can see: its expressions have their values and no placeholder in view is still waiting, including lazily loaded diagrams. A chart, graph or diagram outside the visible area does not delay it: it keeps its reserved height while it loads, so the text around it stays in place. The renderer's root element also carries `data-dil-settled`, `"false"` and then `"true"`. Use it to show or position an answer, such as scrolling a restored conversation to its end, without letting readers watch it fill in.
+
+Until then, an answer that was finished when its renderer mounted, and has not settled in an earlier renderer, keeps the height of its first frame, and its root carries `data-dil-held`. Values, charts and diagrams fill in inside that box, and the page around it moves once, when the answer settles. The reader's first input inside the answer, a new width, or 1.5 seconds without settling ends the hold earlier. A streaming answer is never held.
 
 ## Try it
 

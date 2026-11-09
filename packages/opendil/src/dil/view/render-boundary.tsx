@@ -3,6 +3,7 @@ import { Component, useEffect, type ReactNode } from "react";
 import { useStore } from "zustand";
 import type { DilDocument } from "../runtime/document";
 import type { DilRenderError } from "../render-error";
+import { PartProblem } from "./problem-view";
 interface RenderBoundaryProps {
   revision: string;
   streaming: boolean;
@@ -46,12 +47,15 @@ export class RenderBoundary extends Component<
   override render() {
     if (this.state.error)
       return this.props.streaming ? null : (
-        <div
-          role="alert"
-          className="rounded border border-destructive/30 p-3 text-sm text-destructive"
+        <PartProblem
+          error={{
+            kind: "runtime",
+            code: "component-render-failed",
+            message: this.state.error,
+          }}
         >
           {this.state.error}
-        </div>
+        </PartProblem>
       );
     return this.props.children;
   }
@@ -67,12 +71,21 @@ export function useReportProblem(
 ) {
   const complete = useStore(document.status, (state) => state.complete);
   const kind = problem?.kind;
+  const code = problem?.code;
   const message = problem?.message;
   const offset = problem?.offset;
   useEffect(() => {
-    if (!complete || kind === undefined || message === undefined) return;
+    if (
+      !complete ||
+      kind === undefined ||
+      code === undefined ||
+      message === undefined
+    )
+      return;
     document.report(
-      offset === undefined ? { kind, message } : { kind, message, offset },
+      offset === undefined
+        ? { kind, code, message }
+        : { kind, code, message, offset },
     );
-  }, [document, complete, kind, message, offset]);
+  }, [document, complete, kind, code, message, offset]);
 }

@@ -3,7 +3,7 @@ import "@snackbit/opendil/styles.css";
 import "./docs-components.css";
 import { useCallback, useState, type ChangeEvent } from "react";
 import dynamic from "next/dynamic";
-import { Input, ToggleGroupItem } from "@snackbit/opendil/ui";
+import { Input, ToggleGroupItem } from "@snackbit/opendil/lib";
 import {
   SegmentedControl,
   ShellScope,

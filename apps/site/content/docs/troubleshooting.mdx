@@ -102,11 +102,11 @@ If your policy has a `trusted-types` directive, add `opendil` to its list of nam
 
 ## Streaming
 
-### "Start a new renderer instance before replacing or restarting the document." or "Start a new message instance before replacing its source." [#start-a-new-renderer-instance]
+### "Start a new renderer instance …" or "Start a new message instance before replacing its source." [#start-a-new-renderer-instance]
 
-The second message appears in iframe mode when the text gets shorter.
+The second message appears in iframe mode. `onError` receives `code: "source-replaced"` or, for text that grows after the answer finished, `"source-after-final"`.
 
-**Cause:** The `text` prop must be append-only: each update keeps all the text received so far and adds to its end. This error appears when the text gets shorter, or changes after `isStreaming` became `false`. Common reasons:
+**Cause:** The `text` prop must be append-only: each update keeps all the text received so far and adds to its end. This error appears when the earlier text changes, even to text of the same length, or when text arrives after `isStreaming` became `false`. Common reasons:
 
 - a regenerated or edited answer reuses the previous answer's `key`;
 - your code removes characters it already passed, for example a code fence it strips only once the fence is complete;
@@ -194,9 +194,9 @@ An answer cut off in the middle of plain prose still reads "Complete", because t
 
 **Fix:** Ask the model for summaries, top-N lists, or pagination instead of full data sets. Lists built with `{#each}` virtualize above 100 items and count only their visible items. [Limits](/docs/limits/#display) explains what counts.
 
-### A Mermaid diagram shows "Diagram is incomplete or invalid" or "Unsupported or oversized Mermaid source"
+### A Mermaid diagram shows its source and a notice instead of a diagram
 
-**Cause:** "Diagram is incomplete or invalid" means the source has a syntax error or more than 100 edges. "Unsupported or oversized Mermaid source" means the source is longer than 8,192 characters, or uses a feature OpenDIL does not allow: a `%%{` directive, `click`, `classDef`, `style` or `linkStyle`, HTML, or front matter (`---`).
+**Cause:** the notice names the reason. "Diagram is incomplete or invalid." means a syntax error. "Diagram source is longer than 8,192 characters." and "Diagram has more than 100 edges." are the size limits. "Diagram uses a Mermaid feature that is not supported." means a `%%{` directive, `click`, `classDef`, `style` or `linkStyle`, HTML, or front matter (`---`).
 
 **Fix:** Ask for smaller diagrams. See [Diagrams](/docs/components/diagrams/) and the limits under [Components](/docs/limits/#components).
 
@@ -281,6 +281,14 @@ Keep values that must last in the answer's state with `DIL.useState`, and update
 **Cause:** Host and Shadow DOM renderers render inside a `Suspense` boundary with an empty fallback. A custom component that suspends hides the whole answer until it resolves.
 
 **Fix:** Wrap the suspending part of your component in your own `Suspense` with a fallback.
+
+## Tests
+
+### Host-mode answers stay empty in jsdom or happy-dom tests [#tests-without-workers]
+
+**Cause:** Host and Shadow DOM modes parse in a Web Worker started from a `blob:` URL, which test DOMs do not provide.
+
+**Fix:** Call `installInlineWorkers()` from `@snackbit/opendil/testing` before rendering, and its returned function after the test. The parser then runs in the test's thread, so Markdown, components, and JSON literals such as `{"Total"}` render. Other expressions and state never run there: the answer reports a `runtime` error with code `worker-blocked-policy`. Test interactive behavior in a real browser.
 
 ## Performance
 

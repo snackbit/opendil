@@ -2,7 +2,8 @@ import { useCallback, useEffect, useState, type ReactNode } from "react";
 import { Check } from "lucide-react";
 import { useStore } from "zustand";
 import type { StoreApi } from "zustand/vanilla";
-import { Tooltip } from "../../components/ui/overlays/tooltip";
+import { usePortalScope } from "../../components/ui/overlays/ui-scope";
+import { useUiPrimitives } from "../ui-primitives";
 import { ActionReceipt } from "../runtime/action-receipt";
 import type { DocumentStatus } from "../runtime/document";
 export type ActionFeedback = "idle" | "copied" | "failed";
@@ -14,6 +15,11 @@ export function useActionFeedback(status: StoreApi<DocumentStatus>) {
     if (intent === null || outcome?.intent !== intent) return "idle";
     return outcome.ok ? "copied" : "failed";
   });
+  // The document's clipboard announcement region exists only while it has actions.
+  useEffect(() => {
+    status.setState((state) => ({ actions: state.actions + 1 }));
+    return () => status.setState((state) => ({ actions: state.actions - 1 }));
+  }, [status]);
   useEffect(() => {
     if (feedback === "idle") return;
     const timer = setTimeout(() => setIntent(null), 2000);
@@ -32,8 +38,11 @@ export function ActionFeedbackTooltip({
   feedback: ActionFeedback;
   children: ReactNode;
 }) {
+  const { Tooltip } = useUiPrimitives();
+  const { container } = usePortalScope();
   return (
     <Tooltip
+      portalContainer={container}
       open={feedback !== "idle"}
       label={
         feedback === "failed" ? (

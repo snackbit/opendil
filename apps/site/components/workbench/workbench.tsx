@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Button, ToggleGroupItem } from "@snackbit/opendil/ui";
+import { Button, ToggleGroupItem } from "@snackbit/opendil/lib";
 import type {
   AutoScroll,
   DilRenderError,

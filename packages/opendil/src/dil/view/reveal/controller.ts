@@ -10,10 +10,25 @@ interface Target {
   hidden?: boolean;
   animation?: Animation;
 }
+/**
+ * Fades in blocks of a streaming answer as they arrive. Only text that
+ * arrives while the renderer streams reveals: a finished answer, history and
+ * the part of an answer that existed when the renderer mounted show at once,
+ * and the controller then neither measures nor touches their elements.
+ */
 export class RevealController {
   private timing: RevealTiming | null = null;
+  private streaming = false;
+  /**
+   * The source offset from which blocks may reveal: the text's length when
+   * the renderer mounted while streaming, otherwise never.
+   */
+  revealFrom = Infinity;
   private targets = new Map<string, Target>();
   private queued = new Set<Target>();
+  /** Queued targets whose layout is read together, before any is hidden. */
+  private preparing = new Set<Target>();
+  private preparation = false;
   private frame = 0;
   private started = false;
   private reduced = false;
@@ -22,10 +37,27 @@ export class RevealController {
     readonly history: PresentationHistory,
     private readonly viewport: () => { top: number; bottom: number },
   ) {}
+  /**
+   * Sets the rule's inputs during render: the refs of a commit register
+   * before its layout effects run. The effects then call configure() and
+   * setStreaming(), which also finish what can no longer reveal.
+   */
+  prime(timing: RevealTiming | null, streaming: boolean, revealFrom: number) {
+    this.timing = timing;
+    this.streaming = streaming;
+    this.revealFrom = revealFrom;
+  }
   configure(timing: RevealTiming | null) {
     this.timing = timing;
-    if (!timing)
-      for (const target of this.targets.values()) this.finish(target);
+    if (!timing) this.showAll();
+  }
+  /** The end of a stream shows every queued and fading block at once. */
+  setStreaming(streaming: boolean) {
+    this.streaming = streaming;
+    if (!streaming) this.showAll();
+  }
+  private get active() {
+    return this.timing !== null && this.streaming && !this.reduced;
   }
   start() {
     const media = matchMedia("(prefers-reduced-motion: reduce)");
@@ -36,13 +68,14 @@ export class RevealController {
       if (this.reduced) this.showAll();
     };
     media.addEventListener("change", change);
-    for (const target of this.queued) this.prepare(target);
-    this.schedule();
+    for (const target of this.queued) this.preparing.add(target);
+    this.prepareAll();
     return () => {
       this.started = false;
       cancelAnimationFrame(this.frame);
       this.frame = 0;
       media.removeEventListener("change", change);
+      this.preparing.clear();
       // Stopping is not finishing: React replays effects under StrictMode and
       // <Activity>, and the restarted controller reveals what is still queued.
       for (const target of this.targets.values())
@@ -55,9 +88,23 @@ export class RevealController {
     element: HTMLElement,
     eligible: boolean,
     skip: boolean,
+    offset = Infinity,
   ) {
     const previous = this.targets.get(key);
-    if (previous) this.release(previous);
+    if (previous) {
+      this.release(previous);
+      this.targets.delete(key);
+    }
+    if (
+      !this.active ||
+      skip ||
+      !eligible ||
+      offset < this.revealFrom ||
+      this.history.phase(key) === "visible"
+    ) {
+      this.history.set(key, "visible");
+      return () => {};
+    }
     const target: Target = {
       key,
       element,
@@ -67,15 +114,20 @@ export class RevealController {
     };
     this.targets.set(key, target);
     element.dataset.dilPresentation = key;
-    if (skip || !eligible || this.history.phase(key) === "visible")
-      this.finish(target);
-    else {
-      this.history.set(key, "ready");
-      this.queued.add(target);
-      if (this.started) {
-        this.prepare(target);
-        this.schedule();
+    this.history.set(key, "ready");
+    this.queued.add(target);
+    if (this.started) {
+      this.preparing.add(target);
+      // Ref callbacks of one commit register one after another; measuring
+      // them together after the commit forces one layout instead of one each.
+      if (!this.preparation) {
+        this.preparation = true;
+        queueMicrotask(() => {
+          this.preparation = false;
+          this.prepareAll();
+        });
       }
+      this.schedule();
     }
     return () => {
       if (this.targets.get(key) !== target) return;
@@ -89,6 +141,7 @@ export class RevealController {
    * again, as React does when it replays refs, reveals it.
    */
   private release(target: Target) {
+    this.preparing.delete(target);
     if (target.animation) this.finish(target);
     else {
       this.queued.delete(target);
@@ -102,34 +155,53 @@ export class RevealController {
     target.element.inert = target.inert;
     delete target.element.dataset.dilPhase;
   }
-  private prepare(target: Target) {
-    const { element } = target;
-    const box = element.getBoundingClientRect(),
-      view = this.viewport();
-    const root = element.getRootNode();
-    const focused =
-      root instanceof ShadowRoot
-        ? root.activeElement
-        : element.ownerDocument.activeElement;
-    if (
-      !this.timing ||
-      this.reduced ||
-      !element.isConnected ||
-      element.contains(focused) ||
-      box.bottom < view.top - 96 ||
-      box.top > view.bottom + 96
-    ) {
-      this.finish(target);
+  /** Reads every pending target's layout, then hides those that will fade in. */
+  private prepareAll(schedule = true) {
+    const targets = [...this.preparing];
+    this.preparing.clear();
+    if (!targets.length) return;
+    if (!this.active) {
+      for (const target of targets) this.finish(target);
       return;
     }
-    target.endOpacity = getComputedStyle(element).opacity;
-    element.style.opacity = "0";
-    element.inert = true;
-    target.hidden = true;
-    element.dataset.dilPhase = "ready";
+    const view = this.viewport();
+    const decisions = targets.map((target) => {
+      const { element } = target;
+      if (
+        // DOMs without the Web Animations API, such as jsdom, show it at once.
+        typeof element.animate !== "function" ||
+        !element.isConnected
+      )
+        return false;
+      const root = element.getRootNode();
+      const focused =
+        root instanceof ShadowRoot
+          ? root.activeElement
+          : element.ownerDocument.activeElement;
+      if (element.contains(focused)) return false;
+      const box = element.getBoundingClientRect();
+      if (box.bottom < view.top - 96 || box.top > view.bottom + 96)
+        return false;
+      target.endOpacity = getComputedStyle(element).opacity;
+      return true;
+    });
+    targets.forEach((target, index) => {
+      if (!this.queued.has(target)) return;
+      if (!decisions[index]) {
+        this.finish(target);
+        return;
+      }
+      const { element } = target;
+      element.style.opacity = "0";
+      element.inert = true;
+      target.hidden = true;
+      element.dataset.dilPhase = "ready";
+    });
+    if (schedule) this.schedule();
   }
   private finish(target: Target) {
     this.queued.delete(target);
+    this.preparing.delete(target);
     target.hidden = false;
     const animation = target.animation;
     if (animation) {
@@ -153,8 +225,10 @@ export class RevealController {
   }
   private flush() {
     this.frame = 0;
+    // Normally prepared in a microtask already; a frame never shows them unprepared.
+    this.prepareAll(false);
     const timing = this.timing;
-    if (!timing || this.reduced) {
+    if (!timing || !this.active) {
       this.showAll();
       return;
     }

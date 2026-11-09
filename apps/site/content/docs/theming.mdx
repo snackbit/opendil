@@ -62,7 +62,7 @@ export function Answer({ text, isStreaming }: AnswerProps) {
 - The renderer sets CSS `color-scheme` from `appearance`, so scrollbars and form controls match.
 - The built-in components follow `appearance`, not the operating system's color preference. A reader whose system is dark sees a light answer until you pass `"dark"`.
 
-If you use `UiScope` from `@snackbit/opendil/ui` for your own controls, pass `appearance` to it as well; it defaults to `"light"`. See [React UI exports](/docs/ui/).
+If you use `UiScope` from `@snackbit/opendil/lib` for your own controls, pass `appearance` to it as well; it defaults to `"light"`. See [React UI exports](/docs/ui/).
 
 ## Set colors and radius with tokens
 
@@ -118,15 +118,33 @@ The renderer reads these variables:
 | Text              | `--foreground`, `--card-foreground`, `--popover-foreground`, `--secondary-foreground`, `--muted-foreground`, `--accent-foreground` |
 | Accents           | `--primary`, `--primary-foreground`, `--destructive`                                                                               |
 | Borders and focus | `--border`, `--input`, `--ring`                                                                                                    |
-| Charts            | `--chart-1` to `--chart-5`                                                                                                         |
+| Charts            | `--dil-chart-1` to `--dil-chart-8`, falling back to `--chart-1` to `--chart-8`, then to the stock palette                          |
 | Code              | `--dil-code-keyword`, `--dil-code-string`, `--dil-code-number`, `--dil-code-title`                                                 |
 | Shape and type    | `--radius` (default `0.75rem`; smaller and larger radii derive from it), `--font-dil`                                              |
+
+Set `--dil-chart-*` when your page uses `--chart-*` for its own charts with other colors: the shadcn names then keep your values, inside and outside the answer.
 
 The default light and dark values are in [`styles/tailwind.css`](https://github.com/snackbit/opendil/blob/main/packages/opendil/styles/tailwind.css) in the package. A DIL attribute can still set its own size, radius, or color, which wins over a token. The background colors of `success`, `warning`, and `danger` badges are fixed and do not follow tokens.
 
 ### Show your page behind the answer
 
 The answer's root paints `--background`, white or near-black by default. Inside a chat bubble with its own background, set `"--background": "transparent"`, as in the example above, so the bubble shows through. This works in every mode, including the iframe.
+
+### Inherit your design variables
+
+If your app already defines shadcn-style variables (`--background`, `--foreground`, `--primary`, `--muted`, `--border`, `--radius`, `--chart-1` to `--chart-5`, and the rest listed above), pass `theme="inherit"` in host or Shadow DOM mode. The renderer then sets none of them, so your page's values reach the answer, and it neither paints a background nor sets its own font size and line height. OpenDIL's own variables, such as `--dil-control-radius` and `--dil-spacing`, keep their defaults; set them with `tokens`, pointing at your variables:
+
+```tsx
+<DilRenderer
+  mode="host"
+  theme="inherit"
+  appearance={appearance}
+  text={text}
+  tokens={{ "--font-dil": "var(--font-sans)", "--dil-spacing": "var(--space-1)" }}
+/>
+```
+
+Do not pass a variable to itself, such as `"--foreground": "var(--foreground)"`: the declaration refers to itself and becomes invalid. With `"inherit"`, the page must define every variable the answer uses, in light and dark. The iframe mode cannot inherit page variables and rejects `theme`.
 
 ### Tokens in iframe mode
 
@@ -139,6 +157,71 @@ contain ; { } @ \ ! < > or comments.
 ```
 
 [Iframe startup and theme](/docs/limits/#iframe-startup-and-theme) lists the exact rules and the maximum number and length of tokens. The frame also cannot load web fonts, so in iframe mode `--font-dil` can only name fonts installed on the reader's device. Host and Shadow DOM modes apply tokens as you pass them, without these checks.
+
+### Layout and typography tokens [#layout-tokens]
+
+These tokens have no declaration on the answer's root; each place that reads one falls back to the stock value. Set them in `tokens`, or on any ancestor of the renderer, such as a surface element, and they apply in every theme:
+
+| Token                                                                                  | Stock value                               | Applies to                                                        |
+| -------------------------------------------------------------------------------------- | ----------------------------------------- | ----------------------------------------------------------------- |
+| `--dil-font-size`, `--dil-line-height`                                                 | `15px`, `1.65`; unset in `inherit`        | The answer's base type                                            |
+| `--dil-font-mono`                                                                      | `--font-mono`, then `monospace`           | Markdown code, code blocks, and the code editor                   |
+| `--dil-item-gap`                                                                       | `12px`                                    | Space between blocks, also in virtualized lists                   |
+| `--dil-heading-1-size`, `--dil-heading-2-size`                                         | `1.8rem`, `1.25rem`                       | Markdown `#` and `##` headings                                    |
+| `--dil-heading-weight`, `--dil-heading-1-tracking`, `--dil-heading-2-tracking`         | `650`, `-0.035em`, `-0.02em`              | Markdown `#` and `##` headings                                    |
+| `--dil-list-margin`, `--dil-list-indent`                                               | `1em`, `40px`                             | Markdown lists                                                    |
+| `--dil-quote-margin`, `--dil-quote-padding`, `--dil-quote-border`, `--dil-quote-color` | `1em 40px`, `0`, none, inherited          | Markdown blockquotes                                              |
+| `--dil-table-font-size`, `--dil-table-cell-padding`                                    | `14px`, `10px 12px`                       | Markdown tables                                                   |
+| `--dil-table-row-border`, `--dil-table-column-border`, `--dil-table-header-background` | `1px solid var(--border)`, none, none     | Markdown table cells                                              |
+| `--dil-code-background`, `--dil-code-padding`, `--dil-code-radius`                     | `--muted` at 50%, `16px`, `--radius`      | Code blocks: Markdown fences and `CodeBlock`                      |
+| `--dil-code-border`, `--dil-code-font-size`, `--dil-code-line-height`                  | `1px solid var(--border)`, `0.75rem`, `2` | Code blocks: Markdown fences and `CodeBlock`                      |
+| `--dil-code-tab-size`                                                                  | `2`                                       | Code blocks, including the `CodeBlock` editor                     |
+| `--dil-control-radius`, `--dil-item-radius`, `--dil-spacing`                           | `12px`, `8px`, `4px`                      | Segmented controls (declared on the root; set them with `tokens`) |
+
+For anything else, select the element's semantic tag or `data-*` hook under `.dil-scope` from your stylesheet: `data-d-component` on layout and text tags, `data-slot` on built-in controls, `.dil-code-block` on code blocks, and `data-chart-type` on charts. The document root carries `data-dil-document`: `"dil"` in `DilRenderer` and `"markdown"` in `MarkdownRenderer`.
+
+### Example: a terminal theme [#terminal-theme]
+
+A host can give a "CLI" view a terminal look with tokens alone, set on the surface rather than per renderer:
+
+```css title="app.css"
+[data-view="terminal"] {
+  --font-dil: var(--font-mono);
+  --dil-font-mono: var(--font-mono);
+  --dil-font-size: 13px;
+  --dil-line-height: 1.45;
+  --dil-item-gap: 6px;
+  --dil-heading-1-size: 1em;
+  --dil-heading-2-size: 1em;
+  --dil-heading-weight: 700;
+  --dil-heading-1-tracking: 0;
+  --dil-heading-2-tracking: 0;
+  --dil-list-margin: 0.25em;
+  --dil-list-indent: 2ch;
+  --dil-quote-margin: 0.25em 0;
+  --dil-quote-padding: 1ch;
+  --dil-quote-border: 2px solid var(--border);
+  --dil-quote-color: var(--muted-foreground);
+  --dil-table-font-size: 1em;
+  --dil-table-cell-padding: 0 1ch;
+  --dil-table-row-border: 1px dashed var(--border);
+  --dil-table-column-border: 1px dashed var(--border);
+  --dil-code-background: transparent;
+  --dil-code-padding: 0 0 0 2ch;
+  --dil-code-radius: 0;
+  --dil-code-border: 0 solid;
+  --dil-code-font-size: 1em;
+  --dil-code-line-height: 1.45;
+}
+```
+
+```tsx
+<section data-view="terminal">
+  <DilRenderer mode="host" theme="inherit" text={text} />
+</section>
+```
+
+`--font-dil` is a shared design variable: under `theme="inherit"` it comes from your page, as here; under the stock theme, pass it in `tokens`.
 
 ## Add classes to built-in components [#class-overrides]
 
@@ -287,10 +370,11 @@ export function Answer({ text, isStreaming }: AnswerProps) {
 - `shadowStyles` is trusted app code, not something the model controls. Keep model output out of it.
 - In Vite, you can keep the CSS in a file and import it as a string with `import answerStyles from "./answer.css?inline"`.
 - A component that portals to `document.body`, such as a third-party dialog or menu, leaves the shadow root and loses these styles. Render its overlay into a container inside the root, or use host mode.
+- [Injected UI primitives](/docs/custom-components/#design-system-controls) follow the same contract: their CSS comes through `shadowStyles`, their overlays render into the `portalContainer` they receive, and CSS custom properties from your page, such as your design tokens, inherit into the shadow root.
 
 ## Keep your site theme separate
 
-Your app's own CSS variables do not reach generated interfaces. The renderer resets its theme on its root, so a variable such as `--primary` in your page does not change an answer unless you pass it in `tokens`. This site, for example, styles itself with `--od-*` variables, and its answers use the stock tokens unless an example passes its own. In host mode your page's CSS rules still apply to elements inside the answer; [scope them](#class-overrides).
+Your app's own CSS variables do not reach generated interfaces by default. The renderer resets its theme on its root, so a variable such as `--primary` in your page does not change an answer unless you pass it in `tokens` or choose [`theme="inherit"`](#inherit-your-design-variables). This site, for example, styles itself with `--od-*` variables, and its answers use the stock tokens unless an example passes its own. In host mode your page's CSS rules still apply to elements inside the answer; [scope them](#class-overrides).
 
 ## Recap
 

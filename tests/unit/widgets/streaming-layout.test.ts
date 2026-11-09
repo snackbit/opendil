@@ -12,43 +12,61 @@ import { renderToStaticMarkup } from "react-dom/server";
 import type { DilRenderError } from "../../../packages/opendil/src/dil/render-error";
 // Only transport timing is controlled here; real QuickJS is exercised by runtime and browser suites.
 let holding = false;
+interface Evaluation {
+  key: string;
+  source?: string;
+  scope?: Record<string, unknown>;
+}
+function evaluate({ key, source, scope }: Evaluation) {
+  const entry = scope?.entry;
+  const value =
+    source === "flag"
+      ? true
+      : source === "list"
+        ? [
+            { id: "one", label: "One" },
+            { id: "two", label: "Two" },
+          ]
+        : source === "entry.label" &&
+            entry &&
+            typeof entry === "object" &&
+            "label" in entry
+          ? entry.label
+          : "First";
+  return {
+    key,
+    value,
+    ...(source === "bad" ? { error: "Missing binding" } : {}),
+  };
+}
 class Transport {
   onmessage: ((event: { data: unknown }) => void) | null = null;
   postMessage(message: {
     id: number;
     type: string;
-    source?: string;
-    scope?: Record<string, unknown>;
+    steps?: Array<{ type: string }>;
+    evaluations?: Evaluation[];
   }) {
-    if (message.source === "later" && holding) return;
-    const entry = message.scope?.entry;
-    const value =
-      message.source === "flag"
-        ? true
-        : message.source === "list"
-          ? [
-              { id: "one", label: "One" },
-              { id: "two", label: "Two" },
-            ]
-          : message.source === "entry.label" &&
-              entry &&
-              typeof entry === "object" &&
-              "label" in entry
-            ? entry.label
-            : "First";
+    const evaluations = message.evaluations ?? [];
+    if (holding && evaluations.some(({ source }) => source === "later")) return;
     queueMicrotask(() =>
       this.onmessage?.({
         data: {
           id: message.id,
-          value,
-          ...(message.source === "bad" ? { error: "Missing binding" } : {}),
-          ...(message.type === "declare" ? { changed: true, revision: 1 } : {}),
+          steps: (message.steps ?? []).map((step) =>
+            step.type === "declare" ? { changed: true, revision: 1 } : {},
+          ),
+          results: evaluations.map(evaluate),
+          revision: 1,
         },
       }),
     );
   }
   terminate() {}
 }
+/** Results publish with the next frame, or its timer fallback. */
+const nextFrame = () =>
+  act(() => new Promise((resolve) => setTimeout(resolve, 60)));
 beforeEach(() => {
   holding = false;
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
@@ -127,6 +145,7 @@ it.each([
         model.apply(parser.append(source, true));
         root.render(createElement(NodeView, { id: 0, document: model }));
       });
+      await nextFrame();
       expect(container.textContent).toContain(expected);
       expect(container.querySelector(".dil-skeleton")).toBeNull();
     } finally {
@@ -147,10 +166,12 @@ it("preserves prior evaluated content during refresh and ignores pending syntax 
       model.apply(parser.append("<box> <input value={later}/>\n", false));
       root.render(createElement(NodeView, { id: 0, document: model }));
     });
+    await nextFrame();
     const input = container.querySelector("input");
     expect(input?.value).toBe("First");
     holding = true;
     await act(() => model.engine.declare("const refreshed=1"));
+    await nextFrame();
     expect(container.querySelector("input")).toBe(input);
     expect(input?.value).toBe("First");
     const parent = [...model.nodes.values()].find(
@@ -202,7 +223,7 @@ it("uses local table/SVG errors and rejects an oversized subtree without scaffol
         ),
       );
     });
-    expect(model.status.getState().error).toContain("display limit");
+    expect(model.status.getState().error?.message).toContain("display limit");
   } finally {
     await act(() => root.unmount());
     model.engine.dispose();
@@ -277,6 +298,7 @@ it("reports each problem readers see to onError and the console once the message
       model.apply(parser.append(source));
       root.render(createElement(NodeView, { id: 0, document: model }));
     });
+    await nextFrame();
     // Later source could still define a binding, so nothing is reported yet.
     expect(container.textContent).toContain("Cannot evaluate this value.");
     expect(reported).toEqual([]);
@@ -288,16 +310,19 @@ it("reports each problem readers see to onError and the console once the message
       expect.arrayContaining([
         {
           kind: "runtime",
+          code: "expression-failed",
           message: "Cannot evaluate {bad}: Missing binding",
           offset: 0,
         },
         {
           kind: "runtime",
+          code: "attributes-failed",
           message: "Cannot evaluate the attributes of <text>: Missing binding",
           offset: text,
         },
         {
           kind: "syntax",
+          code: "unknown-component",
           message:
             "<Foo> is neither a stock DIL component nor one passed in the components prop.",
           offset: custom,

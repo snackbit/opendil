@@ -523,7 +523,7 @@ test("graph subtitles survive adaptation and connectors have room between nodes"
   });
 });
 
-test("progressive reveal preserves action feedback and respects reduced motion", async ({
+test("a finished answer shows action feedback at once with reveal on, and respects reduced motion", async ({
   page,
 }) => {
   const ui = dilPage(page);
@@ -535,13 +535,35 @@ test("progressive reveal preserves action feedback and respects reduced motion",
     page.getByRole("checkbox", { name: "Progressive reveal" }),
   ).toBeChecked();
   await page.keyboard.press("Escape");
+  // Counts every block that starts hiding for a reveal from here on.
+  await ui.locator("body").evaluate((body) => {
+    let hidden = 0;
+    new MutationObserver((records) => {
+      for (const record of records)
+        if (
+          record.target instanceof HTMLElement &&
+          ["ready", "revealing"].includes(record.target.dataset.dilPhase ?? "")
+        )
+          hidden++;
+    }).observe(body, {
+      subtree: true,
+      attributes: true,
+      attributeFilter: ["data-dil-phase"],
+    });
+    Reflect.set(window, "revealedBlocks", () => hidden);
+  });
   await ui.getByRole("button", { name: "Primary", exact: true }).click();
-  await expect
-    .poll(() => ui.locator("[data-dil-revealing]").count())
-    .toBeGreaterThan(0);
   await expect(
     ui.getByText("Primary action selected", { exact: true }),
   ).toBeVisible();
+  // Reveal applies only to text that streams in, never to a finished answer.
+  expect(
+    await ui
+      .locator("body")
+      .evaluate(() =>
+        (Reflect.get(window, "revealedBlocks") as () => number)(),
+      ),
+  ).toBe(0);
   await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);
   await expect(
     ui.getByRole("button", { name: "Primary", exact: true }),

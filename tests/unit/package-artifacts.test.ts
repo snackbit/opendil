@@ -17,7 +17,8 @@ import {
   agentSpec,
   agentSpecExamples,
   agentSpecFull,
-} from "@snackbit/opendil/agent-spec";
+} from "@snackbit/opendil/lib";
+import { extractDilText, literalMarkdown } from "@snackbit/opendil/lib";
 import {
   MANIFEST,
   publishDirectory,
@@ -77,18 +78,38 @@ describe("agent spec entry", () => {
         readFileSync("spec/" + file, "utf8"),
       );
   });
-  it("loads in any runtime and stays out of the renderer entries", () => {
-    const entry = readFileSync("packages/opendil/dist/agent-spec.js", "utf8");
+  it("loads in any runtime and stays out of the React modules", () => {
+    const dist = "packages/opendil/dist/";
+    // The lib entry only re-exports one module per area, by name.
+    const lib = readFileSync(dist + "lib.js", "utf8")
+      .trim()
+      .split("\n");
+    expect(
+      lib.map((line) => /from "\.\/([\w-]+\.js)";$/.exec(line)?.[1]),
+    ).toEqual([
+      "lib-agent-spec.js",
+      "lib-export.js",
+      "lib-markdown.js",
+      "lib-serialize.js",
+      "lib-text.js",
+      "lib-ui.js",
+    ]);
+    for (const line of lib) expect(line).toMatch(/^export \{ [\w, ]+ \} from/);
+    const spec = readFileSync(dist + "lib-agent-spec.js", "utf8");
+    expect(spec).toContain("# GenUI Agent Specification");
     // Spec strings are escaped onto single lines, so line starts are module code.
-    // No imports or client directive: safe for edge and server code.
-    expect(entry).not.toMatch(
+    expect(spec).not.toMatch(
       /^\s*(?:import\b|export\b.*\bfrom\b|"use client")/m,
     );
-    expect(entry).toMatch(/^export \{/m);
-    for (const file of ["index.js", "ui.js"])
-      expect(
-        readFileSync("packages/opendil/dist/" + file, "utf8"),
-      ).not.toContain("# GenUI Agent Specification");
+    for (const file of [
+      "index.js",
+      "lib-ui.js",
+      "lib-markdown.js",
+      "lib-text.js",
+    ])
+      expect(readFileSync(dist + file, "utf8")).not.toContain(
+        "# GenUI Agent Specification",
+      );
   });
 });
 
@@ -124,6 +145,46 @@ describe("renderer entry", () => {
       // The base64 module is about 670,000 characters; nothing else comes close.
       expect(code.match(/[A-Za-z0-9+/]{100000,}/g), file).toHaveLength(1);
     }
+  });
+  it("keeps workers and QuickJS out of the lib and testing entries", () => {
+    const size = (entry: string) =>
+      [...staticGraph(entry)].reduce(
+        (total, file) => total + readFileSync(dist + file).length,
+        0,
+      );
+    for (const entry of [
+      "lib-ui.js",
+      "lib-markdown.js",
+      "lib-serialize.js",
+      "testing.js",
+    ]) {
+      expect(size(entry), entry).toBeLessThan(60_000);
+      for (const file of staticGraph(entry))
+        expect(readFileSync(dist + file, "utf8"), file).not.toMatch(
+          /[A-Za-z0-9+/]{100000,}|import\("\.\/styled-renderer/,
+        );
+    }
+    // Buttons alone do not pull in the Markdown renderer or its highlighter.
+    expect(
+      [...staticGraph("lib-ui.js")].some((file) =>
+        readFileSync(dist + file, "utf8").includes("dil-markdown-renderer"),
+      ),
+    ).toBe(false);
+    for (const entry of ["lib-text.js", "lib-export.js"])
+      for (const file of staticGraph(entry))
+        expect(readFileSync(dist + file, "utf8"), file).not.toMatch(
+          /"use client"|from\s*"react|import\(/,
+        );
+  });
+  it("loads text extraction in Node without React or a client directive", () => {
+    const entry = readFileSync(dist + "lib-text.js", "utf8");
+    expect(entry).not.toMatch(/"use client"|from"react|from "react/);
+    const source = literalMarkdown("{1+1} <Button/>") + '\n\n<File key="a"/>';
+    expect(extractDilText(source)).toEqual({
+      text: "{1+1} <Button/>",
+      truncated: false,
+      components: [{ name: "File", literalAttributes: { key: "a" } }],
+    });
   });
   it("compiles the package version into the renderer and the frame runtime", () => {
     const { version } = JSON.parse(

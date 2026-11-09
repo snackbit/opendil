@@ -495,6 +495,38 @@ it("notices scrolling inside shadow roots, where scroll events stop", () => {
   document.removeEventListener("scroll", outside, { capture: true });
 });
 
+it("starts observing once the renderer's ref attaches later in the same commit", async () => {
+  const log = scroller({ top: 100, height: 600, content: 3000 });
+  mount.append(log.element);
+  const tracker = new ScrollRootTracker();
+  let target: HTMLDivElement | null = null;
+  const viewport = new HostViewport(() => target, tracker);
+  const listener = vi.fn();
+  // Content in the first commit subscribes before the root element exists.
+  const unsubscribe = viewport.subscribe(listener);
+  target = document.createElement("div");
+  log.element.append(target);
+  box(target, 300, 5000);
+  const stop = tracker.attach(target, "auto");
+  await Promise.resolve();
+  const before = listener.mock.calls.length;
+  box(target, -400, 5000);
+  log.element.dispatchEvent(new Event("scroll"));
+  expect(listener).toHaveBeenCalledTimes(before + 1);
+  expect(viewport.offset).toBe(500);
+  unsubscribe();
+  stop();
+  // A subscription that ends before the ref attaches never observes.
+  let missing: HTMLDivElement | null = null;
+  const late = new HostViewport(() => missing, tracker);
+  late.subscribe(vi.fn())();
+  missing = document.createElement("div");
+  await Promise.resolve();
+  expect(observers.some((entry) => entry.targets.has(missing as Element))).toBe(
+    false,
+  );
+});
+
 it("reports a host renderer's visible area from its own top", () => {
   const log = scroller({ top: 100, height: 600 });
   const target = document.createElement("div");
@@ -676,6 +708,8 @@ it("reports a frame's visible part of a scroll container and scrolls it on reque
   other.dispatchEvent(new Event("scroll"));
   expect(post).toHaveBeenCalledTimes(2);
   log.element.scrollTop = 900;
+  // An iframe resize can report between measuring rows and applying their correction.
+  resized(frame);
   reporter.scroll(700, 2);
   expect(log.scrollTo).toHaveBeenLastCalledWith({
     top: 900 - 500 - 100 + 700,

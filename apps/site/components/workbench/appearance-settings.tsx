@@ -6,7 +6,7 @@ import {
   CollapsibleContent,
   Input,
   ToggleGroupItem,
-} from "@snackbit/opendil/ui";
+} from "@snackbit/opendil/lib";
 import { ChevronRight } from "lucide-react";
 import { SegmentedControl } from "./shell-scope";
 export interface AppearanceSettingsProps {

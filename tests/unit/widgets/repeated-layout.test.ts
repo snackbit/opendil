@@ -128,7 +128,9 @@ it.each([
       } else
         expect(container.textContent?.match(/Row/g)?.length ?? 0).toBe(rows);
       if (quota === 0 || (svg && Array.isArray(items) && items.length > 1000))
-        expect(model.status.getState().error).toContain("display limit");
+        expect(model.status.getState().error?.message).toContain(
+          "display limit",
+        );
       await act(() => model.reportRenderLimit());
       await act(() => root.render(repeated));
       expect(container.textContent).toBe("");
@@ -163,7 +165,7 @@ it("rejects a sibling subtree before expanding beyond its allowance", async () =
         ),
       ),
     );
-    expect(model.status.getState().error).toContain("display limit");
+    expect(model.status.getState().error?.message).toContain("display limit");
     expect(mount.textContent).toBe("");
   } finally {
     await act(() => root.unmount());

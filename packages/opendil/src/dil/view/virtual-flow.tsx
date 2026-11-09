@@ -6,6 +6,7 @@ import {
   useEffect,
   useId,
   useLayoutEffect,
+  useMemo,
   useRef,
   useState,
   type FocusEvent,
@@ -64,6 +65,7 @@ export function VirtualFlow({
   const { viewport } = useRendererEnvironment();
   const group = useId();
   const container = useRef<HTMLElement | null>(null);
+  const pendingRows = useRef(new Set<Element>());
   const table = useContext(TableScope) === "body";
   const setContainer = useCallback((element: HTMLElement | null) => {
     container.current = element;
@@ -73,12 +75,16 @@ export function VirtualFlow({
   const [overlay, setOverlay] = useState<number | null>(null);
   // Positions are measured from the renderer's top, so layout outside it
   // never shifts them. Content above this flow inside the renderer can.
+  // A flow that renders every child has no positions and does no scroll work.
   useLayoutEffect(() => {
-    const update = () =>
-      setMargin(
+    if (!enabled) return;
+    const update = () => {
+      const next =
         (container.current?.getBoundingClientRect().top ?? 0) -
-          (viewport ? viewport.origin() : -window.scrollY),
-      );
+        (viewport ? viewport.origin() : -window.scrollY);
+      // Subpixel layout jitter would otherwise render the flow on every scroll.
+      setMargin((current) => (Math.abs(next - current) < 0.5 ? current : next));
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(window.document.body);
@@ -152,6 +158,7 @@ export function VirtualFlow({
     measureElement: (element, entry, instance) => {
       // Pending guest values have no final geometry. Keep the virtual estimate until their real content commits.
       if (element.querySelector('[data-dil-pending], [aria-busy="true"]')) {
+        pendingRows.current.add(element);
         const index = Number(
           element.getAttribute(instance.options.indexAttribute),
         );
@@ -160,9 +167,40 @@ export function VirtualFlow({
           instance.options.estimateSize(index)
         );
       }
+      pendingRows.current.delete(element);
       return measureElement(element, entry, instance);
     },
   });
+  useEffect(() => {
+    if (!enabled) return;
+    const element = table
+      ? container.current?.closest("tbody")
+      : container.current;
+    if (!element) return;
+    // A reserved placeholder and the finished widget can have identical heights.
+    // ResizeObserver then has no event to replace the temporary size estimate.
+    const measureReady = () => {
+      for (const row of pendingRows.current) {
+        if (!row.isConnected) pendingRows.current.delete(row);
+        else if (!row.querySelector('[data-dil-pending], [aria-busy="true"]')) {
+          pendingRows.current.delete(row);
+          virtualizer.resizeItem(
+            virtualizer.indexFromElement(row),
+            measureElement(row, undefined, virtualizer),
+          );
+        }
+      }
+    };
+    const observer = new MutationObserver(measureReady);
+    observer.observe(element, {
+      subtree: true,
+      childList: true,
+      attributes: true,
+      attributeFilter: ["data-dil-pending", "aria-busy"],
+    });
+    measureReady();
+    return () => observer.disconnect();
+  }, [enabled, table, virtualizer]);
   const onFocus = useCallback(
     (event: FocusEvent<HTMLElement>) => {
       const element = event.target.closest<HTMLElement>(
@@ -213,6 +251,22 @@ export function VirtualFlow({
       [...virtualItems, ...pinnedItems].map((item) => [item.index, item]),
     ).values(),
   ].sort((a, b) => a.index - b.index);
+  // The rendered children's cost depends on the evaluated results of their
+  // each and if blocks; the binding state changes identity once per published batch.
+  const costKey =
+    table || !childIds
+      ? ""
+      : enabled
+        ? activeItems.map((item) => childIds.get(item.index)).join(",")
+        : childIds.toArray().join(",");
+  const bindings = document.engine.store.getState();
+  const cost = useMemo(() => {
+    void bindings;
+    const ids = costKey ? costKey.split(",").map(Number) : [];
+    return ids.length
+      ? childrenCost(document, ids, scope, false, allowance)
+      : 0;
+  }, [document, costKey, scope, allowance, bindings]);
   if (table) {
     const items = activeItems;
     const rows = items.map((item, index) => {
@@ -280,17 +334,7 @@ export function VirtualFlow({
         index,
         start: 0,
       }));
-  if (
-    childIds &&
-    childrenCost(
-      document,
-      visible.map((item) => childIds.get(item.index)),
-      scope,
-      false,
-      allowance,
-    ) > allowance
-  )
-    return <RenderExceeded document={document} />;
+  if (cost > allowance) return <RenderExceeded document={document} />;
   return (
     <div
       ref={setContainer}
