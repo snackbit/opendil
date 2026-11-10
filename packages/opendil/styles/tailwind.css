@@ -305,7 +305,26 @@
 .dil-chart-series {
   transition: opacity 150ms ease;
 }
-/* Pie slice emphasis stays in CSS: re-rendering a Recharts Pie remounts its sectors. */
+.dil-plot {
+  display: block;
+  overflow: visible;
+  outline: none;
+}
+.dil-plot:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+.dil-plot [data-dil-mark="sector"] {
+  outline: none;
+}
+.dil-plot [data-dil-axis] text {
+  fill: var(--muted-foreground);
+}
+.dil-plot [data-dil-grid] line {
+  stroke: color-mix(in oklab, var(--border) 50%, transparent);
+}
+/* Slice emphasis under the pointer and keyboard focus needs no render. */
 .dil-chart-pie:has(.dil-chart-series:hover, .dil-chart-series:focus-visible)
   .dil-chart-series:not(:hover, :focus-visible) {
   opacity: 0.625;

@@ -103,14 +103,26 @@ export interface InlineWorker {
 export const REPLACED_WORKER_MESSAGE =
   "This part can't run here: @snackbit/opendil/testing provides no expression runtime.";
 type Cause = "policy" | "trusted-types" | "replaced" | undefined;
+/**
+ * The parser and runtime scripts, encoded once. Each document starts a parser
+ * worker, and encoding the megabyte of runtime source per worker cost
+ * several milliseconds on the main thread.
+ */
+const scripts = new Map<string, Blob>();
+function scriptBlob(source: string) {
+  let blob = scripts.get(source);
+  if (!blob) {
+    blob = new Blob([source], { type: "text/javascript" });
+    scripts.set(source, blob);
+  }
+  return blob;
+}
 function blobWorker(
   source: string,
   role: string,
   stop: (cause: Cause) => void,
 ): Worker | null {
-  const url = URL.createObjectURL(
-    new Blob([source], { type: "text/javascript" }),
-  );
+  const url = URL.createObjectURL(scriptBlob(source));
   try {
     return new Worker(workerURL(url));
   } catch (error) {

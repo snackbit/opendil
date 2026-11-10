@@ -186,8 +186,9 @@ interface DilStyledRendererProps extends DilCommonProps, DilCustomization {
   /**
    * Your identity for a finished answer, such as a message id with a hash of
    * its text. A renderer that mounts with the key and text of one that
-   * unmounted adopts its live document, results and state: no placeholder
-   * and no worker job. OpenDIL keeps up to 12 such documents.
+   * unmounted adopts its live document, results and state: no worker job,
+   * and charts and graphs mount in turns inside their measured heights.
+   * OpenDIL keeps up to 12 such documents.
    */
   cacheKey?: string | undefined;
   /**

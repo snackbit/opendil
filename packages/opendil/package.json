@@ -1,6 +1,6 @@
 {
   "name": "@snackbit/opendil",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "Streaming interactive documents for React using Dynamic Interface Language",
   "type": "module",
   "types": "./dist/types/index.d.ts",
@@ -83,7 +83,6 @@
     "quickjs-emscripten": "^0.32.0",
     "radix-ui": "^1.4.3",
     "react-markdown": "^10.1.0",
-    "recharts": "^3.8.0",
     "remark-gfm": "^4.0.1",
     "remark-parse": "^11.0.0",
     "remend": "^1.4.0",

@@ -58,12 +58,32 @@ export type DilMarkdownUrlTransform = (
   attribute: "href" | "src",
 ) => string | undefined;
 const PLACEHOLDER = /DILX\d+END/;
+type UrlTransform = (url: string, key: string) => string | undefined;
+// One function per policy, so output rendered under it can be kept by identity.
+const TRANSFORMS = new WeakMap<
+  object,
+  [prose: UrlTransform | undefined, literal: UrlTransform | undefined]
+>();
 /** Applies the host's URL policy, or react-markdown's safe default without one. */
 export function markdownUrlTransform(
   transform: DilMarkdownUrlTransform | undefined,
   expressions: boolean,
   fallback: (url: string) => string,
-) {
+): UrlTransform {
+  const policy = transform ?? fallback;
+  let known = TRANSFORMS.get(policy);
+  if (!known) TRANSFORMS.set(policy, (known = [undefined, undefined]));
+  return (known[expressions ? 0 : 1] ??= createUrlTransform(
+    transform,
+    expressions,
+    fallback,
+  ));
+}
+function createUrlTransform(
+  transform: DilMarkdownUrlTransform | undefined,
+  expressions: boolean,
+  fallback: (url: string) => string,
+): UrlTransform {
   return (url: string, key: string): string | undefined => {
     if (expressions && PLACEHOLDER.test(url)) return undefined;
     if (!transform) return fallback(url);

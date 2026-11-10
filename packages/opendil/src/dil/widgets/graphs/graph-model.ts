@@ -66,7 +66,9 @@ export function graphModel(content: unknown): {
       sourceHandle: "out",
       targetHandle: "in",
       label: text(edge.label),
-      type: "default",
+      // Right angles: a curve between distant nodes sweeps across the ones
+      // between them.
+      type: "step",
       markerEnd: { type: MarkerType.ArrowClosed },
       style: { strokeWidth: 1.5 },
     }));

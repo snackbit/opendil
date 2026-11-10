@@ -11,11 +11,13 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import ReactMarkdown, {
+import renderMarkdown, {
   defaultUrlTransform,
   type Components,
   type ExtraProps,
+  type Options,
 } from "react-markdown";
+import { RenderCache } from "../widgets/render-cache";
 import remarkGfm from "remark-gfm";
 import remend from "remend";
 import type { Element, Root, RootContent } from "hast";
@@ -73,6 +75,7 @@ const BlockContext = createContext({ offset: 0, streaming: false });
 type MarkdownProps = ExtraProps & {
   children?: ReactNode;
   className?: string | undefined;
+  start?: number | undefined;
 };
 function usePresentation(
   tag: string,
@@ -96,12 +99,12 @@ function usePresentation(
   );
 }
 function element(tag: string, reveal: boolean) {
-  return function MarkdownElement({ children, node }: MarkdownProps) {
+  return function MarkdownElement({ children, node, start }: MarkdownProps) {
     const scope = useScope();
     const ref = usePresentation(tag, reveal, node);
     return createElement(
       tag === "p" && scope.inline ? "span" : tag,
-      { ref },
+      { ref, ...(tag === "ol" ? { start } : {}) },
       scope.substitute(children),
     );
   };
@@ -317,6 +320,45 @@ function trimUnwrapped(node: Root | Element) {
     if (child.type === "element") trimUnwrapped(child);
 }
 const PHRASING_PLUGINS = [() => trimUnwrapped];
+type UrlTransform = NonNullable<Options["urlTransform"]>;
+/**
+ * The elements of finished blocks, by URL policy, flags and text.
+ * react-markdown's synchronous entry point is a function of its options
+ * without hooks, so its result is a value that every renderer of the same
+ * block can show: parsing a block again was a tenth to a fifth of the time a
+ * finished answer took to mount again.
+ */
+const RENDERED = new RenderCache<ReactNode>(1024, 1_000_000);
+// A policy's blocks leave the cache by age once nothing renders under it.
+const POLICIES = new WeakMap<UrlTransform, number>();
+let policies = 0;
+function renderBlock(
+  source: string,
+  phrasing: boolean,
+  urlTransform: UrlTransform,
+  keep: boolean,
+): ReactNode {
+  let policy = POLICIES.get(urlTransform);
+  if (policy === undefined) POLICIES.set(urlTransform, (policy = ++policies));
+  const key = policy + (phrasing ? "p" : "b") + source;
+  const known = keep ? RENDERED.get(key) : undefined;
+  if (known !== undefined) return known;
+  const rendered = renderMarkdown({
+    children: source,
+    remarkPlugins: PLUGINS,
+    components: COMPONENTS,
+    urlTransform,
+    ...(phrasing
+      ? {
+          allowedElements: PHRASING,
+          unwrapDisallowed: true,
+          rehypePlugins: PHRASING_PLUGINS,
+        }
+      : {}),
+  });
+  if (keep) RENDERED.set(key, rendered, source.length);
+  return rendered;
+}
 /** One Markdown block; finished blocks keep their element identity as text streams. */
 export const MarkdownBlock = memo(function MarkdownBlock({
   text,
@@ -335,23 +377,13 @@ export const MarkdownBlock = memo(function MarkdownBlock({
     () => markdownUrlTransform(transform, expressions, defaultUrlTransform),
     [transform, expressions],
   );
+  // A streaming block changes with every chunk and is never shown again.
+  const rendered = useMemo(
+    () => renderBlock(source, phrasing === true, urlTransform, !streaming),
+    [source, phrasing, urlTransform, streaming],
+  );
   return (
-    <BlockContext.Provider value={block}>
-      <ReactMarkdown
-        remarkPlugins={PLUGINS}
-        components={COMPONENTS}
-        urlTransform={urlTransform}
-        {...(phrasing
-          ? {
-              allowedElements: PHRASING,
-              unwrapDisallowed: true,
-              rehypePlugins: PHRASING_PLUGINS,
-            }
-          : {})}
-      >
-        {source}
-      </ReactMarkdown>
-    </BlockContext.Provider>
+    <BlockContext.Provider value={block}>{rendered}</BlockContext.Provider>
   );
 });
 /**

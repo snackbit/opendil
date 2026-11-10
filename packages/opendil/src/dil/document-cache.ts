@@ -9,6 +9,7 @@ import {
   WidgetHeights,
   type HeightsByWidth,
 } from "./widget-heights";
+import { clearRenderCaches } from "./widgets/render-cache";
 
 /**
  * What a finished answer evaluated, so a later renderer of the same text can
@@ -252,6 +253,8 @@ export function clearDocumentCache() {
   for (const entry of entries.values())
     if (!entry.users) dispose(entry.parsed.document);
   entries.clear();
+  // Rendered prose and diagrams are content too.
+  clearRenderCaches();
 }
 /**
  * The document a renderer mounts with: the live one a renderer with the same

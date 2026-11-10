@@ -57,7 +57,8 @@ export interface MessageRendererProps {
   /**
    * The host's identity for a finished answer. A renderer that mounts with
    * the key and text of one that unmounted adopts its live document: no
-   * worker job, no placeholder, the final layout in the first commit.
+   * worker job, and the final layout in the first commit, in which charts
+   * and graphs hold their measured heights until their mount turn.
    */
   cacheKey?: string | undefined;
   /** Results recorded by onSnapshot, shown until the worker confirms them. */
@@ -234,8 +235,8 @@ function MessageDocument({
     },
   }));
   // History: a document finished at mount moves the page once, at settle.
-  // One adopted from the cache has its final layout in the first commit,
-  // apart from a diagram laying out again in its measured space.
+  // One adopted from the cache has its final layout in the first commit:
+  // its charts and graphs mount in turns inside their measured heights.
   const [holdLayout] = useState(
     () => !isStreaming && !initial?.document.settledOnce,
   );
@@ -540,6 +541,8 @@ function MessageDocument({
       data-dil-document="dil"
       ref={root}
       data-dil-renderer="true"
+      // useSettledSignal owns the value after the first commit.
+      data-dil-settled="false"
       onClickCapture={gesture}
     >
       {document && (

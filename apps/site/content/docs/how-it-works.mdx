@@ -72,7 +72,7 @@ The code for these two modes ships as a separate chunk. Your app loads it the fi
 
 ## Rendering while an answer streams
 
-Markdown between tags goes through `react-markdown` with `remark-gfm` (GitHub Flavored Markdown). While the answer streams, `remend` closes unfinished formatting, such as bold text whose closing `**` has not arrived. Built-in components follow shadcn/ui patterns on Radix primitives. `Chart` uses Recharts, `NodeGraph` uses React Flow, and `Mermaid` output is sanitized with DOMPurify.
+Markdown between tags goes through `react-markdown` with `remark-gfm` (GitHub Flavored Markdown). While the answer streams, `remend` closes unfinished formatting, such as bold text whose closing `**` has not arrived. Built-in components follow shadcn/ui patterns on Radix primitives. `Chart` draws its own SVG, `NodeGraph` uses React Flow, and `Mermaid` output is sanitized with DOMPurify.
 
 The renderer does not draw placeholders of guessed size for unfinished parts:
 

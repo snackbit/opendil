@@ -52,7 +52,12 @@ function layOut() {
         return { top, bottom: top + 120, width: 640, height: 120 } as DOMRect;
       }
       return this.dataset.renderer !== undefined
-        ? ({ top: 0, bottom: 2000, width: 640, height: 2000 } as DOMRect)
+        ? ({
+            top: 0,
+            bottom: 2000,
+            width: Number(this.dataset.width ?? 640),
+            height: 2000,
+          } as DOMRect)
         : original.call(this);
     },
   );
@@ -148,6 +153,50 @@ it("defers nothing while the visible area is unknown", async () => {
   const viewport = { ...viewportAt(0), height: 0 };
   const { renderer } = await show(viewport, [placeholder(1600, "Mermaid")]);
   expect(renderer?.dataset.dilSettled).toBe("false");
+});
+
+it("releases a resized layout hold after ResizeObserver delivery and cancels pending releases on unmount", async () => {
+  layOut();
+  let resized: ResizeObserverCallback | undefined;
+  let observer: ResizeObserver | undefined;
+  class ObservedResize extends ResizeObserver {
+    constructor(callback: ResizeObserverCallback) {
+      super(callback);
+      resized = callback;
+      observer = this;
+    }
+  }
+  vi.stubGlobal("ResizeObserver", ObservedResize);
+  const { renderer, document: documentState } = await show(viewportAt(0), [
+    placeholder(100, "Chart"),
+  ]);
+  if (!renderer || !resized || !observer)
+    throw new Error("Expected a held renderer and its resize observer");
+  renderer.dataset.width = "320";
+  const request = vi.spyOn(globalThis, "requestAnimationFrame");
+  resized([], observer);
+  resized([], observer);
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(renderer.dataset.dilHeld).toBe("true");
+  await frame();
+  expect(renderer.dataset.dilHeld).toBeUndefined();
+  expect(renderer.style.height).toBe("");
+  await act(() => root.render(null));
+  documentState.engine.dispose();
+
+  const next = await show(viewportAt(0), [placeholder(100, "Chart")]);
+  if (!next.renderer || !resized || !observer)
+    throw new Error("Expected another held renderer");
+  next.renderer.dataset.width = "320";
+  request.mockClear();
+  resized([], observer);
+  const queued = request.mock.results.at(-1)?.value;
+  expect(request).toHaveBeenCalledTimes(1);
+  expect(queued).toBeDefined();
+  const cancel = vi.spyOn(globalThis, "cancelAnimationFrame");
+  await act(() => root.render(null));
+  expect(cancel).toHaveBeenCalledWith(queued);
+  next.document.engine.dispose();
 });
 
 it("settles once when execution stops with unresolved placeholders", async () => {

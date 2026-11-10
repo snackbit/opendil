@@ -17,6 +17,129 @@ async function mode(page: Page, name: "Shadow DOM" | "Host DOM") {
   await closeSettings(page);
 }
 for (const name of ["Iframe", "Shadow DOM", "Host DOM"] as const) {
+  test(`${name} keeps titled charts stable through hover and metric changes`, async ({
+    page,
+  }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    page.on("console", (message) => {
+      if (message.type() === "error") errors.push(message.text());
+    });
+    await openShowcase(page);
+    if (name !== "Iframe") await mode(page, name);
+    const ui =
+      name === "Iframe"
+        ? page.frameLocator("iframe").first()
+        : page
+            .locator(
+              `[data-dil-mode="${name === "Host DOM" ? "host" : "shadow"}"]`,
+            )
+            .first();
+    await replaceSource(
+      page,
+      page.getByRole("textbox", { name: "DIL source", exact: true }),
+      `
+{@body const [metric,setMetric] = DIL.useState("latency")}
+{@body const [missing,setMissing] = DIL.useState(false)}
+{@body const rows = [{time:10,eastLatency:missing ? null : 120,westLatency:145,eastErrors:0.2,westErrors:0.3},{time:20,eastLatency:missing ? null : 340,westLatency:190,eastErrors:2.4,westErrors:0.8},{time:30,eastLatency:missing ? null : 135,westLatency:155,eastErrors:0.3,westErrors:0.4}]}
+<segmented-control aria-label="Measure" value={metric} options={[{value:"latency",label:"Latency"},{value:"errors",label:"Errors"}]} onChange={setMetric}/>
+<button onClick={() => setMissing(true)}>Clear East</button>
+<button onClick={() => setMissing(false)}>Restore East</button>
+<Chart content={{chartType:"line",title:metric === "latency" ? "Regional latency" : "Regional errors",xKey:"time",xLabel:"Time",yLabel:metric === "latency" ? "Latency (ms)" : "Errors (%)",data:rows,series:metric === "latency" ? [{dataKey:"eastLatency",label:"East"},{dataKey:"westLatency",label:"West"}] : [{dataKey:"eastErrors",label:"East"},{dataKey:"westErrors",label:"West"}]}}/>
+<Chart content={{chartType:"scatter",title:"Throughput",xKey:"time",xLabel:"Clients",yLabel:"Requests",data:rows,series:[{dataKey:"eastLatency",label:"East"},{dataKey:"westLatency",label:"West"}]}}/>
+<Chart content={{chartType:"bar",title:"Monthly comparison",xKey:"time",xLabel:"Month",yLabel:"Revenue",data:rows,series:[{dataKey:"eastLatency",label:"East"},{dataKey:"westLatency",label:"West"}]}}/>
+`,
+    );
+    const line = ui.getByRole("group", {
+      name: "Regional latency",
+      exact: true,
+    });
+    const plot = line.locator("[data-chart-hit-area]");
+    await expect(plot).toBeVisible();
+    await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);
+    const before = await plot.elementHandle();
+    await plot.hover();
+    await expect(ui.getByRole("tooltip")).toContainText("East");
+    // Idle with the pointer held: the former effect feedback loop failed here.
+    await page.waitForTimeout(200);
+    await expect(line).toBeVisible();
+    expect(await before?.evaluate((element) => element.isConnected)).toBe(true);
+    await line.locator("[data-dil-chart-title]").hover();
+    await expect(ui.getByRole("tooltip")).toHaveCount(0);
+    for (let pass = 0; pass < 3; pass++) {
+      await ui.getByRole("radio", { name: "Errors", exact: true }).click();
+      const changed = ui.getByRole("group", {
+        name: "Regional errors",
+        exact: true,
+      });
+      await changed.locator("[data-chart-hit-area]").hover();
+      await expect(ui.getByRole("tooltip")).toContainText("East");
+      await expect(changed).toContainText("Errors (%)");
+      await ui.getByRole("radio", { name: "Latency", exact: true }).click();
+    }
+    const east = line.getByRole("button", { name: "East", exact: true });
+    await east.click();
+    await expect(
+      line.getByRole("button", { name: "West", exact: true }),
+    ).toHaveAttribute("aria-pressed", "false");
+    await plot.hover();
+    await expect(ui.getByRole("tooltip")).toContainText("East");
+    await expect(ui.getByRole("tooltip")).not.toContainText("West");
+    // Simulate an external data update without moving the hovering pointer.
+    await ui
+      .getByRole("button", { name: "Clear East", exact: true })
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await expect(line.locator("[data-chart-snapped-index]")).toHaveCount(0);
+    await expect(ui.getByRole("tooltip")).toHaveCount(0);
+    await expect(east).toHaveAttribute("data-muted", "false");
+    await ui
+      .getByRole("button", { name: "Restore East", exact: true })
+      .evaluate((button: HTMLButtonElement) => button.click());
+    await expect(line.locator('[data-dil-mark="line"]')).toBeVisible();
+    await plot.hover();
+    await expect(ui.getByRole("tooltip")).toContainText("East");
+    await east.click();
+    await expect(
+      line.getByRole("button", { name: "West", exact: true }),
+    ).toHaveAttribute("aria-pressed", "true");
+    const west = line.getByRole("button", { name: "West", exact: true });
+    await west.click({ modifiers: ["ControlOrMeta"] });
+    await expect(west).toHaveAttribute("aria-pressed", "false");
+    await east.hover();
+    await west.hover();
+    await expect(east).toHaveAttribute("data-muted", "false");
+    await expect(line.locator("[data-dil-series]").first()).toHaveCSS(
+      "opacity",
+      "1",
+    );
+    await west.click({ modifiers: ["ControlOrMeta"] });
+    await expect(west).toHaveAttribute("aria-pressed", "true");
+    await east.hover();
+    await west.hover();
+    await expect(east).toHaveAttribute("data-muted", "true");
+    await line.locator("[data-dil-chart-title]").hover();
+    await page.keyboard.press("Tab");
+    const surface = line.locator("[data-dil-plot]");
+    await surface.focus();
+    await surface.press("ArrowRight");
+    // Arrow keys read the chart through the pointer's tooltip.
+    await expect(ui.getByRole("tooltip")).toContainText("East");
+    await expect(line.locator("[data-chart-snapped-index]")).toHaveCount(1);
+    await ui
+      .getByRole("group", { name: "Throughput", exact: true })
+      .locator("[data-chart-hit-area]")
+      .hover();
+    await expect(ui.getByRole("tooltip")).toContainText("time");
+    await ui
+      .getByRole("group", { name: "Monthly comparison", exact: true })
+      .locator('[data-dil-mark="bar"]')
+      .first()
+      .hover();
+    await expect(ui.getByRole("tooltip")).toContainText("West");
+    expect(errors).toEqual([]);
+  });
+}
+for (const name of ["Iframe", "Shadow DOM", "Host DOM"] as const) {
   test(`${name} rejects resource-loading diagrams before rendering and bounds nested input`, async ({
     page,
   }) => {
@@ -407,11 +530,12 @@ test("host mode keeps Markdown lists under a page CSS reset and themes status ba
   await replaceSource(
     page,
     source,
-    '1. First\n2. Second\n\n- Bullet\n  - Nested\n\n> Tip: quoted\n\n<badge color="success">Healthy</badge>',
+    '4. Fourth\n5. Fifth\n\n- Bullet\n  - Nested\n\n> Tip: quoted\n\n<badge color="success">Healthy</badge>',
   );
   await source.press("ControlOrMeta+Enter");
   const ui = page.locator('[data-dil-mode="host"]').first();
   const ordered = ui.locator(".dil-markdown ol").first();
+  await expect(ordered).toHaveAttribute("start", "4");
   await expect(ordered).toHaveCSS("list-style-type", "decimal");
   await expect(ordered).toHaveCSS("padding-left", "40px");
   const bullets = ui.locator(".dil-markdown ul").first();

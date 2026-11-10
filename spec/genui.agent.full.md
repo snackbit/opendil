@@ -1487,8 +1487,8 @@ formatter, custom sector, selectedSlice, or click callback API.
 Stock chart dimensions, palette, axes, tooltip, marks, and legend are internal.
 No DIL width/height/layout, color, onSelect, onClick, tooltip, axis, domain, or
 legend prop is exposed. A wrapper can constrain available width but cannot set a
-new chart-content schema. Do not infer the full Recharts API from the underlying
-implementation.
+new chart-content schema. Do not infer the API of a charting library such as
+Recharts: charts take only the content documented here.
 
 Multi-series line/bar legends support internal visibility selection. This widget
 state is not exposed as a DIL binding and does not invoke an authored callback.
