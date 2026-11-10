@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { Worker as Thread } from "node:worker_threads";
 import { act, createElement, Fragment, useLayoutEffect } from "react";
 import { createRoot, type Root } from "react-dom/client";
+import { flushSync } from "react-dom";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { MessageRenderer } from "../../packages/opendil/src/dil/message-renderer";
 import {
@@ -75,6 +76,16 @@ const TEXT =
   "{@body const [n, setN] = DIL.useState(2)}\n\n<text>Total {n * 21}</text>\n\n<text>Roll {String(Math.random())}</text>";
 async function show(props: Parameters<typeof MessageRenderer>[0]) {
   await act(() => root.render(createElement(MessageRenderer, props)));
+}
+async function showFirstCommit(
+  props: Parameters<typeof MessageRenderer>[0],
+  check: () => void,
+) {
+  await act(() => {
+    flushSync(() => root.render(createElement(MessageRenderer, props)));
+    // Check before asynchronous act can yield to the widget mount timer.
+    check();
+  });
 }
 async function hide() {
   await act(() => root.render(null));
@@ -204,14 +215,14 @@ it("reserves the widget height a snapshot measured at the renderer's width", asy
     vi.restoreAllMocks();
     vi.spyOn(URL, "createObjectURL").mockReturnValue("blob:test");
     layOut(width);
-    await show({ text: CHART, snapshot });
-    // Before any worker reply: the first commit, after its layout.
-    expect(reserve()).toBe(expected);
+    await showFirstCommit({ text: CHART, snapshot }, () => {
+      expect(reserve()).toBe(expected);
+    });
     await hide();
   }
 });
 
-it("mounts a chart in the first commit when a settled snapshot document is adopted", async () => {
+it("mounts an adopted document's chart in turn, inside the height it measured", async () => {
   layOut(640);
   const id = chartId();
   const snapshot: DilSnapshot = {
@@ -222,15 +233,24 @@ it("mounts a chart in the first commit when a settled snapshot document is adopt
   };
   const settled = () =>
     mount.querySelector<HTMLElement>("[data-dil-renderer]")?.dataset.dilSettled;
-  await show({ text: CHART, snapshot, cacheKey: "message:chart" });
-  // Seeded with a recorded height: the chart waits for its mount turn.
-  expect(reserve()).toBe("222px");
+  await showFirstCommit(
+    { text: CHART, snapshot, cacheKey: "message:chart" },
+    () => {
+      expect(reserve()).toBe("222px");
+    },
+  );
   await vi.waitFor(() => expect(settled()).toBe("true"));
   await hide();
-  await show({ text: CHART, snapshot, cacheKey: "message:chart" });
-  // The live document has its own final layout: no placeholder to replace.
-  expect(reserve()).toBeUndefined();
-  expect(mount.querySelector("[data-dil-pending]")).toBeNull();
+  await showFirstCommit(
+    { text: CHART, snapshot, cacheKey: "message:chart" },
+    () => {
+      expect(reserve()).toBe("222px");
+    },
+  );
+  await vi.waitFor(() =>
+    expect(mount.querySelector("[data-dil-pending]")).toBeNull(),
+  );
+  expect(mount.querySelector("[data-chart-type]")).not.toBeNull();
 });
 
 it("holds a finished answer's first-frame height until it settles", async () => {

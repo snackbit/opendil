@@ -420,8 +420,8 @@ test("chart hover preserves donut proportions and legends select multiple series
   const legend = pie.getByRole("group", { name: "Chart legend", exact: true });
   const organic = legend.getByText("Organic", { exact: true });
   const direct = legend.getByText("Direct", { exact: true });
-  await expect(pie.locator(".recharts-sector")).toHaveCount(4);
-  const sector = pie.locator(".recharts-sector").first();
+  await expect(pie.locator('[data-dil-mark="sector"]')).toHaveCount(4);
+  const sector = pie.locator('[data-dil-mark="sector"]').first();
   const point = await sector.evaluate((element) => {
     if (!(element instanceof SVGPathElement))
       throw new Error("Missing pie sector");
@@ -440,7 +440,7 @@ test("chart hover preserves donut proportions and legends select multiple series
   });
   await sector.hover({ position: point });
   await expect(direct).toHaveAttribute("data-muted", "true");
-  await expect(pie.locator(".recharts-sector").nth(1)).toHaveCSS(
+  await expect(pie.locator('[data-dil-mark="sector"]').nth(1)).toHaveCSS(
     "opacity",
     "0.625",
   );
@@ -451,15 +451,15 @@ test("chart hover preserves donut proportions and legends select multiple series
   await organic.hover();
   await expect(direct).toHaveAttribute("data-muted", "true");
   await organic.click();
-  await expect(pie.locator(".recharts-sector")).toHaveCount(4);
+  await expect(pie.locator('[data-dil-mark="sector"]')).toHaveCount(4);
   await organic.focus();
   await page.keyboard.press("Enter");
-  await expect(pie.locator(".recharts-sector")).toHaveCount(4);
+  await expect(pie.locator('[data-dil-mark="sector"]')).toHaveCount(4);
   const line = ui.locator('[data-chart-type="line"]');
   await line.getByRole("button", { name: "Revenue (€k)", exact: true }).click();
-  await expect(line.locator(".recharts-line-curve")).toHaveCount(1);
+  await expect(line.locator('[data-dil-mark="line"]')).toHaveCount(1);
   await line.getByRole("button", { name: "Revenue (€k)", exact: true }).click();
-  await expect(line.locator(".recharts-line-curve")).toHaveCount(2);
+  await expect(line.locator('[data-dil-mark="line"]')).toHaveCount(2);
 });
 
 test("host inputs preserve edits, selections, composition, and external resets", async ({

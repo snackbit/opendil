@@ -64,7 +64,10 @@ export function useSettledSignal(
   useLayoutEffect(() => {
     const element = root.current;
     if (!element || !document) return;
-    element.dataset.dilSettled = "false";
+    // The root renders unsettled. Writing the attribute again would make
+    // each document of a commit lay the page out for the width read below.
+    if (element.dataset.dilSettled !== "false")
+      element.dataset.dilSettled = "false";
     const width = () => Math.round(element.getBoundingClientRect().width);
     // Placeholders rendered before layout reserve the heights measured at
     // this width; the ones that change render again before the first paint.
@@ -110,8 +113,8 @@ export function useSettledSignal(
           if (blocksSettle(placeholder, top, viewport)) return;
         settled = true;
         document.settledOnce = true;
-        // Its results are confirmed; a renderer that adopts it later shows its
-        // own final layout, so its charts mount in the first commit.
+        // Its results are confirmed: a renderer that adopts it later shows
+        // its own values, not recorded ones.
         document.seeded = false;
         release();
         element.dataset.dilSettled = "true";

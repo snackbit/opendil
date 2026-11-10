@@ -73,10 +73,12 @@ const MermaidDiagram = lazy(() =>
 /**
  * A chart or graph waits for its mount turn, holding the height it last
  * measured at this width, when it appears after its renderer's first commit,
- * or in a document seeded with recorded results whose reserve is known.
- * Otherwise, as in a live document a renderer adopts, it mounts in the first
- * commit: that commit then has the final layout, which a reserve measured
- * earlier can miss by a pixel or two.
+ * or in a document whose reserve is known: one seeded with recorded results,
+ * or a live one a renderer adopts, as a virtualized row scrolling back into
+ * view. Mounting an adopted answer's charts in its first commit took one
+ * task of 30 to 50 ms; the reserve keeps the layout while they take turns.
+ * Without a reserve it mounts in the first commit, which then has the final
+ * layout.
  */
 function QueuedWidget({
   document,
@@ -91,7 +93,9 @@ function QueuedWidget({
 }) {
   const reserve = useReservedHeight(document.heights, nodeId);
   const [immediate] = useState(
-    () => !document.presented && !(document.seeded && reserve !== undefined),
+    () =>
+      !document.presented &&
+      !((document.seeded || document.settledOnce) && reserve !== undefined),
   );
   const ready = useMountTurn(immediate);
   return ready ? children : <PendingBlock name={name} reserve={reserve} />;

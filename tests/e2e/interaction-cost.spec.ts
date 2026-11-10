@@ -127,6 +127,44 @@ test("a slider step costs one runtime message and one commit after the control's
   }
 });
 
+test("a slider step that redraws a bar chart costs one commit after the control's", async ({
+  page,
+}) => {
+  await countWork(page);
+  await page.goto("demo/deployment/");
+  await page
+    .getByRole("button", { name: "Demo settings", exact: true })
+    .click();
+  await page.getByRole("radio", { name: "Host DOM", exact: true }).click();
+  await closeSettings(page);
+  const output = page.locator('.od-hero-output [data-dil-mode="host"]').first();
+  const editor = page.getByRole("textbox", { name: "DIL source", exact: true });
+  await replaceSource(
+    page,
+    editor,
+    [
+      "{@body const [seats, setSeats] = DIL.useState(8)}",
+      '<slider aria-label="Seats" min={1} max={30} value={seats} onChange={setSeats}/>',
+      "<text>Monthly {seats * 29}</text>",
+      '<Chart content={{chartType:"bar",title:"Cost",data:[{plan:"Team",cost:seats * 29},{plan:"Scale",cost:seats * 49}],xKey:"plan",series:[{dataKey:"cost",label:"Cost"}]}}/>',
+    ].join("\n\n"),
+  );
+  const slider = output.getByRole("slider", { name: "Seats" });
+  const bars = output.locator('[data-dil-mark="bar"]');
+  await expect(bars).toHaveCount(2);
+  await expect(output.locator('[data-dil-settled="true"]')).toHaveCount(1);
+  await slider.focus();
+  const bound = output.getByText(/^Monthly \d+$/);
+  for (const seats of [9, 10, 11]) {
+    const before = await bars.first().getAttribute("d");
+    const cost = await step(page, slider, bound, `Monthly ${seats * 29}`);
+    // The chart draws from its data: no measuring pass, no second commit.
+    expect(await bars.first().getAttribute("d")).not.toBe(before);
+    expect(cost.posts, JSON.stringify(cost)).toBe(1);
+    expect(cost.commits).toBeLessThanOrEqual(2);
+  }
+});
+
 test("the landing budget's slider sends one runtime message per step", async ({
   page,
 }) => {
@@ -146,8 +184,6 @@ test("the landing budget's slider sends one runtime message per step", async ({
   ).toHaveAttribute("data-dil-settled", "true");
   await slider.focus();
   for (const seats of [9, 10]) {
-    // The chart's own layout effects add commits of their own, so only the
-    // runtime traffic is fixed here.
     const cost = await step(page, slider, total, `€${(seats * 29).toFixed(2)}`);
     expect(cost.posts, JSON.stringify(cost)).toBe(1);
   }

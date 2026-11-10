@@ -1,5 +1,21 @@
 # @snackbit/opendil
 
+## 0.4.0
+
+### Minor Changes
+
+- Keep chart hover and tooltips stable while data and metrics change. Pointer movement updates only the cursor, tooltip, and series emphasis, without rebuilding axes or scales. Clear hover when its projected point disappears, and ignore hidden legend entries when emphasizing visible series. Tooltips retain keyboard navigation and stay within their renderer's scope.
+
+  Prevent layout resize feedback from repeatedly reopening settled documents, and preserve ordered Markdown list numbering.
+
+  Mount finished answers faster, most of all when a virtualized list shows them again. A kept answer's charts and graphs now hold their measured heights in the first commit and mount one per task, instead of in one task of 30 to 50 ms. Finished Markdown blocks and Mermaid diagrams render once per content; `clearDocumentCache()` drops them with the kept answers. Its pointer tooltip positions itself without measuring on every move.
+
+  Draw charts as SVG from their data instead of through Recharts, which is no longer a dependency. A chart mounts in about a tenth of the time and redraws in a third when a control changes its data; a chart starts at the width charts last measured, so its first paint is final. Arrow keys on a focused chart, and focus on a donut slice, read values through the same tooltip as the pointer. Scatter series now plot their own values (every series used the first one's), long y-axis numbers are no longer clipped, and the first and last category labels stay inside the chart. Donut slices start at 12 o'clock and run clockwise. Charts no longer contain `recharts-*` class names: style them through `[data-dil-plot]`, `[data-dil-axis]`, `[data-dil-grid]`, `[data-dil-series]` and `[data-dil-mark]`.
+
+  NodeGraph edges run at right angles instead of as curves, which crossed the nodes between distant ones.
+
+  Dense bar groups stay within their categories at narrow widths. Queued pointer events and focus-induced scroll notifications cannot clear a newer keyboard selection or reopen a dismissed chart tooltip. Reusing a cached Mermaid diagram preserves labels and titles containing its original generated ID while giving each instance its own SVG IDs and references.
+
 ## 0.3.0
 
 ### Minor Changes

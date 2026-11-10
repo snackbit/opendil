@@ -1,8 +1,5 @@
-import { createElement } from "react";
-import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import { svgAttributes } from "../../../packages/opendil/src/dil/widgets/primitives/attribute-values";
-import { ChartContainer } from "../../../packages/opendil/src/components/ui/display/chart";
 
 it("keeps SVG paint and marker references inside the document", () => {
   expect(
@@ -33,31 +30,4 @@ it("keeps SVG paint and marker references inside the document", () => {
     "<script>",
   ])
     expect(svgAttributes({ fill: value, markerEnd: value })).toEqual({});
-});
-
-it("passes only plain chart series keys and colors to inline custom properties", () => {
-  const markup = renderToStaticMarkup(
-    createElement(ChartContainer, {
-      id: "test",
-      config: {
-        revenue: { label: "Revenue", color: "var(--chart-1)" },
-        "a:red} *{background:url(https://evil.example/x)} b{--c": {
-          label: "Injected key",
-          color: "var(--chart-2)",
-        },
-        cost: { label: "Injected color", color: "red} *{color:red" },
-        leak: { label: "URL color", color: "url(evil)" },
-        themed: { theme: { light: "#111111", dark: "rgb(1, 2, 3)" } },
-        split: { theme: { light: "blue", dark: "url(evil)" } },
-      },
-      style: { minHeight: 10 },
-      children: createElement("svg"),
-    }),
-  );
-  // A <style> element would need style-src 'unsafe-inline' under a strict policy.
-  expect(markup).not.toContain("<style");
-  const style = /data-slot="chart"[^>]*style="([^"]*)"/.exec(markup)?.[1];
-  expect(style).toBe(
-    "--color-revenue:var(--chart-1);--color-themed:light-dark(#111111, rgb(1, 2, 3));min-height:10px",
-  );
 });

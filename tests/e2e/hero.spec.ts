@@ -82,9 +82,7 @@ test("landing preview renders the real document and its controls work", async ({
   await page.keyboard.press("End");
   await expect(preview.getByText("€870.00", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "Finish", exact: true }).click();
-  await expect(
-    preview.locator(".recharts-bar-rectangle").first(),
-  ).toBeVisible();
+  await expect(preview.locator('[data-dil-mark="bar"]').first()).toBeVisible();
   await expect(page.locator(".od-code-upcoming")).toHaveCount(0);
   expect((await page.locator(".od-stream-demo").boundingBox())?.height).toBe(
     initial?.height,
@@ -302,7 +300,7 @@ test("the landing preview follows its own pane and yields immediately to the whe
     .toBe(0);
   expect(await paneScrollsAfterWheel(page)).toBe(0);
   await page.getByRole("button", { name: "Finish", exact: true }).click();
-  await expect(pane.locator(".recharts-line").first()).toBeVisible();
+  await expect(pane.locator("[data-dil-series]").first()).toBeVisible();
   expect(await paneScrollsAfterWheel(page)).toBe(0);
   await expect
     .poll(() => pane.evaluate((element) => element.scrollTop))
@@ -330,9 +328,7 @@ test.describe("on a narrow touch screen", () => {
     await expect.poll(received).toBeGreaterThan(restarted);
     await page.getByRole("button", { name: "Finish", exact: true }).click();
     const output = page.getByLabel("Streaming preview", { exact: true });
-    await expect(
-      output.locator(".recharts-bar-rectangle").first(),
-    ).toBeVisible();
+    await expect(output.locator('[data-dil-mark="bar"]').first()).toBeVisible();
     // The preview grows with its content instead of trapping swipes in its own scroller.
     expect(
       await output.evaluate(
@@ -473,7 +469,7 @@ test("site pages fit narrow and wide layouts with independent output styling", a
         await expect(
           page
             .locator('.od-hero-output [data-dil-mode="shadow"]')
-            .locator(".recharts-bar-rectangle")
+            .locator('[data-dil-mark="bar"]')
             .first(),
         ).toBeVisible();
         expect(

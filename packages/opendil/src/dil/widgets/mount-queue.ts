@@ -4,8 +4,9 @@ import { useEffect, useLayoutEffect, useState } from "react";
  * Charts and graphs take 10-30 ms each to mount. A document that shows
  * several of them when its values arrive, or when a virtualized list mounts
  * it again, would mount them in one long task. Widgets that appear after the
- * document's first commit mount one per task instead, each after the
- * previous one committed, holding their placeholders meanwhile.
+ * document's first commit, or whose measured height is known, mount one per
+ * task instead, each after the previous one committed, holding their
+ * placeholders meanwhile.
  */
 const waiting = new Set<() => void>();
 let mounting: (() => void) | null = null;

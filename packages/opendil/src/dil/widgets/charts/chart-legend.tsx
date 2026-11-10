@@ -5,23 +5,21 @@ import {
   type FocusEvent,
 } from "react";
 import { Button } from "../../../components/ui/controls/button";
+import { useStore } from "zustand";
 import type { ChartItem } from "./chart-selection";
+import { emphasizedSeries, useChartInteraction } from "./chart-interaction";
 interface LegendItemProps {
   item: ChartItem;
   hidden: boolean;
-  muted: boolean;
   select: (id: string, toggle: boolean) => void;
-  highlight: (id: string | null) => void;
   interactive: boolean;
 }
-function LegendItem({
-  item,
-  hidden,
-  muted,
-  select,
-  highlight,
-  interactive,
-}: LegendItemProps) {
+function LegendItem({ item, hidden, select, interactive }: LegendItemProps) {
+  const { store, highlightLegend: highlight } = useChartInteraction();
+  const muted = useStore(store, (state) => {
+    const active = emphasizedSeries(state);
+    return active !== null && active !== item.id;
+  });
   const click = useCallback(
     (event: MouseEvent<HTMLElement>) => {
       if (interactive) select(item.id, event.ctrlKey || event.metaKey);
@@ -79,17 +77,13 @@ function LegendItem({
 export interface ChartLegendProps {
   items: readonly ChartItem[];
   hidden: ReadonlySet<string>;
-  hovered: string | null;
   select: (id: string, toggle: boolean) => void;
-  highlight: (id: string | null) => void;
   interactive: boolean;
 }
 export function ChartLegend({
   items,
   hidden,
-  hovered,
   select,
-  highlight,
   interactive,
 }: ChartLegendProps) {
   return (
@@ -99,9 +93,7 @@ export function ChartLegend({
           key={item.id}
           item={item}
           hidden={hidden.has(item.id)}
-          muted={hovered !== null && hovered !== item.id}
           select={select}
-          highlight={highlight}
           interactive={interactive}
         />
       ))}

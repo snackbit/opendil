@@ -132,7 +132,7 @@ No API reads the clipboard. [Limits](/docs/limits/#clipboard) lists the time win
 ## Known limits of the model
 
 - OpenDIL has not had an independent security audit. The sandbox has regression tests.
-- Rendering libraries such as React, Radix, Recharts, React Flow, Mermaid, and DOMPurify are trusted code that processes validated, bounded input. The iframe contains the effects of a bug in one of them; host and Shadow DOM modes do not.
+- Rendering libraries such as React, Radix, React Flow, Mermaid, and DOMPurify are trusted code that processes validated, bounded input. The iframe contains the effects of a bug in one of them; host and Shadow DOM modes do not.
 - OpenDIL does not judge what an answer says. An answer can still show misleading text or controls inside its own area. Links render as text, so a reader cannot follow them by clicking.
 - Virtualization bounds the mounted interface, not memory. The full text and the parsed nodes stay in memory while the renderer is mounted, up to the text length limit.
 

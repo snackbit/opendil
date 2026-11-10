@@ -377,9 +377,13 @@ describe("renderer handles", () => {
     expect(mount.querySelector(`[id="${described}"]`)?.textContent).toBe(
       "Units by region",
     );
-    expect(mount.innerHTML).toContain(
-      "--color-units: var(--dil-chart-1, var(--chart-1, #6580d9))",
-    );
+    expect(
+      mount
+        .querySelector('[data-dil-series="units"] [data-dil-mark]')
+        ?.getAttribute(
+          chart?.getAttribute("data-chart-type") === "line" ? "stroke" : "fill",
+        ),
+    ).toBe("var(--dil-chart-1, var(--chart-1, #6580d9))");
   });
   it("copies only the chart series the legend shows", async () => {
     let handle: DilRendererHandle | null = null;

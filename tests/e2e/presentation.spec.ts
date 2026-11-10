@@ -14,9 +14,9 @@ test("donut legends describe categories without changing their proportions", asy
 }) => {
   await openShowcase(page);
   const chart = dilPage(page).locator('[data-chart-type="pie"]');
-  await expect(chart.locator(".recharts-sector")).toHaveCount(4);
+  await expect(chart.locator('[data-dil-mark="sector"]')).toHaveCount(4);
   await chart.getByText("Organic", { exact: true }).click();
-  await expect(chart.locator(".recharts-sector")).toHaveCount(4);
+  await expect(chart.locator('[data-dil-mark="sector"]')).toHaveCount(4);
   await expect(chart.getByRole("button")).toHaveCount(0);
 });
 
@@ -63,8 +63,8 @@ test("bar tooltips cover each bar's full-height column and stay hidden in gaps",
   await openShowcase(page);
   const ui = dilPage(page);
   const chart = ui.locator('[data-chart-type="bar"]').first();
-  const bars = chart.locator(".recharts-bar");
-  const successfulEu = bars.nth(0).locator(".recharts-bar-rectangle").first();
+  const bars = chart.locator("[data-dil-series]");
+  const successfulEu = bars.nth(0).locator('[data-dil-mark="bar"]').first();
   await successfulEu.scrollIntoViewIfNeeded();
   // Blocks are inert while they reveal; hover once the chart is interactive.
   await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);
@@ -75,21 +75,19 @@ test("bar tooltips cover each bar's full-height column and stay hidden in gaps",
     "Successful",
   );
   await expect(chart.locator("[data-chart-snapped-index]")).toHaveCount(0);
-  // Only the snap tooltip: no stock Recharts tooltip or category band beside it.
+  // One tooltip, and no cursor across the category.
   await expect(tooltip).toHaveCount(1);
-  await expect(chart.locator(".recharts-tooltip-wrapper")).not.toBeVisible();
-  await expect(chart.locator(".recharts-tooltip-cursor")).toHaveCount(0);
   const failedEu = await bars
     .nth(1)
-    .locator(".recharts-bar-rectangle")
+    .locator('[data-dil-mark="bar"]')
     .first()
     .boundingBox();
   const successfulUs = await bars
     .nth(0)
-    .locator(".recharts-bar-rectangle")
+    .locator('[data-dil-mark="bar"]')
     .nth(1)
     .boundingBox();
-  const grid = await chart.locator(".recharts-cartesian-grid").boundingBox();
+  const grid = await chart.locator("[data-dil-grid]").boundingBox();
   if (!failedEu || !successfulUs || !grid) throw new Error("Missing bars");
   // A short bar is hoverable across the full plot height above it.
   await page.mouse.move(failedEu.x + failedEu.width / 2, grid.y + 4);
@@ -97,12 +95,10 @@ test("bar tooltips cover each bar's full-height column and stay hidden in gaps",
     "Failed",
   );
   await expect(tooltip).toHaveCount(1);
-  await expect(chart.locator(".recharts-tooltip-cursor")).toHaveCount(0);
   // The gap between category groups is plot space without a bar.
   const gap = (failedEu.x + failedEu.width + successfulUs.x) / 2;
   await page.mouse.move(gap, grid.y + grid.height / 2);
   await expect(tooltip).toHaveCount(0);
-  await expect(chart.locator(".recharts-tooltip-wrapper")).not.toBeVisible();
 });
 
 test("line hover shows only the snapped dot, even when entering from the right", async ({
@@ -124,16 +120,14 @@ test("line hover shows only the snapped dot, even when entering from the right",
   await expect(chart.locator("[data-chart-snapped-index] circle")).toHaveCount(
     1,
   );
-  await expect(chart.locator(".recharts-active-dot")).toHaveCount(0);
   await page.mouse.move(box.x + box.width / 2, box.y - 40, { steps: 6 });
   await expect(chart.locator("[data-chart-snapped-index]")).toHaveCount(0);
-  await expect(chart.locator(".recharts-active-dot")).toHaveCount(0);
 });
 
 test("donut tooltips appear over slices only", async ({ page }) => {
   await openShowcase(page);
   const ui = dilPage(page);
-  const donut = ui.locator('[data-chart-type="pie"] .recharts-pie');
+  const donut = ui.locator('[data-chart-type="pie"] .dil-chart-pie');
   await donut.scrollIntoViewIfNeeded();
   await expect(ui.locator("[data-dil-revealing]")).toHaveCount(0);
   const box = await donut.boundingBox();

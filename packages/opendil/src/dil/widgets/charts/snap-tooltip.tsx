@@ -1,100 +1,81 @@
 import { useCallback, useMemo } from "react";
-import {
-  Popover,
-  PopoverAnchor,
-  PopoverContent,
-} from "../../../components/ui/overlays/popover";
+import { useStore } from "zustand";
 import { ChartTooltipContent } from "../../../components/ui/display/chart";
 import type { ChartItem } from "./chart-selection";
-import type { ChartHit } from "./chart-hover";
+import { useChartInteraction } from "./chart-interaction";
+import { ChartPointTooltip } from "./chart-point-tooltip";
 export interface SnapTooltipProps {
-  hit: ChartHit | null;
+  rows: Record<string, unknown>[];
   items: readonly ChartItem[];
   /** category: x label with every visible series; scatter: x and y; slice: one pie slice. */
   kind: "category" | "scatter" | "slice";
   xKey: string;
   valueKey: string;
-  onHover: (hit: ChartHit | null) => void;
-}
-function keepFocus(event: Event) {
-  event.preventDefault();
 }
 export function SnapTooltip({
-  hit,
+  rows,
   items,
   kind,
   xKey,
   valueKey,
-  onHover,
 }: SnapTooltipProps) {
+  const { store, hover } = useChartInteraction();
+  const hit = useStore(store, (state) => state.hit);
+  const key = hit?.target;
+  const target = useMemo(() => {
+    // Prepare the tooltip's DOM and text metrics while the chart mounts.
+    // First hover only updates its values and position.
+    if (!key) {
+      const row = rows[0],
+        item = items[0];
+      return row && item ? { row, item } : null;
+    }
+    const row = rows[key.index];
+    const item = items.find((item) => item.id === key.id);
+    return row && item ? { row, item } : null;
+  }, [key, rows, items]);
   const x = hit?.clientX ?? 0,
     y = hit?.clientY ?? 0;
-  const virtualRef = useMemo(
-    () => ({
-      current: { getBoundingClientRect: () => new DOMRect(x, y, 0, 0) },
-    }),
-    [x, y],
-  );
-  const close = useCallback(
-    (open: boolean) => {
-      if (!open) onHover(null);
-    },
-    [onHover],
-  );
-  if (!hit) return null;
-  const { row, item: target } = hit.target;
-  const scatter = kind === "scatter";
-  const series = kind === "slice" ? [{ ...target, id: valueKey }] : items;
-  const entries = series.flatMap((item) => {
-    const value = row[item.id];
-    return typeof value === "number" || typeof value === "string"
-      ? [
-          {
-            graphicalItemId: item.id,
-            dataKey: item.id,
-            name: item.label,
-            value,
-            color: item.color,
-            payload: row,
-          },
-        ]
-      : [];
-  });
-  // Bold the hovered series only when it has to stand out from other series rows.
-  const emphasized = entries.length > 1 ? target.id : undefined;
-  const xValue = row[xKey];
-  if (scatter && (typeof xValue === "number" || typeof xValue === "string"))
-    entries.unshift({
-      graphicalItemId: xKey,
-      dataKey: xKey,
-      name: xKey,
-      value: xValue,
-      color: target.color,
-      payload: row,
+  const close = useCallback(() => hover(null), [hover]);
+  // Coordinates only reposition the anchor; payloads and content stay unchanged.
+  const content = useMemo(() => {
+    if (!target) return null;
+    const { row, item } = target;
+    const scatter = kind === "scatter";
+    const series = kind === "slice" ? [{ ...item, id: valueKey }] : items;
+    const entries = series.flatMap((item) => {
+      const value = row[item.id];
+      return typeof value === "number" || typeof value === "string"
+        ? [{ dataKey: item.id, name: item.label, value, color: item.color }]
+        : [];
     });
+    // Bold the hovered series only when it has to stand out from other series rows.
+    const emphasized = entries.length > 1 ? item.id : undefined;
+    const xValue = row[xKey];
+    const positioned = typeof xValue === "number" || typeof xValue === "string";
+    if (scatter && positioned)
+      entries.unshift({
+        dataKey: xKey,
+        name: xKey,
+        value: xValue,
+        color: item.color,
+      });
+    return (
+      <ChartTooltipContent
+        entries={entries}
+        emphasizedKey={emphasized}
+        {...(kind === "category" && positioned ? { label: xValue } : {})}
+      />
+    );
+  }, [target, items, kind, xKey, valueKey]);
   return (
-    <Popover open onOpenChange={close}>
-      <PopoverAnchor virtualRef={virtualRef} />
-      <PopoverContent
-        role="tooltip"
-        side="bottom"
-        align="start"
-        sideOffset={12}
-        collisionPadding={8}
-        onOpenAutoFocus={keepFocus}
-        onCloseAutoFocus={keepFocus}
-        className="dil-snap-tooltip w-auto border-0 bg-transparent p-0 shadow-none"
-      >
-        <ChartTooltipContent
-          active
-          payload={entries}
-          emphasizedKey={emphasized}
-          {...(kind === "category" &&
-          (typeof xValue === "string" || typeof xValue === "number")
-            ? { label: xValue }
-            : {})}
-        />
-      </PopoverContent>
-    </Popover>
+    <ChartPointTooltip
+      open={hit !== null && target !== null}
+      x={x}
+      y={y}
+      onClose={close}
+    >
+      {content}
+    </ChartPointTooltip>
   );
 }

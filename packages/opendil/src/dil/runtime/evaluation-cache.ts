@@ -82,7 +82,11 @@ export class EvaluationCache {
 
 /** JSON literals read without QuickJS; see ExpressionEngine.literal(). */
 export const NOT_JSON = Symbol("not JSON");
+// What a JSON text can start with. Most expressions are names and calls;
+// refusing them here costs less than the exception JSON.parse would throw.
+const JSON_START = /^[\s[{"\-\dtfn]/;
 export function parseJson(source: string): unknown {
+  if (!JSON_START.test(source)) return NOT_JSON;
   try {
     return JSON.parse(source);
   } catch {

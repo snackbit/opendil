@@ -17,6 +17,7 @@ import { stripRemoteReferences } from "../svg-safety";
 import { PendingBlock } from "../view/loading-block";
 import { useUiPrimitives } from "../ui-primitives";
 import { usePortalScope } from "../../components/ui/overlays/ui-scope";
+import { RenderCache } from "./render-cache";
 const SOURCE_LIMIT = 8192;
 const EDGE_LIMIT = 100;
 type MermaidProblem = "oversized" | "unsupported" | "edges" | "invalid";
@@ -68,6 +69,66 @@ function diagramDetails(markup: string, source: string): DilDiagram {
     height,
   };
 }
+/**
+ * Sanitized diagrams by source. Mermaid's configuration here is constant, so
+ * a diagram that mounts again, as in a virtualized row or an adopted answer,
+ * shows in its first commit instead of parsing and laying out for 100 ms.
+ */
+const DIAGRAMS = new RenderCache<{ markup: string; id: string }>(32, 2_000_000);
+/** Mermaid scopes a diagram's styles and markers by its id; each instance gets its own. */
+function cachedDiagram(source: string, id: string) {
+  const cached = DIAGRAMS.get(source);
+  if (!cached) return "";
+  const root = new DOMParser().parseFromString(
+    cached.markup,
+    "image/svg+xml",
+  ).documentElement;
+  const elements = [root, ...root.querySelectorAll("*")];
+  const ids = new Map<string, string>();
+  for (const element of elements) {
+    if (element.id.includes(cached.id)) {
+      const replacement = element.id.replaceAll(cached.id, id);
+      ids.set(element.id, replacement);
+      element.id = replacement;
+    }
+  }
+  const reference = (_match: string, quote: string, target: string) =>
+    `url(${quote}#${ids.get(target) ?? target}${quote})`;
+  const urls = (value: string) =>
+    value.replace(/url\(\s*(["']?)#([\w-]+)\1\s*\)/g, reference);
+  for (const element of elements) {
+    if (element.localName === "style") {
+      // Only selector preludes and local url() references contain SVG IDs;
+      // declarations and authored text can contain the same literal string.
+      element.textContent = urls(element.textContent ?? "").replace(
+        /(^|[{}])([^{}]*)(?=\{)/g,
+        (_match, boundary: string, selector: string) =>
+          boundary +
+          selector.replace(/#([\w-]+)/g, (match, target: string) =>
+            ids.has(target) ? `#${ids.get(target)}` : match,
+          ),
+      );
+    }
+    for (const attribute of [...element.attributes]) {
+      if (/^aria-(labelledby|describedby)$/.test(attribute.name)) {
+        element.setAttribute(
+          attribute.name,
+          attribute.value.replace(
+            /\S+/g,
+            (target) => ids.get(target) ?? target,
+          ),
+        );
+      } else if (
+        /^(style|fill|stroke|filter|clip-path|mask|marker-start|marker-mid|marker-end)$/.test(
+          attribute.name,
+        )
+      ) {
+        element.setAttribute(attribute.name, urls(attribute.value));
+      }
+    }
+  }
+  return root.outerHTML;
+}
 export interface MermaidDiagramProps {
   source: string;
   presentationRef?: ((element: HTMLElement | null) => void) | undefined;
@@ -79,9 +140,9 @@ export function MermaidDiagram({
   presentationRef,
   reserve,
 }: MermaidDiagramProps) {
-  const id = useId().replace(/[^a-zA-Z0-9]/g, "");
+  const id = "dil" + useId().replace(/[^a-zA-Z0-9]/g, "");
   const [error, setError] = useState<MermaidProblem | undefined>();
-  const [markup, setMarkup] = useState("");
+  const [markup, setMarkup] = useState(() => cachedDiagram(source, id));
   const openDiagram = useContext(DiagramOpenContext);
   const { Button, Tooltip } = useUiPrimitives();
   const { container } = usePortalScope();
@@ -102,6 +163,11 @@ export function MermaidDiagram({
       queueMicrotask(() => setError(rejected));
       return;
     }
+    const known = cachedDiagram(source, id);
+    if (known) {
+      setMarkup(known);
+      return;
+    }
     // Parsing and laying out a diagram takes about 100 ms of main-thread
     // work. It waits for an idle moment, so the frames in which an answer
     // settles stay short; its placeholder holds the space meanwhile.
@@ -109,12 +175,15 @@ export function MermaidDiagram({
       if (!active) return;
       mermaid.initialize(CONFIG);
       mermaid
-        .render("dil" + id, source)
+        .render(id, source)
         .then((result) => {
-          if (active) setMarkup(sanitizeDiagram(result.svg));
+          const sanitized = sanitizeDiagram(result.svg);
+          // Kept even when this instance unmounted meanwhile: the layout is done.
+          DIAGRAMS.set(source, { markup: sanitized, id }, sanitized.length);
+          if (active) setMarkup(sanitized);
         })
         .catch((reason: unknown) => {
-          document.getElementById("ddil" + id)?.remove();
+          document.getElementById("d" + id)?.remove();
           if (active)
             setError(
               reason instanceof Error &&

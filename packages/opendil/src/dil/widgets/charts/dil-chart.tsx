@@ -6,36 +6,24 @@ import {
   useMemo,
   useRef,
   useState,
-  type FocusEvent,
 } from "react";
-import {
-  BarChart,
-  CartesianGrid,
-  LineChart,
-  PieChart,
-  ScatterChart,
-  XAxis,
-  YAxis,
-} from "recharts";
-import {
-  ChartContainer,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from "../../../components/ui/display/chart";
 import { record, text } from "../primitives/attribute-values";
 import { ChartLegend } from "./chart-legend";
 import { chartTable, registerChartCopy } from "../../serialize/chart-copy";
-import { ChartPie } from "./chart-pie";
-import { ChartSeries } from "./chart-series";
-import { SnapCursor } from "./snap-cursor";
-import { useFrameHover, type ChartHit } from "./chart-hover";
+import {
+  ChartInteractionContext,
+  createChartInteraction,
+} from "./chart-interaction";
+import { ChartEmphasis } from "./chart-emphasis";
 import { SnapTooltip } from "./snap-tooltip";
 import {
   selectChartItem,
   reconcileChartSelection,
   type ChartItem,
 } from "./chart-selection";
+import { CartesianPlot } from "./plot/cartesian-plot";
+import { PiePlot } from "./plot/pie-plot";
+import { usePlotWidth } from "./plot/use-plot-size";
 export interface DilChartProps {
   content: unknown;
   presentationRef?: ((element: HTMLElement | null) => void) | undefined;
@@ -59,10 +47,19 @@ const PALETTE = STOCK_CHART_COLORS.map(
   (color, index) =>
     `var(--dil-chart-${index + 1}, var(--chart-${index + 1}, ${color}))`,
 );
+const PLOT_HEIGHT = 248;
 function palette(index: number) {
   return PALETTE[index % PALETTE.length] ?? "var(--chart-1)";
 }
+/**
+ * A line, bar, scatter or donut chart drawn as SVG from its data. Pointer
+ * movement reaches only the cursor, the tooltip and the series emphasis;
+ * new data redraws the marks without measuring anything.
+ */
 export function DilChart({ content, presentationRef }: DilChartProps) {
+  const [interaction] = useState(createChartInteraction);
+  const [width, measure] = usePlotWidth();
+  const root = useRef<HTMLDivElement | null>(null);
   const data = useMemo(() => record(content), [content]);
   const rows = useMemo(
     () => (Array.isArray(data.data) ? data.data.map(record) : []),
@@ -99,38 +96,16 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
       identity,
       hidden: reconcileChartSelection(ids, selection.hidden),
     });
-  const [hovered, setHovered] = useState<string | null>(null);
-  const [hit, setHit] = useState<ChartHit | null>(null);
-  const onHover = useCallback((next: ChartHit | null) => {
-    setHit(next);
-    setHovered(next?.target.item.id ?? null);
-  }, []);
-  const hover = useFrameHover(onHover);
-  // Pointer hover belongs to the snap tooltip. The stock Recharts tooltip, its
-  // cursor, and active dots are off unless the chart surface has keyboard focus,
-  // where they serve arrow-key navigation. Recharts tracks pointer moves on its
-  // own (bar charts let them through), so off has to be the default.
-  const [keyboard, setKeyboard] = useState(false);
-  const focusIn = useCallback((event: FocusEvent<HTMLElement>) => {
-    const target = event.target;
-    setKeyboard(
-      target.classList.contains("recharts-surface") &&
-        target.matches(":focus-visible"),
-    );
-  }, []);
-  const focusOut = useCallback(() => setKeyboard(false), []);
-  const stockActive = keyboard && hit === null;
   const visibleItems = useMemo(
     () => items.filter((item) => !selection.hidden.has(item.id)),
     [items, selection.hidden],
   );
-  // Legend hover is separate from chart hover: only legend hover re-renders pie
-  // slices, while slice hover and focus emphasis stay in CSS (see ChartPie).
-  const [legendHovered, setLegendHovered] = useState<string | null>(null);
-  const shown = (id: string | null) =>
-    id !== null && ids.includes(id) && !selection.hidden.has(id) ? id : null;
-  const emphasized = shown(legendHovered);
-  const active = emphasized ?? shown(hovered);
+  useLayoutEffect(() => {
+    interaction.reconcile(
+      visibleItems.map((item) => item.id),
+      rows.length,
+    );
+  }, [interaction, visibleItems, rows.length]);
   const select = useCallback(
     (id: string, toggle: boolean) => {
       const ids: string[] = JSON.parse(identity);
@@ -141,7 +116,6 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
     },
     [identity],
   );
-  const highlight = useCallback((id: string | null) => setHovered(id), []);
   const slices = useMemo(
     () =>
       rows.flatMap((row, index) => {
@@ -152,74 +126,12 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
       }),
     [rows, items, selection.hidden],
   );
-  const config: ChartConfig = Object.fromEntries(
-    series.map((item, index) => [
-      text(item.dataKey),
-      { label: text(item.label), color: palette(index) },
-    ]),
-  );
-  const marks = items.map((item, index) => (
-    <ChartSeries
-      key={item.id}
-      item={item}
-      index={index}
-      type={type}
-      hidden={selection.hidden.has(item.id)}
-      muted={active !== null && active !== item.id}
-      rows={rows}
-      highlight={highlight}
-      hover={hover}
-      markers={stockActive}
-    />
-  ));
-  const stockTooltip = (
-    <ChartTooltip
-      content={<ChartTooltipContent />}
-      isAnimationActive={false}
-      {...(stockActive ? {} : { active: false, cursor: false })}
-    />
-  );
   const title = text(data.title);
   const description = text(data.description);
   const descriptionId = useId();
   const xLabel = text(data.xLabel);
   const yLabel = text(data.yLabel);
-  const axes = (
-    <>
-      <CartesianGrid vertical={false} />
-      <XAxis
-        dataKey={text(data.xKey)}
-        type={type === "scatter" ? "number" : "category"}
-        tickLine={false}
-        axisLine={false}
-        {...(xLabel
-          ? {
-              height: 44,
-              label: { value: xLabel, position: "insideBottom", offset: 0 },
-            }
-          : {})}
-      />
-      <YAxis
-        {...(type === "scatter"
-          ? { dataKey: text(series[0]?.dataKey), type: "number" as const }
-          : {})}
-        tickLine={false}
-        axisLine={false}
-        width={yLabel ? 64 : 45}
-        {...(yLabel
-          ? {
-              label: {
-                value: yLabel,
-                angle: -90,
-                position: "insideLeft",
-                style: { textAnchor: "middle" },
-              },
-            }
-          : {})}
-      />
-      {stockTooltip}
-    </>
-  );
+  const xKey = text(data.xKey);
   const columns =
     type === "pie"
       ? [
@@ -227,7 +139,7 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
           { key: text(data.valueKey), label: text(data.valueKey) },
         ]
       : [
-          { key: text(data.xKey), label: xLabel || text(data.xKey) },
+          { key: xKey, label: xLabel || xKey },
           ...series
             .filter((item) => !selection.hidden.has(text(item.dataKey)))
             .map((item) => ({
@@ -244,6 +156,7 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
   });
   const attach = useCallback(
     (element: HTMLDivElement | null) => {
+      root.current = element;
       presentationRef?.(element);
       if (element)
         registerChartCopy(element, () =>
@@ -252,85 +165,60 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
     },
     [presentationRef],
   );
-  const cursor = (
-    <SnapCursor
-      rows={rows}
-      items={visibleItems}
-      xKey={text(data.xKey)}
-      scatter={type === "scatter"}
-      hit={hit}
-      onHover={onHover}
-    />
-  );
-  let chart;
-  if (type === "pie")
-    chart = (
-      <PieChart>
-        {stockTooltip}
-        <ChartPie
-          slices={slices}
-          valueKey={text(data.valueKey)}
-          nameKey={text(data.nameKey)}
-          emphasized={emphasized}
-          hover={hover}
-          highlight={highlight}
-        />
-      </PieChart>
-    );
-  else if (type === "bar")
-    chart = (
-      <BarChart data={rows}>
-        {axes}
-        {marks}
-      </BarChart>
-    );
-  else if (type === "scatter")
-    chart = (
-      <ScatterChart>
-        {axes}
-        {marks}
-        {cursor}
-      </ScatterChart>
-    );
-  else
-    chart = (
-      <LineChart data={rows}>
-        {axes}
-        {marks}
-        {cursor}
-      </LineChart>
-    );
   return (
-    <div
-      ref={attach}
-      role="group"
-      aria-label={title || type + " chart"}
-      {...(description ? { "aria-describedby": descriptionId } : {})}
-      data-chart-type={type}
-      data-points={rows.length}
-      data-dil-copy="chart"
-      onFocus={focusIn}
-      onBlur={focusOut}
-    >
-      {title && (
-        <p data-dil-chart-title="" className="mb-1 text-sm font-semibold">
-          {title}
-        </p>
-      )}
-      {description && (
-        <p
-          id={descriptionId}
-          data-dil-chart-description=""
-          className="mb-2 text-xs text-muted-foreground"
+    <ChartInteractionContext.Provider value={interaction}>
+      <div
+        ref={attach}
+        role="group"
+        aria-label={title || type + " chart"}
+        {...(description ? { "aria-describedby": descriptionId } : {})}
+        data-chart-type={type}
+        data-points={rows.length}
+        data-dil-copy="chart"
+      >
+        <ChartEmphasis root={root} items={items} />
+        {title && (
+          <p data-dil-chart-title="" className="mb-1 text-sm font-semibold">
+            {title}
+          </p>
+        )}
+        {description && (
+          <p
+            id={descriptionId}
+            data-dil-chart-description=""
+            className="mb-2 text-xs text-muted-foreground"
+          >
+            {description}
+          </p>
+        )}
+        <div
+          ref={measure}
+          data-slot="chart"
+          className="w-full overflow-hidden text-xs"
+          style={{ height: PLOT_HEIGHT }}
         >
-          {description}
-        </p>
-      )}
-      <ChartContainer
-        config={config}
-        overlay={
+          {type === "pie" ? (
+            <PiePlot
+              width={width}
+              height={PLOT_HEIGHT}
+              slices={slices}
+              valueKey={text(data.valueKey)}
+            />
+          ) : (
+            <CartesianPlot
+              type={type === "bar" || type === "scatter" ? type : "line"}
+              width={width}
+              height={PLOT_HEIGHT}
+              rows={rows}
+              items={items}
+              hidden={selection.hidden}
+              xKey={xKey}
+              xLabel={xLabel}
+              yLabel={yLabel}
+            />
+          )}
           <SnapTooltip
-            hit={hit}
+            rows={rows}
             items={visibleItems}
             kind={
               type === "pie"
@@ -339,26 +227,20 @@ export function DilChart({ content, presentationRef }: DilChartProps) {
                   ? "scatter"
                   : "category"
             }
-            xKey={text(data.xKey)}
+            xKey={xKey}
             valueKey={text(data.valueKey)}
-            onHover={onHover}
           />
-        }
-        className="h-[248px] w-full"
-        initialDimension={{ width: 640, height: 248 }}
-      >
-        {chart}
-      </ChartContainer>
-      <ChartLegend
-        items={items}
-        hidden={selection.hidden}
-        hovered={active}
-        select={select}
-        highlight={setLegendHovered}
-        interactive={
-          (type === "bar" || type === "line" || type === "") && items.length > 1
-        }
-      />
-    </div>
+        </div>
+        <ChartLegend
+          items={items}
+          hidden={selection.hidden}
+          select={select}
+          interactive={
+            (type === "bar" || type === "line" || type === "") &&
+            items.length > 1
+          }
+        />
+      </div>
+    </ChartInteractionContext.Provider>
   );
 }
