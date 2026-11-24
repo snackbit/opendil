@@ -233,8 +233,15 @@
   flex-direction: column;
   min-width: 0;
 }
+.dil-layout:where([data-d-component="box"]) {
+  gap: var(--dil-spacing, 4px);
+}
 .dil-row {
   flex-direction: row;
+  align-items: center;
+}
+.dil-row:where(:has(> [data-d-component="title"]):has(> [data-slot="badge"])) {
+  align-items: baseline;
 }
 .dil-grid {
   display: grid;

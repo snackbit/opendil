@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Locator, type Page } from "@playwright/test";
 import { closeSettings, replaceSource } from "./site-demo-page";
 
 /* widget-layout.spec.ts, run against the Next.js playground with URLs relative to SITE_BASE_PATH. */
@@ -16,6 +16,126 @@ async function hostWorkbench(page: Page) {
   await expect(output).toBeAttached();
   return output;
 }
+
+async function bounds(locator: Locator) {
+  const box = await locator.boundingBox();
+  if (!box) throw new Error("Expected visible layout content");
+  return box;
+}
+
+function baseline(locator: Locator) {
+  return locator.evaluate((element) => {
+    const label = document.createElement("span");
+    const marker = document.createElement("i");
+    marker.style.cssText = "display:inline-block;width:0;height:0";
+    label.append(...element.childNodes, marker);
+    element.append(label);
+    const position = marker.getBoundingClientRect().top;
+    marker.remove();
+    label.replaceWith(...label.childNodes);
+    return position;
+  });
+}
+
+test("rows align their contents and metric cards have readable spacing", async ({
+  page,
+}) => {
+  const output = await hostWorkbench(page);
+  const editor = page.getByRole("textbox", { name: "DIL source", exact: true });
+  await replaceSource(
+    page,
+    editor,
+    [
+      '<row gap={3} wrap="wrap">',
+      '<title size="xl">Workflow runs</title>',
+      '<badge color="secondary">Interactive demo · sample data</badge>',
+      "</row>",
+      "",
+      '<box padding={4} border radius="lg">',
+      "<caption>Latest run</caption>",
+      '<text size="2xl">42s</text>',
+      '<badge color="success">Recovered after retry</badge>',
+      "</box>",
+      "",
+      '<box padding={3} border radius="md"><row gap={3} wrap="wrap">',
+      '<button variant="outline">run-1040</button>',
+      "<text>Release production</text>",
+      '<badge color="danger">Failed</badge>',
+      "<spacer/>",
+      "<text tabularNums>18s</text>",
+      "<caption>release/v2 · d72ae90</caption>",
+      "</row></box>",
+      "",
+      '<row align="stretch"><title>Authored alignment</title><badge>Stretch</badge></row>',
+      "<box gap={0}><caption>Authored gap</caption><text>Zero</text></box>",
+    ].join("\n"),
+  );
+  const heading = output.getByRole("heading", { name: "Workflow runs" });
+  const label = (component: "caption" | "text" | "badge", name: string) =>
+    output
+      .locator(
+        component === "badge"
+          ? '[data-slot="badge"]'
+          : `[data-d-component="${component}"]`,
+      )
+      .filter({ hasText: name });
+  const badge = label("badge", "Interactive demo · sample data");
+  await expect(heading).toBeVisible();
+  await expect(badge).toBeVisible();
+  expect((await bounds(badge)).height).toBeLessThan(
+    (await bounds(heading)).height,
+  );
+  expect(
+    Math.abs((await baseline(heading)) - (await baseline(badge))),
+  ).toBeLessThanOrEqual(1);
+
+  const caption = await bounds(label("caption", "Latest run"));
+  const metric = await bounds(label("text", "42s"));
+  const status = await bounds(label("badge", "Recovered after retry"));
+  expect(metric.height).toBeGreaterThanOrEqual(36);
+  expect(metric.y - caption.y - caption.height).toBeCloseTo(4, 0);
+  expect(status.y - metric.y - metric.height).toBeCloseTo(4, 0);
+
+  const button = await bounds(output.getByRole("button", { name: "run-1040" }));
+  for (const [component, name] of [
+    ["text", "Release production"],
+    ["badge", "Failed"],
+    ["text", "18s"],
+    ["caption", "release/v2 · d72ae90"],
+  ] as const) {
+    const item = await bounds(label(component, name));
+    const centerOffset =
+      item.y + item.height / 2 - (button.y + button.height / 2);
+    expect(Math.abs(centerOffset), name).toBeLessThanOrEqual(1);
+  }
+
+  const authored = await bounds(
+    output.getByRole("heading", { name: "Authored alignment" }),
+  );
+  expect((await bounds(label("badge", "Stretch"))).height).toBeCloseTo(
+    authored.height,
+    0,
+  );
+  const zeroCaption = await bounds(label("caption", "Authored gap"));
+  expect(
+    (await bounds(label("text", "Zero"))).y -
+      zeroCaption.y -
+      zeroCaption.height,
+  ).toBeCloseTo(0, 0);
+
+  await page.setViewportSize({ width: 360, height: 900 });
+  await expect
+    .poll(async () => {
+      const title = await bounds(heading);
+      return (await bounds(badge)).y - title.y - title.height;
+    })
+    .toBeGreaterThanOrEqual(0);
+  const row = heading.locator("..");
+  expect(
+    await row.evaluate((element) => element.scrollWidth - element.clientWidth),
+  ).toBe(0);
+});
+
 // Values that come from expressions wait for QuickJS, so each widget is
 // pending at its first commit.
 const PENDING_WIDGETS = [
