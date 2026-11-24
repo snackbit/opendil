@@ -176,7 +176,7 @@ These tokens have no declaration on the answer's root; each place that reads one
 | `--dil-code-background`, `--dil-code-padding`, `--dil-code-radius`                     | `--muted` at 50%, `16px`, `--radius`      | Code blocks: Markdown fences and `CodeBlock`                      |
 | `--dil-code-border`, `--dil-code-font-size`, `--dil-code-line-height`                  | `1px solid var(--border)`, `0.75rem`, `2` | Code blocks: Markdown fences and `CodeBlock`                      |
 | `--dil-code-tab-size`                                                                  | `2`                                       | Code blocks, including the `CodeBlock` editor                     |
-| `--dil-control-radius`, `--dil-item-radius`, `--dil-spacing`                           | `12px`, `8px`, `4px`                      | Segmented controls (declared on the root; set them with `tokens`) |
+| `--dil-control-radius`, `--dil-item-radius`, `--dil-spacing`                           | `12px`, `8px`, `4px`                      | Segmented controls and box gaps (scoped token, set with `tokens`) |
 
 For anything else, select the element's semantic tag or `data-*` hook under `.dil-scope` from your stylesheet: `data-d-component` on layout and text tags, `data-slot` on built-in controls, `.dil-code-block` on code blocks, and `data-chart-type` on charts. The document root carries `data-dil-document`: `"dil"` in `DilRenderer` and `"markdown"` in `MarkdownRenderer`.
 

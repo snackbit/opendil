@@ -28,7 +28,7 @@ How the values translate:
 
 ## `box`
 
-A vertical stack, and the usual way to draw a card or panel.
+A vertical stack, and the usual way to draw a card or panel. It uses one theme spacing unit between children by default (4 px in the stock theme). Set `gap` to override it, or use `gap={0}` for a flush stack.
 
 **Usage**
 
@@ -50,7 +50,7 @@ A vertical stack, and the usual way to draw a card or panel.
 
 ## `row`
 
-A horizontal group, such as a title next to a badge or a set of buttons.
+A horizontal group, such as a title next to a badge or a set of buttons. Rows center their items vertically by default. When a title and badge are both direct children, the row aligns items on their first baseline. An explicit `align` overrides either default.
 
 **Usage**
 

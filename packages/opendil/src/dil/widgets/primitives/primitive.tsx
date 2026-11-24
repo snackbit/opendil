@@ -284,6 +284,7 @@ export function Primitive({
     case "caption":
     case "title": {
       const tag = node.name === "title" ? "h3" : "span";
+      const size = SIZES[text(attributes.size)];
       return createElement(
         tag,
         {
@@ -295,7 +296,7 @@ export function Primitive({
               color(attributes.color) ??
               (node.name === "caption" ? "var(--muted-foreground)" : undefined),
             fontSize:
-              SIZES[text(attributes.size)] ??
+              size ??
               (node.name === "caption"
                 ? "0.75rem"
                 : node.name === "title"
@@ -310,7 +311,14 @@ export function Primitive({
             fontVariantNumeric: attributes.tabularNums
               ? "tabular-nums"
               : undefined,
-            lineHeight: node.name === "title" ? 1.35 : undefined,
+            lineHeight:
+              node.name === "title"
+                ? 1.35
+                : node.name === "caption"
+                  ? 1.4
+                  : size
+                    ? 1.25
+                    : undefined,
             // A caption annotates the content before it, so it takes its own
             // line even where the parent lays children out inline (table cells).
             display: node.name === "caption" ? "block" : undefined,
