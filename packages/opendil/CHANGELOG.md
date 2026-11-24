@@ -1,5 +1,11 @@
 # @snackbit/opendil
 
+## 0.4.1
+
+### Patch Changes
+
+- 5bc3c58: Give metric cards more room, center content in rows, and align titles and badges on a shared text baseline. Explicit gap and alignment settings still take precedence.
+
 ## 0.4.0
 
 ### Minor Changes
