@@ -1,5 +1,11 @@
 # @snackbit/opendil
 
+## 0.4.2
+
+### Patch Changes
+
+- b457a6b: Keep words intact in Markdown tables and let wide tables scroll horizontally within their container.
+
 ## 0.4.1
 
 ### Patch Changes
