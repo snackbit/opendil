@@ -277,7 +277,18 @@ function MarkdownBlockquote({ children }: MarkdownProps) {
 }
 function MarkdownTable({ children }: MarkdownProps) {
   const Table = useScope().components.table;
-  return Table ? <Table>{children}</Table> : <table>{children}</table>;
+  return Table ? (
+    <Table>{children}</Table>
+  ) : (
+    <div
+      className="dil-markdown-table"
+      role="region"
+      aria-label="Markdown table"
+      tabIndex={0}
+    >
+      <table>{children}</table>
+    </div>
+  );
 }
 const COMPONENTS = {
   a: MarkdownLink,

@@ -199,6 +199,19 @@
   border-inline-start: var(--dil-quote-border, 0 solid);
   color: var(--dil-quote-color, inherit);
 }
+.dil-markdown-table {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+  overflow-x: auto;
+}
+.dil-markdown-table:focus-visible {
+  outline: 2px solid var(--ring, currentColor);
+  outline-offset: -2px;
+}
+.dil-markdown-table > table {
+  /* Whole words set the minimum column widths before the wrapper scrolls. */
+  overflow-wrap: normal;
+}
 .dil-markdown table {
   width: 100%;
   border-collapse: collapse;
